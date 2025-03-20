@@ -39,12 +39,10 @@ ifeq ($(PLATFORM),entware)
     BIN_DIR = $(PKG_DIR)/data/opt/bin
     SKINS_DIR = $(PKG_DIR)/data/opt/usr/share/magitrickle/skins
     DEPENDS = libc, iptables, socat
-    COPY_OPT = cp -r ./opt $(PKG_DIR)/data/
 else ifeq ($(PLATFORM),openwrt)
     BIN_DIR = $(PKG_DIR)/data/usr/bin
     SKINS_DIR = $(PKG_DIR)/data/usr/share/magitrickle/skins
     DEPENDS = +libc +iptables +socat
-    COPY_OPT = @echo "No extra files to copy for openwrt"
 endif
 
 PARAMS = -v -a -trimpath -ldflags="-X 'magitrickle/constant.Version=$(UPSTREAM_VERSION)$(PRERELEASE_POSTFIX)' -X 'magitrickle/constant.Commit=$(COMMIT)' -w -s" -tags "$(GO_TAGS)"
@@ -87,7 +85,7 @@ ifeq ($(PLATFORM),entware)
 	cp -r ./opt $(PKG_DIR)/data/
 else ifeq ($(PLATFORM),openwrt)
 	mkdir -p $(PKG_DIR)/data
-	rsync -a --delete ./opt/ $(PKG_DIR)/data/
+	cp -r ./opt/* $(PKG_DIR)/data/
 	sed -i 's|/opt||g' $(PKG_DIR)/data/etc/init.d/S99magitrickle
 	sed -i 's|/opt||g' $(PKG_DIR)/data/etc/ndm/netfilter.d/100-magitrickle
 endif

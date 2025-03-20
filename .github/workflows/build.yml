@@ -51,7 +51,6 @@ jobs:
             target: aarch64_cortex-a53
             goos: linux
             goarch: arm64
-            pkg_revision: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
