@@ -68,6 +68,7 @@ build_frontend:
 	cd ./frontend && VITE_UPSTREAM_VERSION=$(UPSTREAM_VERSION) VITE_DEV=$(if $(strip $(PRERELEASE_POSTFIX)),true,false) npm run build
 	mkdir -p $(SKINS_DIR)/default
 	cp -r ./frontend/dist/* $(SKINS_DIR)/default/
+	cp ./img/favicon.ico $(SKINS_DIR)/default/
 
 build: build_backend build_frontend_legacy build_frontend
 
@@ -82,12 +83,9 @@ package:
 	echo 'Section: net' >> $(PKG_DIR)/control/control
 	echo 'Priority: optional' >> $(PKG_DIR)/control/control
 ifeq ($(PLATFORM),entware)
-	cp -r ./opt $(PKG_DIR)/data/
+	cp -r ./opt/entware $(PKG_DIR)/data/
 else ifeq ($(PLATFORM),openwrt)
-	mkdir -p $(PKG_DIR)/data
-	cp -r ./opt/* $(PKG_DIR)/data/
-	sed -i 's|/opt||g' $(PKG_DIR)/data/etc/init.d/S99magitrickle
-	sed -i 's|/opt||g' $(PKG_DIR)/data/etc/ndm/netfilter.d/100-magitrickle
+	cp -r ./opt/default $(PKG_DIR)/data/
 endif
 	tar -C $(PKG_DIR)/control -czvf $(PKG_DIR)/control.tar.gz --owner=0 --group=0 .
 	tar -C $(PKG_DIR)/data -czvf $(PKG_DIR)/data.tar.gz --owner=0 --group=0 .
