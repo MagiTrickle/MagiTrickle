@@ -43,7 +43,7 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables, table string) 
 				}
 			}
 
-			err = ipt.AppendUnique("filter", r.chainName, "-o", r.ifaceName, "-m", "state", "--state", "NEW", "-j", "ACCEPT")
+			err = ipt.AppendUnique("filter", r.chainName, "-o", r.ifaceName, "-m", "conntrack", "--ctstate", "NEW", "-j", "ACCEPT")
 			if err != nil {
 				return fmt.Errorf("failed to fix protect for IPv4: %w", err)
 			}
