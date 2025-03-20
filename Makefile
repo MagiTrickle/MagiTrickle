@@ -83,9 +83,9 @@ package:
 	echo 'Section: net' >> $(PKG_DIR)/control/control
 	echo 'Priority: optional' >> $(PKG_DIR)/control/control
 ifeq ($(PLATFORM),entware)
-	cp -r ./opt/entware $(PKG_DIR)/data/
+	cp -r ./opt/entware/* $(PKG_DIR)/data/
 else ifeq ($(PLATFORM),openwrt)
-	cp -r ./opt/default $(PKG_DIR)/data/
+	cp -r ./opt/default/* $(PKG_DIR)/data/
 endif
 	tar -C $(PKG_DIR)/control -czvf $(PKG_DIR)/control.tar.gz --owner=0 --group=0 .
 	tar -C $(PKG_DIR)/data -czvf $(PKG_DIR)/data.tar.gz --owner=0 --group=0 .
