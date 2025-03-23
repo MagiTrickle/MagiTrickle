@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -201,7 +202,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 	iface, err := netlink.LinkByName(r.ifaceName)
 	if err != nil {
 		if errors.As(err, &netlink.LinkNotFoundError{}) {
-			log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
+			log.Warn().Str("iface", r.ifaceName).Msg("interface not found, will retry later")
 			return nil
 		}
 		return fmt.Errorf("error while getting interface: %w", err)
@@ -211,6 +212,23 @@ func (r *IPSetToLink) insertIPRoute() error {
 		return nil
 	}
 
+	// Проверим, есть ли уже default маршрут в нужной таблице
+	existing, err := netlink.RouteListFiltered(nl.FAMILY_V4, &netlink.Route{
+		Table: r.table,
+	}, netlink.RT_FILTER_TABLE)
+	if err != nil {
+		return fmt.Errorf("error listing existing routes: %w", err)
+	}
+	for _, route := range existing {
+		if route.Dst == nil || route.Dst.IP.Equal(net.IPv4zero) {
+			// Default уже существует
+			log.Debug().Int("table", r.table).Msg("default route already exists in table")
+			r.ip4Route = &route
+			return nil
+		}
+	}
+
+	// Добавим default маршрут через нужный интерфейс
 	route := &netlink.Route{
 		LinkIndex: iface.Attrs().Index,
 		Table:     r.table,
@@ -218,15 +236,15 @@ func (r *IPSetToLink) insertIPRoute() error {
 	}
 	err = netlink.RouteAdd(route)
 	if err != nil {
-		// TODO: Нормально отлавливать ошибку
-		if err.Error() == "file exists" {
+		if os.IsExist(err) {
+			// Если маршрут уже существует
 			r.ip4Route = route
 			return nil
 		}
-		return fmt.Errorf("error while adding route: %w", err)
+		return fmt.Errorf("failed to add route: %w", err)
 	}
-	r.ip4Route = route
 
+	r.ip4Route = route
 	return nil
 }
 
