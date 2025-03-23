@@ -82,6 +82,11 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables, table string) 
 			if err != nil {
 				return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
 			}
+
+			err = ipt.InsertUnique("mangle", "OUTPUT", 1, "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
+			if err != nil {
+				return fmt.Errorf("failed to append rule to OUTPUT: %w", err)
+			}
 		}
 		// TODO: IPv6
 	}
