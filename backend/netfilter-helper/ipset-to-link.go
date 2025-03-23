@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -241,8 +240,8 @@ func (r *IPSetToLink) insertIPRoute() error {
 	}
 	err = netlink.RouteAdd(route)
 	if err != nil {
-		if os.IsExist(err) {
-			// Если маршрут уже существует
+		// TODO: Нормально отлавливать ошибку
+		if err.Error() == "file exists" {
 			r.ip4Route = route
 			return nil
 		}
