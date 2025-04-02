@@ -12,7 +12,6 @@ import (
 
 	"magitrickle/constant"
 
-	"github.com/rs/zerolog"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
 )
@@ -42,7 +41,7 @@ func (a *App) Start(ctx context.Context) error {
 	}
 	defer removePIDFile()
 
-	a.setupLogging()
+	SelectLogLevel(a.config.LogLevel)
 	a.initDNSMITM()
 
 	nfh, err := a.createNetfilterHelper()
@@ -102,31 +101,6 @@ func (a *App) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		}
-	}
-}
-
-func (a *App) setupLogging() {
-	switch a.config.LogLevel {
-	case "trace":
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	case "debug":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "info":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "warn":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case "error":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case "fatal":
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	case "panic":
-		zerolog.SetGlobalLevel(zerolog.PanicLevel)
-	case "nolevel":
-		zerolog.SetGlobalLevel(zerolog.NoLevel)
-	case "disabled":
-		zerolog.SetGlobalLevel(zerolog.Disabled)
-	default:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 }
 

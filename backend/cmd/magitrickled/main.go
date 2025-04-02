@@ -21,7 +21,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -131,8 +130,8 @@ func setupHTTP(a *app.App, apiRouter chi.Router, errChan chan error) (*http.Serv
 }
 
 func main() {
-	// Настройка zerolog
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	// Запуск zerolog
+	app.StartLogs()
 	log.Info().
 		Str("version", constant.Version).
 		Str("commit", constant.Commit).
