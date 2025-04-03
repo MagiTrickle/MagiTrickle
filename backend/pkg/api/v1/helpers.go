@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"magitrickle/api/types"
+	"github.com/Ponywka/MagiTrickle/backend/pkg/api/types"
 )
 
 func WriteJson(w http.ResponseWriter, httpCode int, data interface{}) {

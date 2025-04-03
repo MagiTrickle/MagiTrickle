@@ -6,10 +6,10 @@ import (
 	"net"
 	"sync/atomic"
 
-	dnsMitmProxy "magitrickle/dns-mitm-proxy"
-	"magitrickle/models"
-	netfilterHelper "magitrickle/netfilter-helper"
-	"magitrickle/records"
+	dnsMitmProxy "github.com/Ponywka/MagiTrickle/backend/dns-mitm-proxy"
+	"github.com/Ponywka/MagiTrickle/backend/models"
+	netfilterHelper "github.com/Ponywka/MagiTrickle/backend/netfilter-helper"
+	"github.com/Ponywka/MagiTrickle/backend/records"
 
 	"github.com/rs/zerolog/log"
 )

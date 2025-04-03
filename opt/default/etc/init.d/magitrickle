@@ -1,0 +1,32 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+export PATH="/usr/sbin:/sbin:/usr/bin:/bin"
+
+PROG=/usr/bin/magitrickled
+NAME=magitrickle
+DESC="DNS-based routing application"
+
+start_service() {
+    procd_open_instance
+    procd_set_param command $PROG
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+
+stop_service() {
+    procd_kill
+}
+
+restart_service() {
+    stop_service
+    start_service
+}
+
+reload_service() {
+    procd_reload
+}

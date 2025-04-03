@@ -1,0 +1,15 @@
+#!/bin/sh
+SOCKET_PATH="/var/run/magitrickle.sock"
+[ -S "$SOCKET_PATH" ] || exit
+
+BODY="{\"type\":\"$type\",\"table\":\"$table\"}"
+LENGTH=$(printf "%s" "$BODY" | wc -c)
+
+socat - UNIX-CONNECT:"$SOCKET_PATH" >/dev/null 2>&1 <<EOF
+POST /api/v1/system/hooks/netfilterd HTTP/1.1
+Host:
+Content-Type: application/json
+Content-Length: $LENGTH
+
+$BODY
+EOF

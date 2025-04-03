@@ -1,4 +1,4 @@
-module magitrickle
+module github.com/Ponywka/MagiTrickle
 
 go 1.21
 

@@ -15,8 +15,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"magitrickle/api/types"
-	"magitrickle/internal/app"
+	"github.com/Ponywka/MagiTrickle/backend/pkg/api/types"
+	"github.com/Ponywka/MagiTrickle/backend/pkg/app"
 )
 
 func setupHTTP(a *app.App, rootRouter chi.Router, errChan chan error) (*http.Server, error) {

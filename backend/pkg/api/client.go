@@ -8,7 +8,7 @@ import (
 	"net"
 	"net/http"
 
-	"magitrickle/api/types"
+	"github.com/Ponywka/MagiTrickle/backend/pkg/api/types"
 )
 
 type Client struct {

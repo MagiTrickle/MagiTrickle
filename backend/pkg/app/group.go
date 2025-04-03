@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"magitrickle/models"
-	netfilterHelper "magitrickle/netfilter-helper"
+	"github.com/Ponywka/MagiTrickle/backend/models"
+	netfilterHelper "github.com/Ponywka/MagiTrickle/backend/netfilter-helper"
 
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"

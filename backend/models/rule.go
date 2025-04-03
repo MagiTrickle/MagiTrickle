@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"magitrickle/api/types"
+	"github.com/Ponywka/MagiTrickle/backend/pkg/api/types"
 
 	"github.com/IGLOU-EU/go-wildcard/v2"
 )

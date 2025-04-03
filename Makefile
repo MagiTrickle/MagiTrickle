@@ -29,18 +29,29 @@ GO_FLAGS = GOOS=$(GOOS) GOARCH=$(GOARCH) GOMIPS=$(GOMIPS) GOARM=$(GOARM)
 GO_TAGS ?= kn
 ifeq ($(PLATFORM),entware)
 	GO_TAGS += entware
+else ifeq ($(PLATFORM),openwrt)
+	GO_TAGS += openwrt
 endif
 
 BUILD_DIR = ./.build
 PKG_DIR = $(BUILD_DIR)/$(TARGET)
-BIN_DIR = $(PKG_DIR)/data/opt/bin
+ifeq ($(PLATFORM),entware)
+    BIN_DIR = $(PKG_DIR)/data/opt/bin
+    SKINS_DIR = $(PKG_DIR)/data/opt/usr/share/magitrickle/skins
+    DEPENDS = libc, iptables, socat
+else ifeq ($(PLATFORM),openwrt)
+    BIN_DIR = $(PKG_DIR)/data/usr/bin
+    SKINS_DIR = $(PKG_DIR)/data/usr/share/magitrickle/skins
+    DEPENDS = +libc +iptables +socat
+endif
+
 PARAMS = -v -a -trimpath -ldflags="-X 'magitrickle/constant.Version=$(UPSTREAM_VERSION)$(PRERELEASE_POSTFIX)' -X 'magitrickle/constant.Commit=$(COMMIT)' -w -s" -tags "$(GO_TAGS)"
 
 all: clear build package
 
 clear:
-	echo $(shell git rev-parse --abbrev-ref HEAD)
-	rm -rf $(PKG_DIR)
+	@echo "Building on branch: $(shell git rev-parse --abbrev-ref HEAD)"
+	@rm -rf $(PKG_DIR)
 
 build_backend:
 	$(GO_FLAGS) go build -C ./backend $(PARAMS) -o ../$(BIN_DIR)/magitrickled ./cmd/magitrickled
@@ -49,14 +60,15 @@ build_backend:
 build_frontend_legacy:
 	cd ./frontend_legacy && npm install
 	cd ./frontend_legacy && npm run build
-	mkdir -p $(PKG_DIR)/data/opt/usr/share/magitrickle/skins/legacy
-	cp -r ./frontend_legacy/dist/* $(PKG_DIR)/data/opt/usr/share/magitrickle/skins/legacy/
+	mkdir -p $(SKINS_DIR)/legacy
+	cp -r ./frontend_legacy/dist/* $(SKINS_DIR)/legacy/
 
 build_frontend:
 	cd ./frontend && npm install
 	cd ./frontend && VITE_UPSTREAM_VERSION=$(UPSTREAM_VERSION) VITE_DEV=$(if $(strip $(PRERELEASE_POSTFIX)),true,false) npm run build
-	mkdir -p $(PKG_DIR)/data/opt/usr/share/magitrickle/skins/default
-	cp -r ./frontend/dist/* $(PKG_DIR)/data/opt/usr/share/magitrickle/skins/default/
+	mkdir -p $(SKINS_DIR)/default
+	cp -r ./frontend/dist/* $(SKINS_DIR)/default/
+	cp ./img/favicon.ico $(SKINS_DIR)/default/
 
 build: build_backend build_frontend_legacy build_frontend
 
@@ -70,8 +82,11 @@ package:
 	echo 'Description: $(APP_DESCRIPTION)' >> $(PKG_DIR)/control/control
 	echo 'Section: net' >> $(PKG_DIR)/control/control
 	echo 'Priority: optional' >> $(PKG_DIR)/control/control
-	echo 'Depends: libc, iptables, socat' >> $(PKG_DIR)/control/control
-	cp -r ./opt $(PKG_DIR)/data/
+ifeq ($(PLATFORM),entware)
+	cp -r ./opt/entware/* $(PKG_DIR)/data/
+else ifeq ($(PLATFORM),openwrt)
+	cp -r ./opt/default/* $(PKG_DIR)/data/
+endif
 	tar -C $(PKG_DIR)/control -czvf $(PKG_DIR)/control.tar.gz --owner=0 --group=0 .
 	tar -C $(PKG_DIR)/data -czvf $(PKG_DIR)/data.tar.gz --owner=0 --group=0 .
 	tar -C $(PKG_DIR) -czvf $(BUILD_DIR)/$(APP_NAME)_$(UPSTREAM_VERSION)$(PRERELEASE_POSTFIX)-$(PKG_REVISION)_$(TARGET).ipk --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz

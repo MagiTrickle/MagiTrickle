@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"strings"
 
-	"magitrickle/constant"
-	"magitrickle/models"
-	"magitrickle/models/config"
+	"github.com/Ponywka/MagiTrickle/backend/constant"
+	"github.com/Ponywka/MagiTrickle/backend/models"
+	"github.com/Ponywka/MagiTrickle/backend/models/config"
 
 	"gopkg.in/yaml.v3"
 )
