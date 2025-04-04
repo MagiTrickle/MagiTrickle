@@ -1,7 +1,7 @@
 <script lang="ts">
   import Select from "../common/Select.svelte";
   import { Locale, Github, Bug } from "../common/icons";
-  import { t, getLocale, setLocale, locales } from "../../data/locale.svelte";
+  import { t, locale, locales } from "../../data/locale.svelte";
   const version = import.meta.env.VITE_UPSTREAM_VERSION || "0.0.0";
   const isDev = import.meta.env.VITE_DEV?.toLowerCase() === "true";
 </script>
@@ -27,8 +27,7 @@
     <Locale size={22} />
     <Select
       options={Object.keys(locales).map((item) => ({ label: item, value: item }))}
-      selected={getLocale()}
-      onSelectedChange={(value) => setLocale(value)}
+      bind:selected={locale.current}
       style="width:55px"
     />
   </div> -->

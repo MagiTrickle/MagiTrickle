@@ -1,49 +1,27 @@
 <script lang="ts">
-  import { Collapsible } from "bits-ui";
-  import { scale, slide } from "svelte/transition";
+  import { scale } from "svelte/transition";
   import { onDestroy, onMount, untrack, tick } from "svelte";
-  import { InfiniteLoader, loaderState } from "svelte-infinite";
+  import { loaderState } from "svelte-infinite";
 
   import { parseConfig, type Group, type Rule } from "../../types";
-  import { defaultGroup, defaultRule } from "../../utils/defaults";
+  import { defaultGroup } from "../../utils/defaults";
   import { fetcher } from "../../utils/fetcher";
-  import { INTERFACES } from "../../data/interfaces.svelte";
-  import {
-    Delete,
-    Add,
-    GroupCollapse,
-    Upload,
-    Download,
-    Save,
-    MoveUp,
-    MoveDown,
-    Dots,
-    Check,
-    Toggle,
-  } from "../common/icons";
-  import Switch from "../common/Switch.svelte";
-  import Tooltip from "../common/Tooltip.svelte";
-  import RuleComponent from "../features/Rule.svelte";
-  import Button from "../common/Button.svelte";
-  import Select from "../common/Select.svelte";
   import { overlay, toast } from "../../utils/events";
-  import DropdownMenu from "../common/DropdownMenu.svelte";
+  import { persistedState } from "../../utils/persisted-state.svelte";
+  import { INTERFACES } from "../../data/interfaces.svelte";
+  import { Add, Upload, Download, Save } from "../common/icons";
+  import Tooltip from "../common/Tooltip.svelte";
+  import Button from "../common/Button.svelte";
+  import GroupComponent from "../features/Group.svelte";
 
-  const showLimit = 30;
-  const showBump = 40;
+  const INITIAL_RULES_LIMIT = 30 as const;
+  const INCREMENT_RULES_LIMIT = 40 as const;
 
   let data: Group[] = $state([]);
   let showed_limit: number[] = $state([]);
-  let showed_data: Group[] = $derived.by(() =>
-    data.map((group, index) => ({
-      ...group,
-      rules: group.rules.slice(0, showed_limit[index]),
-    })),
-  );
   let counter = $state(-2); // skip first update on init
   let valid_rules = $state(true);
-  let container_width = $state<number>(Infinity);
-  let is_desktop = $derived(container_width > 668);
+  let open_state = persistedState<Record<string, boolean>>("group_open_state", {});
 
   function onRuleDrop(event: CustomEvent) {
     const { from_group_index, from_rule_index, to_group_index, to_rule_index } = event.detail;
@@ -57,10 +35,8 @@
 
   function saveChanges() {
     if (counter === 0) return;
-
     overlay.show("saving changes...");
 
-    const el = document.getElementById("save-changes")!;
     fetcher
       .put("/groups?save=true", { groups: data })
       .then(() => {
@@ -73,16 +49,38 @@
       });
   }
 
+  function checkRulesValidityState() {
+    valid_rules = !document.querySelector(".rule input.invalid");
+  }
+
+  function initOpenState() {
+    for (const group of data) {
+      if (!open_state.current[group.id]) {
+        open_state.current[group.id] = false;
+      }
+    }
+  }
+
+  function cleanOrphanedOpenState() {
+    for (const key of Object.keys(open_state.current)) {
+      if (!data.some((group) => group.id === key)) {
+        delete open_state.current[key];
+      }
+    }
+  }
+
   onMount(async () => {
     data = (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
-    showed_limit = data.map((group) => (group.rules.length > showLimit ? showLimit : group.rules.length));
+    showed_limit = data.map((group) =>
+      group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
+    );
+    initOpenState();
+    setTimeout(cleanOrphanedOpenState, 5000);
     window.addEventListener("rule_drop", onRuleDrop);
-    window.addEventListener("beforeunload", unsavedChanges);
   });
 
   onDestroy(() => {
     window.removeEventListener("rule_drop", onRuleDrop);
-    window.removeEventListener("beforeunload", unsavedChanges);
   });
 
   $effect(() => {
@@ -94,15 +92,6 @@
     setTimeout(checkRulesValidityState, 10);
   });
 
-  function checkRulesValidityState() {
-    valid_rules = !document.querySelector(".rule input.invalid");
-  }
-
-  function deleteGroup(index: number) {
-    data.splice(index, 1);
-    showed_limit.splice(index, 1);
-  }
-
   async function addRuleToGroup(group_index: number, rule: Rule, focus = false) {
     data[group_index].rules.unshift(rule);
     showed_limit[group_index]++;
@@ -110,6 +99,7 @@
     await tick();
     const el = document.querySelector(`.rule[data-group-index="${group_index}"][data-index="0"]`);
     el?.querySelector<HTMLInputElement>("div.name input")?.focus();
+    el?.querySelector<HTMLInputElement>("div.pattern input")?.classList.add("invalid");
   }
 
   function deleteRuleFromGroup(group_index: number, rule_index: number) {
@@ -129,9 +119,18 @@
     showed_limit[to_group_index]++;
   }
 
-  function addGroup() {
-    data.push(defaultGroup());
-    showed_limit.push(showLimit);
+  async function addGroup() {
+    data.unshift(defaultGroup());
+    showed_limit.unshift(INITIAL_RULES_LIMIT);
+    open_state.current[data[0].id] = false;
+    await tick();
+    const el = document.querySelector(`.group-header[data-group-index="0"]`);
+    el?.querySelector<HTMLInputElement>("input.group-name")?.focus();
+  }
+
+  function deleteGroup(index: number) {
+    data.splice(index, 1);
+    showed_limit.splice(index, 1);
   }
 
   function groupMoveUp(index: number) {
@@ -178,13 +177,17 @@
       reader.onload = function (event) {
         try {
           let { groups } = parseConfig(event.target?.result as string);
-          for (let i = 0; i < groups.length; i++) {
-            if (!INTERFACES.includes(groups[i].interface)) {
-              groups[i].interface = INTERFACES.at(0) ?? ""; // fallback to first interface
-            }
-          }
+          // for (let i = 0; i < groups.length; i++) {
+          // if (!INTERFACES.includes(groups[i].interface)) {
+          //   groups[i].interface = INTERFACES.at(0) ?? ""; // fallback to first interface
+          // }
+          // }
           data = groups;
-          showed_limit = data.map((group) => (group.rules.length > showLimit ? showLimit : group.rules.length));
+          // TODO: eliminate mulitple groups iterations
+          showed_limit = data.map((group) =>
+            group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
+          );
+          initOpenState();
           toast.success("Config imported");
         } catch (error) {
           console.error("Error parsing CONFIG:", error); // why is this not writing to console?
@@ -201,28 +204,10 @@
       alert("Please select a CONFIG file to load.");
     }
   }
-  // FIXME: make group header droppable
-  // function handleDrop(state: DragDropState) {
-  //   const { sourceContainer, targetContainer } = state;
-
-  //   if (!targetContainer || sourceContainer === targetContainer) return;
-  //   const [, , from_group_index, from_rule_index] = sourceContainer.split(",");
-  //   const [, , to_group_index] = targetContainer.split(",");
-  //   window.dispatchEvent(
-  //     new CustomEvent("rule_drop", {
-  //       detail: {
-  //         from_group_index: +from_group_index,
-  //         from_rule_index: +from_rule_index,
-  //         to_group_index: +to_group_index,
-  //         to_rule_index: +data[+to_group_index].rules.length,
-  //       },
-  //     }),
-  //   );
-  // }
 
   async function loadMore(group_index: number): Promise<void> {
     if (showed_limit[group_index] >= data[group_index].rules.length) return;
-    showed_limit[group_index] += showBump;
+    showed_limit[group_index] += INCREMENT_RULES_LIMIT;
     if (showed_limit[group_index] > data[group_index].rules.length) {
       showed_limit[group_index] = data[group_index].rules.length;
       return;
@@ -230,6 +215,8 @@
     loaderState.loaded();
   }
 </script>
+
+<svelte:window onbeforeunload={unsavedChanges} />
 
 <div class="group-controls">
   <div class="group-controls-actions">
@@ -259,293 +246,24 @@
   </div>
 </div>
 
-<!-- FIXME: make group header droppable -->
-<!-- use:droppable={{
-  container: `${group.id},-,${group_index},-`,
-  callbacks: { onDrop: handleDrop },
-  }} -->
-
-<div bind:clientWidth={container_width}>
-  {#each showed_data as group, group_index (group.id)}
-    <div class="group" data-uuid={group.id}>
-      <Collapsible.Root open={false}>
-        <div class="group-header" data-group-index={group_index}>
-          <div class="group-left">
-            <label class="group-color" style="background: {group.color}">
-              <input type="color" bind:value={data[group_index].color} />
-            </label>
-            <input
-              type="text"
-              placeholder="group name..."
-              class="group-name"
-              bind:value={data[group_index].name}
-            />
-          </div>
-          <div class="group-actions">
-            <Select
-              options={INTERFACES.map((item) => ({ value: item, label: item }))}
-              bind:selected={data[group_index].interface}
-            />
-
-            {#if is_desktop}
-              <Tooltip value="Enable Group">
-                <Switch class="enable-group" bind:checked={data[group_index].enable} />
-              </Tooltip>
-              <Tooltip value="Delete Group">
-                <Button small onclick={() => deleteGroup(group_index)}>
-                  <Delete size={20} />
-                </Button>
-              </Tooltip>
-              <Tooltip value="Add Rule">
-                <Button small onclick={() => addRuleToGroup(group_index, defaultRule(), true)}>
-                  <Add size={20} />
-                </Button>
-              </Tooltip>
-              <Tooltip value="Move Up">
-                <Button small inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
-                  <MoveUp size={20} />
-                </Button>
-              </Tooltip>
-              <Tooltip value="Move Down">
-                <Button
-                  small
-                  inactive={group_index === data.length - 1}
-                  onclick={() => groupMoveDown(group_index)}
-                >
-                  <MoveDown size={20} />
-                </Button>
-              </Tooltip>
-            {:else}
-              <DropdownMenu>
-                {#snippet trigger()}
-                  <Dots size={20} />
-                {/snippet}
-                {#snippet item1()}
-                  <Button
-                    general
-                    onclick={() => (data[group_index].enable = !data[group_index].enable)}
-                  >
-                    <div class="dd-icon"><Toggle size={20} /></div>
-                    <div class="dd-label">Enable Group</div>
-                    <div class="dd-check">
-                      {#if data[group_index].enable}
-                        <Check size={16} />
-                      {/if}
-                    </div>
-                  </Button>
-                {/snippet}
-                {#snippet item2()}
-                  <Button general onclick={() => deleteGroup(group_index)}>
-                    <div class="dd-icon"><Delete size={20} /></div>
-                    <div class="dd-label">Delete Group</div>
-                  </Button>
-                {/snippet}
-                {#snippet item3()}
-                  <Button general onclick={() => addRuleToGroup(group_index, defaultRule(), true)}>
-                    <div class="dd-icon"><Add size={20} /></div>
-                    <div class="dd-label">Add Rule</div>
-                  </Button>
-                {/snippet}
-                {#snippet item4()}
-                  <Button
-                    general
-                    inactive={group_index === 0}
-                    onclick={() => groupMoveUp(group_index)}
-                  >
-                    <div class="dd-icon"><MoveUp size={20} /></div>
-                    <div class="dd-label">Move Up</div>
-                  </Button>
-                {/snippet}
-                {#snippet item5()}
-                  <Button
-                    general
-                    inactive={group_index === data.length - 1}
-                    onclick={() => groupMoveDown(group_index)}
-                  >
-                    <div class="dd-icon"><MoveDown size={20} /></div>
-                    <div class="dd-label">Move Down</div>
-                  </Button>
-                {/snippet}
-              </DropdownMenu>
-            {/if}
-
-            <Tooltip value="Collapse Group">
-              <Collapsible.Trigger>
-                <GroupCollapse />
-              </Collapsible.Trigger>
-            </Tooltip>
-          </div>
-        </div>
-
-        <Collapsible.Content>
-          <div transition:slide>
-            {#if group.rules.length > 0}
-              <div class="group-rules-header">
-                <div class="group-rules-header-column total">
-                  #{data[group_index].rules.length}
-                </div>
-                <div class="group-rules-header-column">Name</div>
-                <div class="group-rules-header-column">Type</div>
-                <div class="group-rules-header-column">Pattern</div>
-                <div class="group-rules-header-column">Enabled</div>
-                <div></div>
-              </div>
-            {/if}
-            <div class="group-rules">
-              <InfiniteLoader triggerLoad={() => loadMore(group_index)} loopDetectionTimeout={10}>
-                {#each group.rules as rule, rule_index (rule.id)}
-                  <RuleComponent
-                    key={rule.id}
-                    bind:rule={data[group_index].rules[rule_index]}
-                    {rule_index}
-                    {group_index}
-                    rule_id={rule.id}
-                    group_id={group.id}
-                    onChangeIndex={changeRuleIndex}
-                    onDelete={deleteRuleFromGroup}
-                    style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
-                  />
-                {/each}
-              </InfiniteLoader>
-            </div>
-          </div>
-        </Collapsible.Content>
-      </Collapsible.Root>
-    </div>
-  {/each}
-</div>
+{#each data as group, group_index (group.id)}
+  <GroupComponent
+    bind:group={data[group_index]}
+    {group_index}
+    bind:total_groups={data.length}
+    bind:showed_limit={showed_limit[group_index]}
+    bind:open={open_state.current[group.id]}
+    {deleteGroup}
+    {addRuleToGroup}
+    {deleteRuleFromGroup}
+    {changeRuleIndex}
+    {groupMoveUp}
+    {groupMoveDown}
+    {loadMore}
+  />
+{/each}
 
 <style>
-  .group {
-    margin-bottom: 1rem;
-    background-color: var(--bg-medium);
-    border-radius: 0.5rem;
-    border: 1px solid var(--bg-light-extra);
-  }
-  .group:last-child {
-    margin-bottom: 0;
-  }
-
-  .group-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    background-color: var(--bg-light);
-    position: relative;
-  }
-
-  .group-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .group-color {
-    display: inline-block;
-    width: 2rem;
-    height: calc(100% + 1px);
-    border-top-left-radius: 0.5rem;
-    border-bottom-left-radius: 0.5rem;
-    position: absolute;
-    left: 0px;
-    top: -1px;
-    overflow: hidden;
-    cursor: pointer;
-  }
-
-  .group-color input {
-    margin-left: 0.5rem;
-  }
-
-  .group-name {
-    & {
-      border: none;
-      background-color: transparent;
-      font-size: 1.3rem;
-      font-weight: 600;
-      font-family: var(--font);
-      color: var(--text);
-      border-bottom: 1px solid transparent;
-      position: relative;
-      top: 0.1rem;
-      margin-left: 2rem;
-    }
-
-    &:focus-visible {
-      outline: none;
-      border-bottom: 1px solid var(--accent);
-    }
-  }
-
-  .group-actions {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.2rem;
-  }
-
-  .group-actions :global([data-switch-root]) {
-    margin: 0 0.3rem;
-  }
-
-  .group-rules-header {
-    display: grid;
-    grid-template-columns: 4rem 2.1fr 1fr 3fr 1fr;
-    justify-content: center;
-    align-items: center;
-
-    font-size: 0.9rem;
-    color: var(--text-2);
-    padding-top: 0.6rem;
-    padding-bottom: 0.2rem;
-    border-bottom: 1px solid var(--bg-light-extra);
-  }
-
-  .group-rules-header-column {
-    & {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    &.total {
-      justify-content: start;
-      margin-left: 0.5rem;
-    }
-
-    &.total :global(svg) {
-      position: relative;
-      top: -1px;
-    }
-  }
-
-  :global {
-    [data-collapsible-trigger] {
-      & {
-        color: var(--text-2);
-        background-color: transparent;
-        border: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0.2rem;
-        border-radius: 0.5rem;
-        cursor: pointer;
-      }
-
-      &:hover {
-        background-color: var(--bg-dark);
-        outline: 1px solid var(--bg-light-extra);
-        color: var(--text);
-      }
-    }
-    .infinite-intersection-target {
-      padding-block: 0 !important;
-    }
-  }
-
   .group-controls {
     display: flex;
     align-items: end;
@@ -561,60 +279,5 @@
     justify-content: end;
     gap: 0.5rem;
     width: 100%;
-  }
-
-  input[type="color"] {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    background: transparent;
-    width: auto;
-    height: 0;
-    padding: 0;
-    border: none;
-    cursor: pointer;
-  }
-
-  @media (max-width: 700px) {
-    .group-header {
-      display: flex;
-      flex-direction: column;
-      align-items: start;
-      justify-content: center;
-    }
-
-    .group-left {
-      & {
-        width: 100%;
-      }
-      & input[type="text"] {
-        width: calc(100% - 2rem);
-        margin-left: 2.5rem;
-      }
-      & label {
-        height: calc(100% + 1px);
-      }
-    }
-
-    .group-actions {
-      width: calc(100% - 2rem);
-      justify-content: end;
-      margin-left: 2rem;
-    }
-
-    :global(.group-actions > *:nth-child(1)) {
-      margin-right: auto;
-      width: 150px;
-    }
-    :global(.group-actions > *:nth-child(2)) {
-      margin-left: auto;
-    }
-
-    .group-rules-header {
-      height: 1px;
-      & .group-rules-header-column {
-        display: none;
-      }
-    }
   }
 </style>

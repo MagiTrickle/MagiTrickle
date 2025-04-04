@@ -1,50 +1,56 @@
 <script lang="ts">
-  import { Tooltip } from "bits-ui";
   import type { Snippet } from "svelte";
 
-  // TODO: add animation
-
   type Props = {
-    value?: string;
+    value: string;
     children: Snippet;
   };
+
   let { value, children }: Props = $props();
 </script>
 
-<Tooltip.Provider delayDuration={50}>
-  <Tooltip.Root>
-    <Tooltip.Trigger>
-      {@render children()}
-    </Tooltip.Trigger>
-    <Tooltip.Content sideOffset={5}>
-      {value}
-    </Tooltip.Content>
-  </Tooltip.Root>
-</Tooltip.Provider>
+<div data-tooltip={value}>
+  {@render children()}
+</div>
 
 <style>
-  :global {
-    [data-tooltip-trigger] {
-      background: transparent;
-      border: none;
-      padding: 0;
-      margin: 0;
-      height: fit-content;
+  [data-tooltip] {
+    & {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
-    [data-tooltip-content] {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 0.5rem;
+    &::after {
+      position: absolute;
+      bottom: calc(100% + 5px);
+      left: 50%;
+      transform: translateX(-50%);
+      content: attr(data-tooltip);
       border: 1px solid var(--bg-light-extra);
+      border-radius: 0.5rem;
       background-color: var(--bg-dark);
-      padding: 0.1rem 0.5rem 0.1rem 0.5rem;
+      padding: 0.2rem 0.5rem 0.1rem 0.5rem;
       font-size: smaller;
       color: var(--text);
+      white-space: nowrap;
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover::after {
+        visibility: visible;
+        opacity: 1;
+      }
+    }
+
+    @media (max-width: 700px) {
+      &:after {
+        display: none;
+      }
     }
   }
 </style>

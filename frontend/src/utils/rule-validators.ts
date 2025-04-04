@@ -1,8 +1,8 @@
 export function isValidWildcard(pattern: string): boolean {
   return (
-    /^(\*\.)?([a-zA-Z0-9](?![\.\-])[a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9](?![\.\-])[a-zA-Z0-9\-]*[a-zA-Z0-9])+$/.test(
+    /^(\*)?([a-zA-Z0-9](?![\.\-])[a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9](?![\.\-])[a-zA-Z0-9\-]*[a-zA-Z0-9])+$/.test(
       pattern
-    ) || /^(\*\.)?[a-zA-Z0-9](?![\.\-])[a-zA-Z0-9\-]*[a-zA-Z0-9]$/.test(pattern)
+    ) || /^(\*)?[a-zA-Z0-9](?![\.\-])[a-zA-Z0-9\-]*[a-zA-Z0-9]$/.test(pattern)
   );
 }
 

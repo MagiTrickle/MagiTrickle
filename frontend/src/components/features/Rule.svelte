@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { draggable, droppable, type DragDropState } from "../actions/dnd";
+  import { droppable, draggable } from "../actions/dnd";
   import { RULE_TYPES, type Rule } from "../../types";
   import Switch from "../common/Switch.svelte";
   import Tooltip from "../common/Tooltip.svelte";
@@ -36,7 +36,6 @@
   }: Props = $props();
 
   let input: HTMLInputElement;
-  let is_mobile = $state(window.screen.width < 700);
 
   function patternValidation() {
     if (
@@ -49,18 +48,21 @@
     }
   }
 
-  function handleDrop(state: DragDropState) {
-    const { sourceContainer, targetContainer } = state;
-    if (!targetContainer || sourceContainer === targetContainer) return;
-    const [, , from_group_index, from_rule_index] = sourceContainer.split(",");
-    const [, , to_group_index, to_rule_index] = targetContainer.split(",");
+  type DnDTransferData = {
+    rule_id: string;
+    group_id: string;
+    rule_index: number;
+    group_index: number;
+  };
+
+  function handlerDrop(source: DnDTransferData, target: DnDTransferData) {
     window.dispatchEvent(
       new CustomEvent("rule_drop", {
         detail: {
-          from_group_index: +from_group_index,
-          from_rule_index: +from_rule_index,
-          to_group_index: +to_group_index,
-          to_rule_index: +to_rule_index,
+          from_group_index: source.group_index,
+          from_rule_index: source.rule_index,
+          to_group_index: target.group_index,
+          to_rule_index: target.rule_index,
         },
       }),
     );
@@ -85,17 +87,16 @@
   data-group-index={group_index}
   data-uuid={rule_id}
   data-group-uuid={group_id}
+  {...rest}
   use:draggable={{
-    container: `${group_id},${rule_id},${group_index},${rule_index}`,
-    dragData: { rule_id, group_id, rule_index, group_index },
-    interactive: ["[data-select-item]", ".interactive"],
-    bypass: is_mobile,
+    data: { rule_id, rule_index, group_id, group_index },
+    scope: "rule",
+    onDrop: handlerDrop,
   }}
   use:droppable={{
-    container: `${group_id},${rule_id},${group_index},${rule_index}`,
-    callbacks: { onDrop: handleDrop },
+    data: { rule_id, rule_index, group_id, group_index },
+    scope: "rule",
   }}
-  {...rest}
 >
   <div class="grip" data-index={rule_index} data-group-index={group_index}><Grip /></div>
   <div class="name">
@@ -118,7 +119,7 @@
     <input
       type="text"
       placeholder="rule pattern..."
-      class="table-input pattern-input interactive"
+      class="table-input pattern-input"
       bind:value={rule.rule}
       bind:this={input}
       oninput={patternValidation}
@@ -129,7 +130,7 @@
   </div>
   <div class="actions">
     <Tooltip value="Enable Rule">
-      <Switch bind:checked={rule.enable} class="interactive" />
+      <Switch bind:checked={rule.enable} />
     </Tooltip>
     <Tooltip value="Delete Rule">
       <Button
@@ -137,7 +138,6 @@
         onclick={() => onDelete?.(group_index, rule_index)}
         data-index={rule_index}
         data-group-index={group_index}
-        class="interactive"
       >
         <Delete size={20} />
       </Button>
@@ -153,9 +153,10 @@
     padding: 0.1rem;
   }
 
-  /* .rule:global(.drag-over) {
+  .rule:global(.dragover) {
     outline: 1px solid var(--accent);
-  } */
+    box-shadow: inset 0 0 5px 0 var(--accent);
+  }
 
   .table-input {
     & {

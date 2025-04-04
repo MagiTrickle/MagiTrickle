@@ -13,9 +13,9 @@
   };
 
   let { options, selected = $bindable(), onValueChange, ...rest }: Props = $props();
-  const selected_label = $derived(
-    selected ? options.find((option) => option.value === selected)?.label : "...",
-  );
+  // const selected_label = $derived(
+  //   selected ? options.find((option) => option.value === selected)?.label : selected,
+  // );
 </script>
 
 <div class="container" {...rest}>
@@ -23,7 +23,7 @@
     <Select.Trigger aria-label="...">
       <div class="selected">
         <div class="selected-value">
-          {selected_label}
+          {selected}
         </div>
         <div class="selected-open">
           <SelectOpen size={16} />

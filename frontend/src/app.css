@@ -44,15 +44,15 @@ html {
   font-family: var(--font);
   font-size: var(--font-size-base);
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: overlay;
   scrollbar-gutter: stable both-edges;
 }
 
 body {
   background-color: var(--bg-dark);
-  margin-bottom: 0;
-  padding-right: 0 !important;
-  margin-right: 8px !important;
+  margin: 0;
+  padding: 0;
 }
 
 *::-webkit-scrollbar {

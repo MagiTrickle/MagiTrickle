@@ -70,6 +70,7 @@ Deno.test("wildcard", () => {
   strictEqual(isValidWildcard("*."), false);
   strictEqual(isValidWildcard("*.domain"), true);
   strictEqual(isValidWildcard("domain"), true);
+  strictEqual(isValidWildcard("*domain.com"), true);
 });
 
 Deno.test("namespace", () => {

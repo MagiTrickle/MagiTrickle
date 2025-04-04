@@ -23,3 +23,4 @@ export { default as CircleX } from "lucide-svelte/icons/circle-x";
 export { default as CircleInfo } from "lucide-svelte/icons/info";
 export { default as Dots } from "lucide-svelte/icons/ellipsis";
 export { default as Toggle } from "lucide-svelte/icons/toggle-left";
+export { default as ToTop } from "lucide-svelte/icons/arrow-up-to-line";

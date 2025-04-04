@@ -3,8 +3,9 @@
   import Groups from "./blocks/Groups.svelte";
   import HeaderSettings from "./blocks/HeaderSettings.svelte";
   import Logs from "./blocks/Logs.svelte";
-  import Overlay from "./blocks/Overlay.svelte";
-  import Toast from "./blocks/Toast.svelte";
+  import Overlay from "./features/Overlay.svelte";
+  import Toast from "./features/Toast.svelte";
+  import ScrollToTop from "./features/ScrollToTop.svelte";
   // import SettingsPage from "./blocks/Settings.svelte";
 
   let active_tab = $state("groups");
@@ -15,6 +16,7 @@
 
 <Toast />
 <Overlay />
+<ScrollToTop />
 
 <main>
   <Tabs.Root bind:value={active_tab}>
@@ -48,6 +50,7 @@
     flex-direction: column;
     align-items: center;
     margin-bottom: 2rem;
+    padding: 0.3rem;
   }
 
   nav {
