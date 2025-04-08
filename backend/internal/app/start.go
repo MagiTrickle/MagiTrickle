@@ -45,21 +45,6 @@ func (a *App) Start(ctx context.Context) error {
 
 	a.startDNSListeners(newCtx, errChan)
 
-	interfaceAddrs, err := a.getInterfaceAddresses()
-	if err != nil {
-		return err
-	}
-
-	if !a.config.DNSProxy.DisableRemap53 {
-		a.dnsOverrider = a.nfHelper.PortRemap("DNSOR", 53, a.config.DNSProxy.Host.Port, interfaceAddrs)
-		if err := a.dnsOverrider.Enable(); err != nil {
-			return fmt.Errorf("failed to override DNS: %v", err)
-		}
-		defer func() {
-			_ = a.dnsOverrider.Disable()
-		}()
-	}
-
 	for _, group := range a.groups {
 		if err := group.Enable(); err != nil {
 			return fmt.Errorf("failed to enable group: %w", err)

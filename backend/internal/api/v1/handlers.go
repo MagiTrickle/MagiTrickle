@@ -41,11 +41,6 @@ func (h *Handler) NetfilterDHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Debug().Str("type", req.Type).Str("table", req.Table).Msg("netfilter.d event")
-	if h.app.DnsOverrider() != nil {
-		if err := h.app.DnsOverrider().NetfilterDHook(req.Type, req.Table); err != nil {
-			log.Error().Err(err).Msg("error fixing iptables after netfilter.d")
-		}
-	}
 	for _, group := range h.app.Groups() {
 		if err := group.NetfilterDHook(req.Type, req.Table); err != nil {
 			log.Error().Err(err).Msg("error while fixing iptables in group")

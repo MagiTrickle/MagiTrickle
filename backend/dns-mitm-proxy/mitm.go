@@ -2,111 +2,95 @@ package dnsMitmProxy
 
 import (
 	"context"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"net"
 	"time"
 
+	"github.com/florianl/go-nfqueue"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/mdlayher/netlink"
 	"github.com/miekg/dns"
 	"github.com/rs/zerolog/log"
 )
 
-type DNSMITMProxy struct {
-	UpstreamDNSAddress string
-	UpstreamDNSPort    uint16
+/*
+	TODO: Add to autoinsert
+	iptables -t mangle -A PREROUTING -p udp --dport 53 -j NFQUEUE --queue-num 1000 --queue-bypass
+	iptables -t mangle -A POSTROUTING -p udp --sport 53 -j NFQUEUE --queue-num 1001 --queue-bypass
+*/
 
-	RequestHook  func(net.Addr, dns.Msg, string) (*dns.Msg, *dns.Msg, error)
-	ResponseHook func(net.Addr, dns.Msg, dns.Msg, string) (*dns.Msg, error)
+var nfqConfigDefault = nfqueue.Config{
+	MaxPacketLen: 0xFFFF,
+	MaxQueueLen:  0xFF,
+	Copymode:     nfqueue.NfQnlCopyPacket,
+	WriteTimeout: 50 * time.Millisecond,
 }
 
-func (p DNSMITMProxy) requestDNS(req []byte, network string) ([]byte, error) {
-	upstreamConn, err := net.Dial(network, fmt.Sprintf("%s:%d", p.UpstreamDNSAddress, p.UpstreamDNSPort))
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial DNS upstream: %w", err)
-	}
-	defer func() { _ = upstreamConn.Close() }()
+type ipVersion byte
 
-	err = upstreamConn.SetDeadline(time.Now().Add(time.Second * 5))
-	if err != nil {
-		return nil, fmt.Errorf("failed to set deadline: %w", err)
-	}
+const (
+	ipVersionUnknown ipVersion = iota
+	ipVersion4
+	ipVersion6
+)
 
-	if network == "tcp" {
-		err = binary.Write(upstreamConn, binary.BigEndian, uint16(len(req)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to write length: %w", err)
-		}
-	}
+type transport byte
 
-	n, err := upstreamConn.Write(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to write request: %w", err)
-	}
+const (
+	transportUnknown transport = iota
+	transportUDP
+	transportTCP
+)
 
-	var resp []byte
-	if network == "tcp" {
-		var respLen uint16
-		err = binary.Read(upstreamConn, binary.BigEndian, &respLen)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read length: %w", err)
-		}
-		resp = make([]byte, respLen)
-	} else {
-		resp = make([]byte, 512)
-	}
+type direction byte
 
-	n, err = upstreamConn.Read(resp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
+const (
+	directionUnknown direction = iota
+	directionInbound
+	directionOutbound
+)
 
-	return resp[:n], nil
+type DNSMITM struct {
+	RequestHook  func(net.IP, net.IP, string, dns.Msg) (*dns.Msg, error)
+	ResponseHook func(net.IP, net.IP, string, dns.Msg) (*dns.Msg, error)
 }
 
-func (p DNSMITMProxy) processReq(clientAddr net.Addr, req []byte, network string) ([]byte, error) {
-	var reqMsg dns.Msg
-	if p.RequestHook != nil || p.ResponseHook != nil {
+func (p DNSMITM) processReq(clientAddr net.IP, dnsAddr net.IP, network string, req []byte) ([]byte, error) {
+	if p.RequestHook != nil {
+		var reqMsg dns.Msg
 		err := reqMsg.Unpack(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse request: %w", err)
 		}
-	}
 
-	if p.RequestHook != nil {
-		modifiedReq, modifiedResp, err := p.RequestHook(clientAddr, reqMsg, network)
+		modifiedReq, err := p.RequestHook(clientAddr, dnsAddr, network, reqMsg)
 		if err != nil {
 			return nil, fmt.Errorf("request hook error: %w", err)
 		}
-		if modifiedResp != nil {
-			resp, err := modifiedResp.Pack()
-			if err != nil {
-				return nil, fmt.Errorf("failed to send modified response: %w", err)
-			}
-			return resp, nil
-		}
+
 		if modifiedReq != nil {
 			reqMsg = *modifiedReq
 			req, err = reqMsg.Pack()
 			if err != nil {
 				return nil, fmt.Errorf("failed to pack modified request: %w", err)
 			}
+			return req, nil
 		}
 	}
 
-	resp, err := p.requestDNS(req, network)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
+	return nil, nil
+}
 
+func (p DNSMITM) processResp(clientAddr net.IP, dnsAddr net.IP, network string, resp []byte) ([]byte, error) {
 	if p.ResponseHook != nil {
 		var respMsg dns.Msg
-		err = respMsg.Unpack(resp)
+		err := respMsg.Unpack(resp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		modifiedResp, err := p.ResponseHook(clientAddr, reqMsg, respMsg, network)
+		modifiedResp, err := p.ResponseHook(clientAddr, dnsAddr, network, respMsg)
 		if err != nil {
 			return nil, fmt.Errorf("response hook error: %w", err)
 		}
@@ -119,108 +103,230 @@ func (p DNSMITMProxy) processReq(clientAddr net.Addr, req []byte, network string
 		}
 	}
 
-	return resp, nil
+	return nil, nil
 }
 
-func (p DNSMITMProxy) ListenTCP(ctx context.Context, addr *net.TCPAddr) error {
-	listener, err := net.ListenTCP("tcp", addr)
+func (p DNSMITM) processPacket(nf *nfqueue.Nfqueue, a nfqueue.Attribute, direction direction) int {
+	var packet gopacket.Packet
+	var ipLayer gopacket.Layer
+	ipVersion := func() ipVersion {
+		packet = gopacket.NewPacket(*a.Payload, layers.LayerTypeIPv4, gopacket.Default)
+		ipLayer = packet.Layer(layers.LayerTypeIPv4)
+		if ipLayer != nil {
+			return ipVersion4
+		}
+		packet = gopacket.NewPacket(*a.Payload, layers.LayerTypeIPv6, gopacket.Default)
+		ipLayer = packet.Layer(layers.LayerTypeIPv6)
+		if ipLayer != nil {
+			return ipVersion6
+		}
+		return 0
+	}()
+
+	var transportLayer gopacket.Layer
+	transport := func() transport {
+		transportLayer = packet.Layer(layers.LayerTypeUDP)
+		if transportLayer != nil {
+			return transportUDP
+		}
+		transportLayer = packet.Layer(layers.LayerTypeTCP)
+		if transportLayer != nil {
+			return transportTCP
+		}
+		return 0
+	}()
+
+	if ipVersion == 0 || transport == 0 {
+		log.Error().Msg("failed to detect IP or transport layer")
+		nf.SetVerdict(*a.PacketID, nfqueue.NfAccept)
+		return 0
+	}
+
+	var ipv4 *layers.IPv4
+	var ipv6 *layers.IPv6
+	var clientAddr net.IP
+	var dnsAddr net.IP
+	switch ipVersion {
+	case ipVersion4:
+		ipv4 = ipLayer.(*layers.IPv4)
+		switch direction {
+		case directionInbound:
+			clientAddr = ipv4.SrcIP
+			dnsAddr = ipv4.DstIP
+		case directionOutbound:
+			clientAddr = ipv4.DstIP
+			dnsAddr = ipv4.SrcIP
+		}
+	case ipVersion6:
+		ipv6 = ipLayer.(*layers.IPv6)
+		switch direction {
+		case directionInbound:
+			clientAddr = ipv6.SrcIP
+			dnsAddr = ipv6.DstIP
+		case directionOutbound:
+			clientAddr = ipv6.DstIP
+			dnsAddr = ipv6.SrcIP
+		}
+	}
+
+	var udp *layers.UDP
+	var tcp *layers.TCP
+	switch transport {
+	case transportUDP:
+		udp = transportLayer.(*layers.UDP)
+	case transportTCP:
+		tcp = transportLayer.(*layers.TCP)
+	}
+
+	var newPayload []byte
+	var err error
+	switch transport {
+	case transportUDP:
+		switch direction {
+		case directionInbound:
+			newPayload, err = p.processReq(clientAddr, dnsAddr, "udp", udp.Payload)
+		case directionOutbound:
+			newPayload, err = p.processResp(clientAddr, dnsAddr, "udp", udp.Payload)
+		}
+	case transportTCP:
+		switch direction {
+		case directionInbound:
+			newPayload, err = p.processReq(clientAddr, dnsAddr, "tcp", tcp.Payload)
+		case directionOutbound:
+			newPayload, err = p.processResp(clientAddr, dnsAddr, "tcp", tcp.Payload)
+		}
+	}
 	if err != nil {
-		return fmt.Errorf("failed to listen tcp port: %v", err)
+		log.Error().Err(err).Msg("failed to process packet")
+		nf.SetVerdict(*a.PacketID, nfqueue.NfAccept)
+		return 0
 	}
-	defer func() { _ = listener.Close() }()
-
-	for {
-		// Exit if context is done
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Error().Err(err).Msg("tcp connection error")
-			continue
-		}
-
-		go func(clientConn net.Conn) {
-			defer func() { _ = clientConn.Close() }()
-
-			var respLen uint16
-			err = binary.Read(clientConn, binary.BigEndian, &respLen)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to read length")
-				return
-			}
-
-			req := make([]byte, int(respLen))
-			_, err = clientConn.Read(req)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to read tcp request")
-				return
-			}
-
-			resp, err := p.processReq(clientConn.RemoteAddr(), req, "tcp")
-			if err != nil {
-				var networkErr net.Error
-				if errors.As(err, &networkErr) && networkErr.Timeout() {
-					log.Warn().Err(err).Msg("connection deadline exceeded")
-				} else {
-					log.Error().Err(err).Msg("failed to process request")
-				}
-				return
-			}
-
-			err = binary.Write(clientConn, binary.BigEndian, uint16(len(resp)))
-			if err != nil {
-				log.Error().Err(err).Msg("failed to send length")
-				return
-			}
-			_, err = clientConn.Write(resp)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to send response")
-				return
-			}
-		}(conn)
+	if newPayload == nil {
+		nf.SetVerdict(*a.PacketID, nfqueue.NfAccept)
+		return 0
 	}
+
+	fmt.Printf("%x\n", newPayload)
+
+	var newIPLayer gopacket.NetworkLayer
+	var newIPSerializableLayer gopacket.SerializableLayer
+	switch ipVersion {
+	case ipVersion4:
+		newIPv4 := &layers.IPv4{
+			Version:    ipv4.Version,
+			IHL:        ipv4.IHL,
+			TOS:        ipv4.TOS,
+			Id:         ipv4.Id,
+			Flags:      ipv4.Flags,
+			FragOffset: ipv4.FragOffset,
+			TTL:        ipv4.TTL,
+			Protocol:   ipv4.Protocol,
+			SrcIP:      ipv4.SrcIP,
+			DstIP:      ipv4.DstIP,
+			//Options:    ipv4.Options,
+			//Padding:    ipv4.Padding,
+		}
+		newIPLayer = newIPv4
+		newIPSerializableLayer = newIPv4
+	case ipVersion6:
+		newIPv6 := &layers.IPv6{
+			Version:      ipv6.Version,
+			TrafficClass: ipv6.TrafficClass,
+			FlowLabel:    ipv6.FlowLabel,
+			NextHeader:   ipv6.NextHeader,
+			HopLimit:     ipv6.HopLimit,
+			SrcIP:        ipv6.SrcIP,
+			DstIP:        ipv6.DstIP,
+			//HopByHop:     ipv6.HopByHop,
+		}
+		newIPLayer = newIPv6
+		newIPSerializableLayer = newIPv6
+	}
+
+	var newTransportSerializableLayer gopacket.SerializableLayer
+	switch transport {
+	case transportUDP:
+		newUDP := &layers.UDP{
+			SrcPort: udp.SrcPort,
+			DstPort: udp.DstPort,
+		}
+		newUDP.SetNetworkLayerForChecksum(newIPLayer)
+		newTransportSerializableLayer = newUDP
+	case transportTCP:
+		newTCP := &layers.TCP{
+			SrcPort: tcp.SrcPort,
+			DstPort: tcp.DstPort,
+		}
+		newTCP.SetNetworkLayerForChecksum(newIPLayer)
+		newTransportSerializableLayer = newTCP
+	}
+
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		FixLengths:       true,
+		ComputeChecksums: true,
+	}
+	err = gopacket.SerializeLayers(buf, opts,
+		newIPSerializableLayer,
+		newTransportSerializableLayer,
+		gopacket.Payload(newPayload),
+	)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to serialize packet")
+		nf.SetVerdict(*a.PacketID, nfqueue.NfAccept)
+		return 0
+	}
+
+	// Отправляем модифицированный пакет
+	nf.SetVerdictModPacket(*a.PacketID, nfqueue.NfAccept, buf.Bytes())
+	return 0
 }
 
-func (p DNSMITMProxy) ListenUDP(ctx context.Context, addr *net.UDPAddr) error {
-	conn, err := net.ListenUDP("udp", addr)
+func (p DNSMITM) Serve(ctx context.Context) error {
+	nfInboundConfig := nfqConfigDefault
+	nfInboundConfig.NfQueue = 1000
+	nfI, err := nfqueue.Open(&nfInboundConfig)
 	if err != nil {
-		return fmt.Errorf("failed to listen udp port: %v", err)
+		return fmt.Errorf("nfqueue open: %w", err)
 	}
-	defer func() { _ = conn.Close() }()
+	defer nfI.Close()
 
-	for {
-		// Exit if context is done
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		req := make([]byte, 512)
-		n, clientAddr, err := conn.ReadFromUDP(req)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to read udp request")
-			continue
-		}
-		req = req[:n]
-
-		go func(clientConn *net.UDPConn, clientAddr *net.UDPAddr) {
-			resp, err := p.processReq(clientAddr, req, "udp")
-			if err != nil {
-				var networkErr net.Error
-				if errors.As(err, &networkErr) && networkErr.Timeout() {
-					log.Warn().Err(err).Msg("connection deadline exceeded")
-				} else {
-					log.Error().Err(err).Msg("failed to process request")
-				}
-				return
-			}
-
-			_, err = clientConn.WriteToUDP(resp, clientAddr)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to send response")
-				return
-			}
-		}(conn, clientAddr)
+	if err := nfI.SetOption(netlink.NoENOBUFS, true); err != nil {
+		return fmt.Errorf("failed to set netlink option %v: %w", netlink.NoENOBUFS, err)
 	}
+
+	err = nfI.RegisterWithErrorFunc(ctx, func(a nfqueue.Attribute) int {
+		return p.processPacket(nfI, a, directionInbound)
+	}, func(e error) int {
+		fmt.Println(err)
+		return -1
+	})
+	if err != nil {
+		return err
+	}
+
+	nfOutboundConfig := nfqConfigDefault
+	nfOutboundConfig.NfQueue = 1001
+	nfO, err := nfqueue.Open(&nfOutboundConfig)
+	if err != nil {
+		return fmt.Errorf("nfqueue open: %w", err)
+	}
+	defer nfO.Close()
+
+	if err := nfO.SetOption(netlink.NoENOBUFS, true); err != nil {
+		return fmt.Errorf("failed to set netlink option %v: %w", netlink.NoENOBUFS, err)
+	}
+
+	err = nfO.RegisterWithErrorFunc(ctx, func(a nfqueue.Attribute) int {
+		return p.processPacket(nfO, a, directionOutbound)
+	}, func(e error) int {
+		fmt.Println(err)
+		return -1
+	})
+	if err != nil {
+		return err
+	}
+
+	<-ctx.Done()
+	return nil
 }

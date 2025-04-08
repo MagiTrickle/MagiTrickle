@@ -14,41 +14,23 @@ import (
 )
 
 func (a *App) initDNSMITM() {
-	a.dnsMITM = &dnsMitmProxy.DNSMITMProxy{
-		UpstreamDNSAddress: a.config.DNSProxy.Upstream.Address,
-		UpstreamDNSPort:    a.config.DNSProxy.Upstream.Port,
-		RequestHook:        a.dnsRequestHook,
-		ResponseHook:       a.dnsResponseHook,
+	a.dnsMITM = &dnsMitmProxy.DNSMITM{
+		RequestHook:  a.dnsRequestHook,
+		ResponseHook: a.dnsResponseHook,
 	}
 	a.records = records.New()
 }
 
 func (a *App) startDNSListeners(ctx context.Context, errChan chan error) {
 	go func() {
-		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", a.config.DNSProxy.Host.Address, a.config.DNSProxy.Host.Port))
-		if err != nil {
-			errChan <- fmt.Errorf("failed to resolve udp address: %v", err)
-			return
-		}
-		if err = a.dnsMITM.ListenUDP(ctx, addr); err != nil {
-			errChan <- fmt.Errorf("failed to serve DNS UDP proxy: %v", err)
-		}
-	}()
-
-	go func() {
-		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", a.config.DNSProxy.Host.Address, a.config.DNSProxy.Host.Port))
-		if err != nil {
-			errChan <- fmt.Errorf("failed to resolve tcp address: %v", err)
-			return
-		}
-		if err = a.dnsMITM.ListenTCP(ctx, addr); err != nil {
-			errChan <- fmt.Errorf("failed to serve DNS TCP proxy: %v", err)
+		if err := a.dnsMITM.Serve(ctx); err != nil {
+			errChan <- fmt.Errorf("failed to serve DNS MITM: %v", err)
 		}
 	}()
 }
 
 // dnsRequestHook обрабатывает входящие DNS-запросы
-func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string) (*dns.Msg, *dns.Msg, error) {
+func (a *App) dnsRequestHook(clientAddr net.IP, dnsAddr net.IP, network string, reqMsg dns.Msg) (*dns.Msg, error) {
 	var clientAddrStr string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
@@ -63,28 +45,11 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 			Msg("requested record")
 	}
 
-	if a.config.DNSProxy.DisableFakePTR {
-		return nil, nil, nil
-	}
-
-	if len(reqMsg.Question) == 1 && reqMsg.Question[0].Qtype == dns.TypePTR {
-		respMsg := &dns.Msg{
-			MsgHdr: dns.MsgHdr{
-				Id:                 reqMsg.Id,
-				Response:           true,
-				RecursionAvailable: true,
-				Rcode:              dns.RcodeNameError,
-			},
-			Question: reqMsg.Question,
-		}
-		return nil, respMsg, nil
-	}
-
-	return nil, nil, nil
+	return nil, nil
 }
 
 // dnsResponseHook обрабатывает ответы DNS
-func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.Msg, network string) (*dns.Msg, error) {
+func (a *App) dnsResponseHook(clientAddr net.IP, dnsAddr net.IP, network string, respMsg dns.Msg) (*dns.Msg, error) {
 	defer a.handleMessage(respMsg, clientAddr, &network)
 
 	if a.config.DNSProxy.DisableDropAAAA {
@@ -104,14 +69,14 @@ func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.M
 }
 
 // handleMessage обрабатывает полученное DNS-сообщение
-func (a *App) handleMessage(msg dns.Msg, clientAddr net.Addr, network *string) {
+func (a *App) handleMessage(msg dns.Msg, clientAddr net.IP, network *string) {
 	for _, rr := range msg.Answer {
 		a.handleRecord(rr, clientAddr, network)
 	}
 }
 
 // handleRecord маршрутизирует обработку DNS-записи в зависимости от её типа (A или CNAME)
-func (a *App) handleRecord(rr dns.RR, clientAddr net.Addr, network *string) {
+func (a *App) handleRecord(rr dns.RR, clientAddr net.IP, network *string) {
 	switch v := rr.(type) {
 	case *dns.A:
 		a.processARecord(*v, clientAddr, network)
@@ -120,7 +85,7 @@ func (a *App) handleRecord(rr dns.RR, clientAddr net.Addr, network *string) {
 	}
 }
 
-func (a *App) processARecord(aRecord dns.A, clientAddr net.Addr, network *string) {
+func (a *App) processARecord(aRecord dns.A, clientAddr net.IP, network *string) {
 	var clientAddrStr, networkStr string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
@@ -170,7 +135,7 @@ func (a *App) processARecord(aRecord dns.A, clientAddr net.Addr, network *string
 	}
 }
 
-func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.Addr, network *string) {
+func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.IP, network *string) {
 	var clientAddrStr, networkStr string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
