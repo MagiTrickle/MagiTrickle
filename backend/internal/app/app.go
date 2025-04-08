@@ -55,13 +55,12 @@ var defaultAppConfig = models.App{
 // App – основная структура ядра приложения
 type App struct {
 	config   models.App
-	dnsMITM  *dnsMitmProxy.DNSMITMProxy
+	dnsMITM  *dnsMitmProxy.DNSMITM
 	nfHelper *netfilterHelper.NetfilterHelper
 	records  *records.Records
 	groups   []*Group
 	// TODO: доделать
-	enabled      atomic.Bool
-	dnsOverrider *netfilterHelper.PortRemap
+	enabled atomic.Bool
 }
 
 // New создаёт новый экземпляр App
@@ -151,9 +150,4 @@ func (a *App) ListInterfaces() ([]net.Interface, error) {
 	}
 
 	return filteredInterfaces, nil
-}
-
-// DnsOverrider возвращает dnsOverrider
-func (a *App) DnsOverrider() *netfilterHelper.PortRemap {
-	return a.dnsOverrider
 }
