@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"magitrickle/api"
 	"magitrickle/constant"
@@ -30,7 +31,25 @@ const (
 	noSkinFoundPlaceholder = "<!DOCTYPE html><html><head><title>MagiTrickle</title></head><body><h1>MagiTrickle</h1><p>Please install MagiTrickle skin before using WebUI!</p></body></html>"
 	skinsFolderLocation    = constant.AppShareDir + "/skins"
 	pidFileLocation        = constant.RunDir + "/magitrickle.pid"
+	requiredUptimeSeconds  = 60
 )
+
+// getUptime считывает время работы системы из /proc/uptime и возвращает количество секунд
+func getUptime() (int, error) {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	parts := strings.Fields(string(data))
+	if len(parts) < 1 {
+		return 0, errors.New("unexpected content in /proc/uptime")
+	}
+	uptimeFloat, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, err
+	}
+	return int(uptimeFloat), nil
+}
 
 func getPIDPath(pid int) (string, error) {
 	return os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
@@ -176,6 +195,19 @@ func main() {
 		Str("version", constant.Version).
 		Str("commit", constant.Commit).
 		Msg("starting MagiTrickle daemon")
+
+	// Проверка времени работы системы (uptime)
+	if uptime, err := getUptime(); err == nil {
+		if uptime < requiredUptimeSeconds {
+			waitSeconds := requiredUptimeSeconds - uptime
+			log.Info().Msgf("System uptime is low (%d sec). Waiting %d sec for system stabilization...", uptime, waitSeconds)
+			time.Sleep(time.Duration(waitSeconds) * time.Second)
+		} else {
+			log.Info().Msgf("System uptime is %d sec. Proceeding with initialization...", uptime)
+		}
+	} else {
+		log.Warn().Msg("Unable to determine system uptime, proceeding without delay.")
+	}
 
 	if err := checkPIDFile(); err != nil {
 		log.Fatal().Err(err).Msg("failed to check PID file")
