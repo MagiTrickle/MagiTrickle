@@ -31,7 +31,7 @@ const (
 	noSkinFoundPlaceholder = "<!DOCTYPE html><html><head><title>MagiTrickle</title></head><body><h1>MagiTrickle</h1><p>Please install MagiTrickle skin before using WebUI!</p></body></html>"
 	skinsFolderLocation    = constant.AppShareDir + "/skins"
 	pidFileLocation        = constant.RunDir + "/magitrickle.pid"
-	requiredUptimeSeconds  = 60
+	requiredUptimeSeconds  = 120
 )
 
 // getUptime считывает время работы системы из /proc/uptime и возвращает количество секунд
