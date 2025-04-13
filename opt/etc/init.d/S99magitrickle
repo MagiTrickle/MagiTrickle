@@ -30,13 +30,13 @@ start() {
   fi
 
   COUNTER=0
-  LIMIT=10
+  LIMIT=3
   while :; do
     if [ -n "`pidof $PROC`" ] || [ "$COUNTER" -gt "$LIMIT" ]; then
       break
     fi
     $PROC > /dev/null 2>&1 &
-    sleep 1
+    sleep 10
     COUNTER=`expr $COUNTER + 1`
   done
 
