@@ -22,7 +22,7 @@
       <Tabs.List>
         <Tabs.Trigger value="groups">Groups</Tabs.Trigger>
         <!-- <Tabs.Trigger value="settings">Settings</Tabs.Trigger> -->
-        <!-- <Tabs.Trigger value="logs">Logs</Tabs.Trigger> -->
+        <Tabs.Trigger value="logs">Logs</Tabs.Trigger>
       </Tabs.List>
       <div class="header-settings">
         <HeaderSettings />
@@ -35,9 +35,9 @@
       <!-- <Tabs.Content value="settings">
         <SettingsPage />
       </Tabs.Content> -->
-      <!-- <Tabs.Content value="logs">
+      <Tabs.Content value="logs">
         <Logs />
-      </Tabs.Content> -->
+      </Tabs.Content>
     </article>
   </Tabs.Root>
 </main>
