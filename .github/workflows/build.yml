@@ -37,17 +37,20 @@ jobs:
             target: armv7-3.2
             goos: linux
             goarch: arm
-            goarm: 7,softfloat
+            goarm: 7
+            goarmfp: soft
           - platform: entware
             target: armv7-2.6
             goos: linux
             goarch: arm
-            goarm: 7,softfloat
+            goarm: 7
+            goarmfp: soft
           - platform: entware
             target: armv5-3.2
             goos: linux
             goarch: arm
-            goarm: 5,softfloat
+            goarm: 5
+            goarmfp: soft
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,7 +75,7 @@ jobs:
 
       - name: Build and Package
         run: |
-          PLATFORM=${{ matrix.platform }} TARGET=${{ matrix.target }} GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} GOARM=${{ matrix.goarm }} GOARM64=${{ matrix.goarm64 }} GO_TAGS=kn make
+          PLATFORM=${{ matrix.platform }} TARGET=${{ matrix.target }} GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} GOARM=${{ matrix.goarm }} GOARMFP=${{ matrix.goarmfp }} GOARM64=${{ matrix.goarm64 }} GO_TAGS=kn make
 
       - name: Fetching file list for artifact
         if: ${{ github.event_name != 'release' }}
