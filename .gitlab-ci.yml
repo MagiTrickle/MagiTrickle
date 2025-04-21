@@ -1,0 +1,82 @@
+stages:
+  - test
+  - build
+  - release
+
+variables:
+  PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${CI_PROJECT_NAME}/${CI_COMMIT_TAG}"
+
+test:
+  stage: test
+  image: golang:alpine
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_MERGE_REQUEST_ID'
+    - if: '$CI_COMMIT_BRANCH'
+  script:
+    - cd backend
+    - GOOS=linux go vet -tags "${GO_TAGS}" ./...
+    - GOOS=linux go test -tags "${GO_TAGS}" ./...
+
+build_keenetic:
+  stage: build
+  image: golang:alpine
+  parallel:
+    matrix:
+      - PLATFORM: entware
+        TARGET: mipsel-3.4_kn
+        GOARCH: mipsle
+        GOMIPS: softfloat
+        GO_TAGS: kn
+      - PLATFORM: entware
+        TARGET: mips-3.4_kn
+        GOARCH: mips
+        GOMIPS: softfloat
+        GO_TAGS: kn
+      - PLATFORM: entware
+        TARGET: aarch64-3.10_kn
+        GOARCH: arm64
+        GO_TAGS: kn
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_MERGE_REQUEST_ID'
+      when: manual
+      allow_failure: true
+  before_script:
+    - apk add nodejs npm git make upx fakeroot tar
+  script:
+    - PLATFORM="${PLATFORM}" TARGET="${TARGET}" GOOS="${GOOS}" GOARCH="${GOARCH}" GOMIPS="${GOMIPS}" GO_TAGS="${GO_TAGS}" make
+  artifacts:
+    paths:
+      - .build/*.ipk
+    expire_in: 1 week
+
+upload:
+  stage: release
+  needs: ["build_keenetic"]
+  image: curlimages/curl:latest
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - |
+      ASSETS_LINKS=""
+      for file in $(find .build -name '*.ipk'); do
+        name=$(basename "${file}")
+        url="${PACKAGE_REGISTRY_URL}/${name}"
+        curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"
+        ASSETS_LINKS="$ASSETS_LINKS --assets-link \"{\"name\":\"${name}\",\"url\":\"${url}\"}\""
+      done
+      echo "ASSETS_LINKS=\"${ASSETS_LINKS}\" > files.env
+  artifacts:
+    reports:
+      dotenv: files.env
+
+release:
+  stage: release
+  needs: ["upload"]
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - |
+      release-cli create --name "${CI_COMMIT_TAG}" --tag-name ${CI_COMMIT_TAG} ${ASSETS_LINKS}
