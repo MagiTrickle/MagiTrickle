@@ -66,7 +66,10 @@ upload:
         curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"
         ASSETS_LINKS="$ASSETS_LINKS --assets-link \"{\"name\":\"${name}\",\"url\":\"${url}\"}\""
       done
-      echo "ASSETS_LINKS=\"${ASSETS_LINKS//\"/\\\"}\"" > .env
+      
+      escaped_ASSETS_LINKS="${ASSETS_LINKS//\\/\\\\}"
+      escaped_ASSETS_LINKS="${escaped_ASSETS_LINKS//\"/\\\"}"
+      echo "ASSETS_LINKS=\"${escaped_ASSETS_LINKS}\"" > .env
   artifacts:
     paths:
       - .env
