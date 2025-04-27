@@ -64,7 +64,7 @@ upload:
         name=$(basename "${file}")
         url="${PACKAGE_REGISTRY_URL}/${name}"
         curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"
-        ASSETS_LINKS="$ASSETS_LINKS --assets-link='{\"name\":\"${name}\",\"url\":\"${url}\"}'"
+        ASSETS_LINKS="$ASSETS_LINKS --assets-link '{\"name\":\"${name}\",\"url\":\"${url}\"}'"
       done
       
       escaped_ASSETS_LINKS="${ASSETS_LINKS//\\/\\\\}"
