@@ -66,7 +66,7 @@ upload:
         curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"
         ASSETS_LINKS="$ASSETS_LINKS --assets-link \"{\"name\":\"${name}\",\"url\":\"${url}\"}\""
       done
-      echo "ASSETS_LINKS=\"${ASSETS_LINKS}\" > files.env
+      echo "ASSETS_LINKS=\"${ASSETS_LINKS}\"" > files.env
   artifacts:
     reports:
       dotenv: files.env
