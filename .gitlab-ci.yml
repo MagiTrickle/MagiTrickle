@@ -69,8 +69,9 @@ upload:
       done
       echo "ASSETS_LINKS=\"${ASSETS_LINKS}\"" > .env
   artifacts:
-    reports:
-      dotenv: .env
+    paths:
+      - .env
+    expire_in: 1 hour
 
 release:
   stage: release
