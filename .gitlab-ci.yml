@@ -67,10 +67,10 @@ upload:
         curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"
         ASSETS_LINKS="$ASSETS_LINKS --assets-link \"{\"name\":\"${name}\",\"url\":\"${url}\"}\""
       done
-      echo "ASSETS_LINKS=\"${ASSETS_LINKS}\"" > files.env
+      echo "ASSETS_LINKS=\"${ASSETS_LINKS}\"" > .env
   artifacts:
     reports:
-      dotenv: files.env
+      dotenv: .env
 
 release:
   stage: release
@@ -80,4 +80,5 @@ release:
     - if: '$CI_COMMIT_TAG'
   script:
     - |
+      source .env
       release-cli create --name "${CI_COMMIT_TAG}" --tag-name ${CI_COMMIT_TAG} ${ASSETS_LINKS}
