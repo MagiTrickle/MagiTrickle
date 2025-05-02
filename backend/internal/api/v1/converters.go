@@ -2,13 +2,14 @@ package v1
 
 import (
 	"fmt"
-	"regexp"
+
+	"github.com/dlclark/regexp2"
 
 	"magitrickle/api/types"
 	"magitrickle/models"
 )
 
-var colorRegExp = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+var colorRegExp = regexp2.MustCompile(`^#[0-9A-Fa-f]{6}$`, 0)
 
 func FromGroupReq(req types.GroupReq, existing *models.Group) (*models.Group, error) {
 	var group *models.Group
@@ -26,7 +27,7 @@ func FromGroupReq(req types.GroupReq, existing *models.Group) (*models.Group, er
 		}
 	}
 	group.Name = req.Name
-	if !colorRegExp.MatchString(req.Color) {
+	if match, _ := colorRegExp.MatchString(req.Color); !match {
 		req.Color = "#ffffff"
 	}
 	group.Color = req.Color
