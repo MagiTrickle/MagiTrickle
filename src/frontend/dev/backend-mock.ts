@@ -23,17 +23,22 @@ function randomLogLine() {
     )}.${Math.round(Math.random() * 255)}`;
   }
 
+  const fields = {
+    time: new Date().toISOString(),
+    ip: randomIP(),
+    clientAddr: randomIP() + ":" + Math.round(Math.random() * 65535),
+  };
+
   const level = randomIndex(["trace", "debug", "info", "warn", "error", "fatal", "panic"]);
 
   return {
-    time: new Date().toISOString(),
     level: level,
-    error: ["error", "fatal", "panic"].includes(level) ? "random error" : undefined,
     message: ["error", "fatal", "panic"].includes(level)
       ? "error message"
-      : `group: ${randomIndex(DATA.groups).name}, ip: ${randomIP()} > int: ${randomIndex(
+      : `group ${randomIndex(DATA.groups).name} int ${randomIndex(
           INTERFACES.interfaces.map((item) => item.id)
         )}`,
+    fields: fields,
   };
 }
 

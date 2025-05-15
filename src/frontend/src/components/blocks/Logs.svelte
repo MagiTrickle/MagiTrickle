@@ -12,33 +12,32 @@
   const OVERSCAN = 20 as const;
 
   type LogEntry = {
-    time: string;
     level: string;
     message: string;
-    error?: string;
+    fields: {
+      time: string;
+      [key: string]: string;
+    };
   };
 
-  const levels: Record<string, number> = {
-    trace: -1,
-    debug: 0,
-    info: 1,
-    warn: 2,
-    error: 3,
-    fatal: 4,
-    panic: 5,
+  const levels: Record<string, [number, string]> = {
+    trace: [-1, "TRC"],
+    debug: [0, "DBG"],
+    info: [1, "INF"],
+    warn: [2, "WRN"],
+    error: [3, "ERR"],
+    fatal: [4, "FTL"],
+    panic: [5, "PNC"],
   };
 
   let items: LogEntry[] = $state([]);
-  let level: string = $state("trace");
+  let level: string = $state("info");
   let filter: string = $state("");
   let items_filtered: LogEntry[] = $derived.by(() =>
     items.filter(
       (item) =>
-        levels[item.level] >= levels[level] &&
-        (!filter ||
-          filter.length === 0 ||
-          item.message.includes(filter) ||
-          item.error?.includes(filter)),
+        levels[item.level][0] >= levels[level][0] &&
+        (!filter || filter.length === 0 || item.message.includes(filter)),
     ),
   );
 
@@ -77,8 +76,21 @@
   }
 
   function saveLogs() {
+    function printFields(fields: Record<string, string>) {
+      return Object.entries(fields)
+        .map(([key, value]) => (key !== "time" ? `${key}=${value}` : false))
+        .filter(Boolean)
+        .join(" ");
+    }
     const blob = new Blob(
-      [items_filtered.map(({ time, level, message }) => `${time} ${level} ${message}`).join("\n")],
+      [
+        items_filtered
+          .map(
+            ({ fields, level, message }) =>
+              `${fields.time} ${level} ${message} ${printFields(fields)}`,
+          )
+          .join("\n"),
+      ],
       { type: "text/plain" },
     );
     const link = document.createElement("a");
@@ -156,11 +168,16 @@
 >
   <div class="spacer" style="height: {spacer_height}px;"></div>
 
-  {#each visible_items as { time, level, message, error }, index (index)}
+  {#each visible_items as { fields, level, message }, index (index)}
     <div class="line" style="top: {(start + index) * LINE_HEIGHT + 5}px; height: {LINE_HEIGHT}px;">
-      <span class="time">{time}</span>
-      <span class={level}>{level.toLocaleUpperCase()}</span>
-      {message}{error ? ", " + error : ""}
+      <span class="time">{fields.time}</span>
+      <span class={level}>{levels[level][1]}</span>
+      {message}
+      {#each Object.entries(fields) as [key, value]}
+        {#if key !== "time"}
+          <span class="key">{key}=</span><span class="value">{value}</span>{" "}
+        {/if}
+      {/each}
     </div>
   {/each}
 </div>
@@ -168,7 +185,7 @@
 <style>
   .container {
     position: relative;
-    height: 600px;
+    height: calc(100vh - 250px);
     overflow: auto;
     padding: 0.3rem 0.5rem;
     border-radius: 0.5rem;
@@ -239,11 +256,15 @@
     color: var(--text-2);
   }
 
+  .key {
+    color: var(--violet);
+  }
+
   .trace {
-    color: #e0e0e0;
+    color: #00aaff;
   }
   .debug {
-    color: #00aaff;
+    color: #e0e0e0;
   }
   .info {
     color: #66bb6a;
@@ -255,9 +276,9 @@
     color: #ff3d3d;
   }
   .fatal {
-    color: #ff1493;
+    color: #ff4500;
   }
   .panic {
-    color: #ff4500;
+    color: #ff1493;
   }
 </style>
