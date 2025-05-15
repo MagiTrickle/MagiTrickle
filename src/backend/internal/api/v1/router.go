@@ -80,6 +80,7 @@ func NewRouter(h *Handler) chi.Router {
 				r.Post("/netfilterd", h.NetfilterDHook)
 			})
 		})
+		r.Get("/logs", h.LogsHandler)
 	})
 	return r
 }

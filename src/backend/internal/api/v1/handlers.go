@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -532,6 +533,49 @@ func (h *Handler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("save") == "true" {
 		if err := h.app.SaveConfig(); err != nil {
 			log.Error().Err(err).Msg("failed to save config file")
+		}
+	}
+}
+
+// LogsHandler отдает клиенту логи в формате SSE.
+func (h *Handler) LogsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Слушаем вывод
+	sub := app.SubscribeLogs()
+	defer app.UnsubscribeLogs(sub)
+
+	// Отправляем комментарий клиенту
+	_, _ = fmt.Fprintf(w, ": Connected!\n\n")
+	flusher.Flush()
+
+	ctx := r.Context()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Trace().
+				Str("api", "LogsHandler").
+				Msg("client disconnected")
+			return
+		case ev, ok := <-sub.Out():
+			if !ok {
+				return
+			}
+			jsonData, err := json.Marshal(ev)
+			if err != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", jsonData)
+			flusher.Flush()
 		}
 	}
 }
