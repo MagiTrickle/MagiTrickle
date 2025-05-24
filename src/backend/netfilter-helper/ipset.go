@@ -19,7 +19,7 @@ type IPSet struct {
 	ipsetName string
 }
 
-func (r *IPSet) AddIP(addr net.IP, timeout *uint32) error {
+func (r *IPSet) AddIPNet(addr net.IP, cidr uint8, timeout *uint32) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
@@ -32,12 +32,14 @@ func (r *IPSet) AddIP(addr net.IP, timeout *uint32) error {
 	if len(addr) == net.IPv4len {
 		err = netlink.IpsetAdd(r.ipsetName+"_4", &netlink.IPSetEntry{
 			IP:      addr,
+			CIDR:    cidr,
 			Timeout: timeout,
 			Replace: true,
 		})
 	} else if len(addr) == net.IPv6len {
 		err = netlink.IpsetAdd(r.ipsetName+"_6", &netlink.IPSetEntry{
 			IP:      addr,
+			CIDR:    cidr,
 			Timeout: timeout,
 			Replace: true,
 		})
@@ -49,7 +51,7 @@ func (r *IPSet) AddIP(addr net.IP, timeout *uint32) error {
 	return nil
 }
 
-func (r *IPSet) DelIP(addr net.IP) error {
+func (r *IPSet) DelIPNet(addr net.IP, cidr uint8) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
@@ -61,11 +63,13 @@ func (r *IPSet) DelIP(addr net.IP) error {
 
 	if len(addr) == net.IPv4len {
 		err = netlink.IpsetDel(r.ipsetName+"_4", &netlink.IPSetEntry{
-			IP: addr,
+			IP:   addr,
+			CIDR: cidr,
 		})
 	} else if len(addr) == net.IPv6len {
 		err = netlink.IpsetDel(r.ipsetName+"_6", &netlink.IPSetEntry{
-			IP: addr,
+			IP:   addr,
+			CIDR: cidr,
 		})
 	}
 	if err != nil {
@@ -75,7 +79,7 @@ func (r *IPSet) DelIP(addr net.IP) error {
 	return nil
 }
 
-func (r *IPSet) ListIPs() (map[string]*uint32, error) {
+func (r *IPSet) ListIPNets() (map[string]*uint32, error) {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
@@ -90,7 +94,7 @@ func (r *IPSet) ListIPs() (map[string]*uint32, error) {
 		return nil, err
 	}
 	for _, entry := range list.Entries {
-		addresses[string(entry.IP)] = entry.Timeout
+		addresses[string(append(entry.IP, entry.CIDR))] = entry.Timeout
 	}
 
 	list, err = netlink.IpsetList(r.ipsetName + "_6")
@@ -98,7 +102,7 @@ func (r *IPSet) ListIPs() (map[string]*uint32, error) {
 		return nil, err
 	}
 	for _, entry := range list.Entries {
-		addresses[string(entry.IP)] = entry.Timeout
+		addresses[string(append(entry.IP, entry.CIDR))] = entry.Timeout
 	}
 
 	return addresses, nil

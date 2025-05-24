@@ -39,6 +39,8 @@ func (d *Rule) IsMatch(domainName string) bool {
 			return true
 		}
 		return strings.HasSuffix(domainName, "."+d.Rule)
+	case "ipnet":
+		return false
 	}
 	return false
 }

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,6 +15,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
+)
+
+var (
+	ipnetRe = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{0,2}))?$`)
 )
 
 type Group struct {
@@ -37,11 +43,11 @@ func NewGroup(group *models.Group, app *App) (*Group, error) {
 	}, nil
 }
 
-func (g *Group) addIP(address net.IP, ttl uint32) error {
-	return g.ipset.AddIP(address, &ttl)
+func (g *Group) addIPNet(address net.IP, cidr uint8, ttl uint32) error {
+	return g.ipset.AddIPNet(address, cidr, &ttl)
 }
 
-func (g *Group) AddIP(address net.IP, ttl uint32) error {
+func (g *Group) AddIP(address net.IP, cidr uint8, ttl uint32) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
@@ -52,14 +58,14 @@ func (g *Group) AddIP(address net.IP, ttl uint32) error {
 		return nil
 	}
 
-	return g.addIP(address, ttl)
+	return g.addIPNet(address, cidr, ttl)
 }
 
-func (g *Group) delIP(address net.IP) error {
-	return g.ipset.DelIP(address)
+func (g *Group) delIPNet(address net.IP, cidr uint8) error {
+	return g.ipset.DelIPNet(address, cidr)
 }
 
-func (g *Group) DelIP(address net.IP) error {
+func (g *Group) DelIP(address net.IP, cidr uint8) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
@@ -70,14 +76,14 @@ func (g *Group) DelIP(address net.IP) error {
 		return nil
 	}
 
-	return g.delIP(address)
+	return g.delIPNet(address, cidr)
 }
 
-func (g *Group) listIPs() (map[string]*uint32, error) {
-	return g.ipset.ListIPs()
+func (g *Group) listIPNets() (map[string]*uint32, error) {
+	return g.ipset.ListIPNets()
 }
 
-func (g *Group) ListIPs() (map[string]*uint32, error) {
+func (g *Group) ListIPNets() (map[string]*uint32, error) {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
@@ -88,7 +94,7 @@ func (g *Group) ListIPs() (map[string]*uint32, error) {
 		return nil, nil
 	}
 
-	return g.listIPs()
+	return g.listIPNets()
 }
 
 func (g *Group) enable() error {
@@ -188,20 +194,41 @@ func (g *Group) Sync() error {
 		if !domain.IsEnabled() {
 			continue
 		}
-		for _, domainName := range knownDomains {
-			if !domain.IsMatch(domainName) {
+		switch domain.Type {
+		case "ipnet":
+			matches := ipnetRe.FindStringSubmatch(domain.Rule)
+			if matches == nil {
 				continue
 			}
-			domainAddresses := g.app.records.GetARecords(domainName)
-			for _, address := range domainAddresses {
-				ttl := uint32(now.Sub(address.Deadline).Seconds())
-				if oldTTL, ok := addresses[string(address.Address)]; !ok || ttl > oldTTL {
-					addresses[string(address.Address)] = ttl
+
+			addr := make([]byte, 5)
+			for i := 1; i <= 5; i++ {
+				if matches[i] == "" {
+					continue
+				}
+
+				n, _ := strconv.Atoi(matches[i])
+				addr[i-1] = uint8(n)
+			}
+
+			addresses[string(addr)] = 0
+		default:
+			for _, domainName := range knownDomains {
+				if !domain.IsMatch(domainName) {
+					continue
+				}
+				domainAddresses := g.app.records.GetARecords(domainName)
+				for _, address := range domainAddresses {
+					ttl := uint32(now.Sub(address.Deadline).Seconds())
+					addressCIDR := append(address.Address, 0)
+					if oldTTL, ok := addresses[string(addressCIDR)]; !ok || ttl > oldTTL {
+						addresses[string(addressCIDR)] = ttl
+					}
 				}
 			}
 		}
 	}
-	currentAddresses, err := g.listIPs()
+	currentAddresses, err := g.listIPNets()
 	if err != nil {
 		return fmt.Errorf("failed to get old ipset list: %w", err)
 	}
@@ -215,8 +242,9 @@ func (g *Group) Sync() error {
 				}
 			}
 		}
-		ip := net.IP(addr)
-		if err := g.addIP(ip, ttl); err != nil {
+		ip := net.IP(addr[:len(addr)-1])
+		cidr := addr[len(addr)-1]
+		if err := g.addIPNet(ip, cidr, ttl); err != nil {
 			log.Error().Str("address", ip.String()).Err(err).Msg("failed to add address")
 		} else {
 			log.Trace().Str("address", ip.String()).Msg("added address")
@@ -227,7 +255,8 @@ func (g *Group) Sync() error {
 			continue
 		}
 		ip := net.IP(addr)
-		if err := g.delIP(ip); err != nil {
+		cidr := addr[len(addr)-1]
+		if err := g.delIPNet(ip, cidr); err != nil {
 			log.Error().Str("address", ip.String()).Err(err).Msg("failed to delete address")
 		} else {
 			log.Trace().Str("address", ip.String()).Msg("deleted address")

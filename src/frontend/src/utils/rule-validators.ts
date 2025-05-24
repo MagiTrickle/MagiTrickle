@@ -10,6 +10,10 @@ export function isValidNamespace(pattern: string): boolean {
   return isValidDomain(pattern);
 }
 
+export function isValidIPNet(pattern: string): boolean {
+  return /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{0,2}))?$/.test(pattern);
+}
+
 export function isValidRegex(pattern: string): boolean {
   try {
     new RegExp(pattern);
@@ -27,4 +31,5 @@ export const VALIDATOP_MAP: Record<string, (pattern: string) => boolean> = {
   wildcard: isValidWildcard,
   domain: isValidDomain,
   namespace: isValidNamespace,
+  ipnet: isValidIPNet,
 };

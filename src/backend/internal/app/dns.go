@@ -152,7 +152,7 @@ func (a *App) processARecord(aRecord dns.A, clientAddr net.Addr, network *string
 					continue
 				}
 				// TODO: Check already existed
-				if err := group.AddIP(aRecord.A, ttlDuration); err != nil {
+				if err := group.AddIP(aRecord.A, 0, ttlDuration); err != nil {
 					log.Error().
 						Str("address", aRecord.A.String()).
 						Err(err).
@@ -206,7 +206,7 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.Addr, net
 					continue
 				}
 				for _, aRecord := range aRecords {
-					if err := group.AddIP(aRecord.Address, uint32(now.Sub(aRecord.Deadline).Seconds())); err != nil {
+					if err := group.AddIP(aRecord.Address, 0, uint32(now.Sub(aRecord.Deadline).Seconds())); err != nil {
 						log.Error().
 							Str("address", aRecord.Address.String()).
 							Err(err).
