@@ -26,6 +26,8 @@ func (subnet IPv4Subnet) String() string {
 
 type IPSetTimeout *uint32
 
+var zeroTimeout = IPSetTimeout(new(uint32))
+
 type IPSet struct {
 	enabled atomic.Bool
 	locker  sync.Mutex
@@ -39,6 +41,10 @@ func (r *IPSet) AddIPv4Subnet(subnet IPv4Subnet, timeout IPSetTimeout) error {
 
 	if !r.enabled.Load() {
 		return nil
+	}
+
+	if timeout == nil {
+		timeout = zeroTimeout
 	}
 
 	err := netlink.IpsetAdd(r.ipsetName+"_4", &netlink.IPSetEntry{
@@ -92,7 +98,11 @@ func (r *IPSet) ListIPv4Subnets() (map[IPv4Subnet]IPSetTimeout, error) {
 			Address: [4]byte(entry.IP),
 			CIDR:    entry.CIDR,
 		}
-		addresses[subnet] = entry.Timeout
+		if entry.Timeout != nil && *entry.Timeout == 0 {
+			addresses[subnet] = nil
+		} else {
+			addresses[subnet] = entry.Timeout
+		}
 	}
 
 	return addresses, nil
