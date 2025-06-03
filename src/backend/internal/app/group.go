@@ -210,11 +210,25 @@ func (g *Group) SyncIPv4Subnets() error {
 				addr[i-1] = uint8(n)
 			}
 
-			// TODO: Support for 0.0.0.0/0
-			newIPv4SubnetList[netfilterHelper.IPv4Subnet{
-				Address: [4]byte(addr),
-				CIDR:    addr[4],
-			}] = nil
+			// TODO: Validating of subnet
+
+			if !(addr[0] == 0 && matches[5] == "0") {
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{
+					Address: [4]byte(addr),
+					CIDR:    addr[4],
+				}] = nil
+			} else {
+				// Processing 0.0.0.0/0
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{
+					Address: [4]byte{0, addr[1], addr[2], addr[3]},
+					CIDR:    1,
+				}] = nil
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{
+					Address: [4]byte{128, addr[1], addr[2], addr[3]},
+					CIDR:    1,
+				}] = nil
+			}
+
 		default:
 			for _, domainName := range knownDomains {
 				if !domain.IsMatch(domainName) {
