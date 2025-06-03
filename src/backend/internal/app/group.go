@@ -174,18 +174,7 @@ func (g *Group) Disable() error {
 	return g.disable()
 }
 
-func (g *Group) SyncIPv4Subnets() error {
-	g.locker.Lock()
-	defer g.locker.Unlock()
-
-	if !g.Enabled() {
-		return nil
-	}
-
-	if !g.Group.Enable {
-		return nil
-	}
-
+func (g *Group) syncIPv4Subnets() error {
 	now := time.Now()
 	newIPv4SubnetList := make(map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout)
 	knownDomains := g.app.records.ListKnownDomains()
@@ -275,6 +264,21 @@ func (g *Group) SyncIPv4Subnets() error {
 		}
 	}
 	return nil
+}
+
+func (g *Group) Sync() error {
+	g.locker.Lock()
+	defer g.locker.Unlock()
+
+	if !g.Enabled() {
+		return nil
+	}
+
+	if !g.Group.Enable {
+		return nil
+	}
+
+	return g.syncIPv4Subnets()
 }
 
 func (g *Group) NetfilterDHook(iptType, table string) error {

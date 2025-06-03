@@ -64,7 +64,7 @@ func (a *App) Start(ctx context.Context) error {
 		if err := group.Enable(); err != nil {
 			return fmt.Errorf("failed to enable group: %w", err)
 		}
-		if err := group.SyncIPv4Subnets(); err != nil {
+		if err := group.Sync(); err != nil {
 			return fmt.Errorf("failed to sync group: %w", err)
 		}
 	}

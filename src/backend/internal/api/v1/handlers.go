@@ -264,7 +264,7 @@ func (h *Handler) PutGroup(w http.ResponseWriter, r *http.Request) {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to enable group: %v", err))
 			return
 		}
-		if err := groupWrapper.SyncIPv4Subnets(); err != nil {
+		if err := groupWrapper.Sync(); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to sync group: %v", err))
 			return
 		}
@@ -379,7 +379,7 @@ func (h *Handler) PutRules(w http.ResponseWriter, r *http.Request) {
 	}
 	groupWrapper.Group.Rules = newRules
 	if enabled {
-		if err := groupWrapper.SyncIPv4Subnets(); err != nil {
+		if err := groupWrapper.Sync(); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to sync group: %v", err))
 			return
 		}
@@ -424,7 +424,7 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	groupWrapper.Group.Rules = append(groupWrapper.Group.Rules, rule)
 	if enabled {
-		if err := groupWrapper.SyncIPv4Subnets(); err != nil {
+		if err := groupWrapper.Sync(); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to sync group: %v", err))
 			return
 		}
@@ -490,7 +490,7 @@ func (h *Handler) PutRule(w http.ResponseWriter, r *http.Request) {
 	rule.Enable = req.Enable
 
 	if enabled {
-		if err := groupWrapper.SyncIPv4Subnets(); err != nil {
+		if err := groupWrapper.Sync(); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to sync group: %v", err))
 			return
 		}
@@ -524,7 +524,7 @@ func (h *Handler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	ruleIdx, _ := strconv.Atoi(r.Header.Get("ruleIdx"))
 	groupWrapper.Group.Rules = append(groupWrapper.Group.Rules[:ruleIdx], groupWrapper.Group.Rules[ruleIdx+1:]...)
 	if enabled {
-		if err := groupWrapper.SyncIPv4Subnets(); err != nil {
+		if err := groupWrapper.Sync(); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to sync group: %v", err))
 			return
 		}
