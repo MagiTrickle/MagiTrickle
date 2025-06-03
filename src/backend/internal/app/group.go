@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"sync"
@@ -18,7 +17,7 @@ import (
 )
 
 var (
-	ipnetRe = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{0,2}))?$`)
+	ipv4SubnetRe = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)\.(\d+)(?:/(\d+))?$`)
 )
 
 type Group struct {
@@ -43,11 +42,11 @@ func NewGroup(group *models.Group, app *App) (*Group, error) {
 	}, nil
 }
 
-func (g *Group) addIPNet(address net.IP, cidr uint8, ttl uint32) error {
-	return g.ipset.AddIPNet(address, cidr, &ttl)
+func (g *Group) addIPv4Subnet(subnet netfilterHelper.IPv4Subnet, ttl netfilterHelper.IPSetTimeout) error {
+	return g.ipset.AddIPv4Subnet(subnet, ttl)
 }
 
-func (g *Group) AddIP(address net.IP, cidr uint8, ttl uint32) error {
+func (g *Group) AddIPv4Subnet(subnet netfilterHelper.IPv4Subnet, ttl netfilterHelper.IPSetTimeout) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
@@ -58,14 +57,14 @@ func (g *Group) AddIP(address net.IP, cidr uint8, ttl uint32) error {
 		return nil
 	}
 
-	return g.addIPNet(address, cidr, ttl)
+	return g.addIPv4Subnet(subnet, ttl)
 }
 
-func (g *Group) delIPNet(address net.IP, cidr uint8) error {
-	return g.ipset.DelIPNet(address, cidr)
+func (g *Group) delIPv4Subnet(subnet netfilterHelper.IPv4Subnet) error {
+	return g.ipset.DelIPv4Subnet(subnet)
 }
 
-func (g *Group) DelIP(address net.IP, cidr uint8) error {
+func (g *Group) DelIPv4Subnet(subnet netfilterHelper.IPv4Subnet) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
@@ -76,14 +75,14 @@ func (g *Group) DelIP(address net.IP, cidr uint8) error {
 		return nil
 	}
 
-	return g.delIPNet(address, cidr)
+	return g.delIPv4Subnet(subnet)
 }
 
-func (g *Group) listIPNets() (map[string]*uint32, error) {
-	return g.ipset.ListIPNets()
+func (g *Group) listIPv4Subnets() (map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout, error) {
+	return g.ipset.ListIPv4Subnets()
 }
 
-func (g *Group) ListIPNets() (map[string]*uint32, error) {
+func (g *Group) ListIPv4Subnets() (map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout, error) {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
@@ -94,7 +93,7 @@ func (g *Group) ListIPNets() (map[string]*uint32, error) {
 		return nil, nil
 	}
 
-	return g.listIPNets()
+	return g.listIPv4Subnets()
 }
 
 func (g *Group) enable() error {
@@ -175,7 +174,7 @@ func (g *Group) Disable() error {
 	return g.disable()
 }
 
-func (g *Group) Sync() error {
+func (g *Group) SyncIPv4Subnets() error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 
@@ -188,15 +187,15 @@ func (g *Group) Sync() error {
 	}
 
 	now := time.Now()
-	addresses := make(map[string]uint32)
+	newIPv4SubnetList := make(map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout)
 	knownDomains := g.app.records.ListKnownDomains()
 	for _, domain := range g.Rules {
 		if !domain.IsEnabled() {
 			continue
 		}
 		switch domain.Type {
-		case "ipnet":
-			matches := ipnetRe.FindStringSubmatch(domain.Rule)
+		case "subnet":
+			matches := ipv4SubnetRe.FindStringSubmatch(domain.Rule)
 			if matches == nil {
 				continue
 			}
@@ -211,7 +210,11 @@ func (g *Group) Sync() error {
 				addr[i-1] = uint8(n)
 			}
 
-			addresses[string(addr)] = 0
+			// TODO: Support for 0.0.0.0/0
+			newIPv4SubnetList[netfilterHelper.IPv4Subnet{
+				Address: [4]byte(addr),
+				CIDR:    addr[4],
+			}] = nil
 		default:
 			for _, domainName := range knownDomains {
 				if !domain.IsMatch(domainName) {
@@ -220,46 +223,41 @@ func (g *Group) Sync() error {
 				domainAddresses := g.app.records.GetARecords(domainName)
 				for _, address := range domainAddresses {
 					ttl := uint32(now.Sub(address.Deadline).Seconds())
-					addressCIDR := append(address.Address, 0)
-					if oldTTL, ok := addresses[string(addressCIDR)]; !ok || ttl > oldTTL {
-						addresses[string(addressCIDR)] = ttl
+					subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(address.Address)}
+					if oldTTL, exists := newIPv4SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
+						newIPv4SubnetList[subnet] = &ttl
 					}
 				}
 			}
 		}
 	}
-	currentAddresses, err := g.listIPNets()
+
+	oldIPv4SubnetList, err := g.listIPv4Subnets()
 	if err != nil {
 		return fmt.Errorf("failed to get old ipset list: %w", err)
 	}
-	for addr, ttl := range addresses {
-		if currTTL, exists := currentAddresses[addr]; exists {
-			if currTTL == nil {
+	for subnet, newTTL := range newIPv4SubnetList {
+		if oldTTL, ok := oldIPv4SubnetList[subnet]; ok {
+			if oldTTL == nil || (newTTL != nil && *newTTL < *oldTTL) {
 				continue
-			} else {
-				if ttl < *currTTL {
-					continue
-				}
 			}
 		}
-		ip := net.IP(addr[:len(addr)-1])
-		cidr := addr[len(addr)-1]
-		if err := g.addIPNet(ip, cidr, ttl); err != nil {
-			log.Error().Str("address", ip.String()).Err(err).Msg("failed to add address")
+
+		if err := g.addIPv4Subnet(subnet, newTTL); err != nil {
+			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to add subnet")
 		} else {
-			log.Trace().Str("address", ip.String()).Msg("added address")
+			log.Trace().Str("subnet", subnet.String()).Msg("added subnet")
 		}
 	}
-	for addr := range currentAddresses {
-		if _, ok := addresses[addr]; ok {
+	for subnet := range oldIPv4SubnetList {
+		if _, ok := newIPv4SubnetList[subnet]; ok {
 			continue
 		}
-		ip := net.IP(addr)
-		cidr := addr[len(addr)-1]
-		if err := g.delIPNet(ip, cidr); err != nil {
-			log.Error().Str("address", ip.String()).Err(err).Msg("failed to delete address")
+
+		if err := g.delIPv4Subnet(subnet); err != nil {
+			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to delete subnet")
 		} else {
-			log.Trace().Str("address", ip.String()).Msg("deleted address")
+			log.Trace().Str("subnet", subnet.String()).Msg("deleted subnet")
 		}
 	}
 	return nil

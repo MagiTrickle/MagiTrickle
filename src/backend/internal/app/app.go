@@ -123,7 +123,7 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 		if err = grp.Enable(); err != nil {
 			return fmt.Errorf("failed to enable group: %w", err)
 		}
-		if err = grp.Sync(); err != nil {
+		if err = grp.SyncIPv4Subnets(); err != nil {
 			return fmt.Errorf("failed to sync group: %w", err)
 		}
 	}
