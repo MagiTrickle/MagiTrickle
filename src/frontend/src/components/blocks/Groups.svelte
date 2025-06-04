@@ -130,6 +130,7 @@
   }
 
   function deleteGroup(index: number) {
+    if (!confirm("Delete this group?")) return;
     data.splice(index, 1);
     showed_limit.splice(index, 1);
   }
