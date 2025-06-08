@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Ponywka/MagiTrickle/develop/img/logo256.png" alt="MagiTrickle logo"/>
+  <img src="https://gitlab.com/magitrickle/magitrickle/-/raw/develop/img/logo256.png" alt="MagiTrickle logo"/>
 </p>
 
 MagiTrickle
