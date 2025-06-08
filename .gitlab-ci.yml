@@ -40,7 +40,8 @@ build_keenetic:
       when: manual
       allow_failure: true
   before_script:
-    - apk add nodejs npm git make upx fakeroot tar
+    - wget https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/upx-4.2.4-r0.apk
+    - apk add nodejs npm git make upx-4.2.4-r0.apk fakeroot tar
   script:
     - PLATFORM="${PLATFORM}" TARGET="${TARGET}" GOOS="${GOOS}" GOARCH="${GOARCH}" GOMIPS="${GOMIPS}" GO_TAGS="${GO_TAGS}" make
   artifacts:
