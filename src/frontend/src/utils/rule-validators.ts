@@ -11,7 +11,15 @@ export function isValidNamespace(pattern: string): boolean {
 }
 
 export function isValidSubnet(pattern: string): boolean {
-  return /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{0,2}))?$/.test(pattern);
+  let matches = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/.exec(pattern)
+  return !(
+      !matches ||
+      parseInt(matches[1]) > 255 ||
+      parseInt(matches[2]) > 255 ||
+      parseInt(matches[3]) > 255 ||
+      parseInt(matches[4]) > 255 ||
+      (matches[5] != "" && parseInt(matches[5]) > 32)
+  );
 }
 
 export function isValidRegex(pattern: string): boolean {

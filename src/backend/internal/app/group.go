@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strconv"
 	"sync"
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	ipv4SubnetRe = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)\.(\d+)(?:/(\d+))?$`)
+	ipv4SubnetRe = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,2}))?$`)
 )
 
 type Group struct {
@@ -178,6 +179,7 @@ func (g *Group) syncIPv4Subnets() error {
 	now := time.Now()
 	newIPv4SubnetList := make(map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout)
 	knownDomains := g.app.records.ListKnownDomains()
+RuleLoop:
 	for _, domain := range g.Rules {
 		if !domain.IsEnabled() {
 			continue
@@ -189,22 +191,31 @@ func (g *Group) syncIPv4Subnets() error {
 				continue
 			}
 
-			addr := make([]byte, 5)
-			for i := 1; i <= 5; i++ {
-				if matches[i] == "" {
-					continue
+			var addr [4]byte
+			for i := 1; i <= 4; i++ {
+				n, _ := strconv.Atoi(matches[i])
+				if n > 255 {
+					continue RuleLoop
 				}
 
-				n, _ := strconv.Atoi(matches[i])
 				addr[i-1] = uint8(n)
 			}
 
-			// TODO: Validating of subnet
+			var cidr uint8
+			if matches[5] != "" {
+				n, _ := strconv.Atoi(matches[5])
+				if n > 32 {
+					continue RuleLoop
+				}
 
-			if !(addr[0] == 0 && matches[5] == "0") {
+				cidr = uint8(n)
+				addr = [4]byte(net.IP(addr[:]).Mask(net.CIDRMask(n, 32)))
+			}
+
+			if cidr != 0 {
 				newIPv4SubnetList[netfilterHelper.IPv4Subnet{
-					Address: [4]byte(addr),
-					CIDR:    addr[4],
+					Address: addr,
+					CIDR:    cidr,
 				}] = nil
 			} else {
 				// Processing 0.0.0.0/0
