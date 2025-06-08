@@ -112,7 +112,7 @@
   </div>
   <div class="type">
     <div class="label">Type</div>
-    <Select options={RULE_TYPES} bind:selected={rule.type} onSelectedChange={patternValidation} />
+    <Select options={RULE_TYPES} bind:selected={rule.type} onValueChange={patternValidation} />
   </div>
   <div class="pattern">
     <div class="label">Pattern</div>

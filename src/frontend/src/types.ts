@@ -39,14 +39,11 @@ export function parseConfig(json: string): Config {
 }
 
 export const RuleSchema = object({
-  enable: boolean(),
+  enable: fallback(boolean(), true),
   id: fallback(pipe(string(), length(8), regex(/^[0-9a-f]{8}/)), randomId()),
   name: fallback(string(), ""),
   rule: string(),
-  type: pipe(
-    string(),
-    check((value) => RULE_TYPES.map((type) => type.value).includes(value))
-  ),
+  type: fallback(string(), "namespace"),
 });
 export type Rule = InferOutput<typeof RuleSchema>;
 
@@ -55,7 +52,7 @@ export const GroupSchema = object({
   name: fallback(string(), ""),
   color: string(),
   interface: string(),
-  enable: boolean(),
+  enable: fallback(boolean(), true),
   rules: array(RuleSchema),
 });
 export type Group = InferOutput<typeof GroupSchema>;
