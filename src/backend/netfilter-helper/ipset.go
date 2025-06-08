@@ -3,7 +3,6 @@ package netfilterHelper
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -12,6 +11,23 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type IPv4Subnet struct {
+	Address [4]byte
+	CIDR    uint8
+}
+
+func (subnet IPv4Subnet) String() string {
+	if subnet.CIDR == 0 {
+		return fmt.Sprintf("%d.%d.%d.%d", subnet.Address[0], subnet.Address[1], subnet.Address[2], subnet.Address[3])
+	} else {
+		return fmt.Sprintf("%d.%d.%d.%d/%d", subnet.Address[0], subnet.Address[1], subnet.Address[2], subnet.Address[3], subnet.CIDR)
+	}
+}
+
+type IPSetTimeout *uint32
+
+var zeroTimeout = IPSetTimeout(new(uint32))
+
 type IPSet struct {
 	enabled atomic.Bool
 	locker  sync.Mutex
@@ -19,7 +35,7 @@ type IPSet struct {
 	ipsetName string
 }
 
-func (r *IPSet) AddIP(addr net.IP, timeout *uint32) error {
+func (r *IPSet) AddIPv4Subnet(subnet IPv4Subnet, timeout IPSetTimeout) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
@@ -27,21 +43,16 @@ func (r *IPSet) AddIP(addr net.IP, timeout *uint32) error {
 		return nil
 	}
 
-	var err error
-
-	if len(addr) == net.IPv4len {
-		err = netlink.IpsetAdd(r.ipsetName+"_4", &netlink.IPSetEntry{
-			IP:      addr,
-			Timeout: timeout,
-			Replace: true,
-		})
-	} else if len(addr) == net.IPv6len {
-		err = netlink.IpsetAdd(r.ipsetName+"_6", &netlink.IPSetEntry{
-			IP:      addr,
-			Timeout: timeout,
-			Replace: true,
-		})
+	if timeout == nil {
+		timeout = zeroTimeout
 	}
+
+	err := netlink.IpsetAdd(r.ipsetName+"_4", &netlink.IPSetEntry{
+		IP:      subnet.Address[:],
+		CIDR:    subnet.CIDR,
+		Timeout: timeout,
+		Replace: true,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to add address: %w", err)
 	}
@@ -49,7 +60,7 @@ func (r *IPSet) AddIP(addr net.IP, timeout *uint32) error {
 	return nil
 }
 
-func (r *IPSet) DelIP(addr net.IP) error {
+func (r *IPSet) DelIPv4Subnet(subnet IPv4Subnet) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
@@ -57,17 +68,10 @@ func (r *IPSet) DelIP(addr net.IP) error {
 		return nil
 	}
 
-	var err error
-
-	if len(addr) == net.IPv4len {
-		err = netlink.IpsetDel(r.ipsetName+"_4", &netlink.IPSetEntry{
-			IP: addr,
-		})
-	} else if len(addr) == net.IPv6len {
-		err = netlink.IpsetDel(r.ipsetName+"_6", &netlink.IPSetEntry{
-			IP: addr,
-		})
-	}
+	err := netlink.IpsetDel(r.ipsetName+"_4", &netlink.IPSetEntry{
+		IP:   subnet.Address[:],
+		CIDR: subnet.CIDR,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to delete address: %w", err)
 	}
@@ -75,7 +79,7 @@ func (r *IPSet) DelIP(addr net.IP) error {
 	return nil
 }
 
-func (r *IPSet) ListIPs() (map[string]*uint32, error) {
+func (r *IPSet) ListIPv4Subnets() (map[IPv4Subnet]IPSetTimeout, error) {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
@@ -83,22 +87,22 @@ func (r *IPSet) ListIPs() (map[string]*uint32, error) {
 		return nil, nil
 	}
 
-	addresses := make(map[string]*uint32)
+	addresses := make(map[IPv4Subnet]IPSetTimeout)
 
 	list, err := netlink.IpsetList(r.ipsetName + "_4")
 	if err != nil {
 		return nil, err
 	}
 	for _, entry := range list.Entries {
-		addresses[string(entry.IP)] = entry.Timeout
-	}
-
-	list, err = netlink.IpsetList(r.ipsetName + "_6")
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range list.Entries {
-		addresses[string(entry.IP)] = entry.Timeout
+		subnet := IPv4Subnet{
+			Address: [4]byte(entry.IP),
+			CIDR:    entry.CIDR,
+		}
+		if entry.Timeout != nil && *entry.Timeout == 0 {
+			addresses[subnet] = nil
+		} else {
+			addresses[subnet] = entry.Timeout
+		}
 	}
 
 	return addresses, nil

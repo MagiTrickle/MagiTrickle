@@ -70,6 +70,7 @@ export const RULE_TYPES = [
   { value: "wildcard", label: "Wildcard" },
   { value: "regex", label: "Regex" },
   { value: "domain", label: "Domain" },
+  { value: "subnet", label: "IPv4 subnet" },
 ];
 
 export type Interfaces = {

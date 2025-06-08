@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dnsMitmProxy "magitrickle/dns-mitm-proxy"
+	netfilterHelper "magitrickle/netfilter-helper"
 	"magitrickle/records"
 
 	"github.com/miekg/dns"
@@ -152,17 +153,18 @@ func (a *App) processARecord(aRecord dns.A, clientAddr net.Addr, network *string
 					continue
 				}
 				// TODO: Check already existed
-				if err := group.AddIP(aRecord.A, ttlDuration); err != nil {
+				subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(aRecord.A)}
+				if err := group.AddIPv4Subnet(subnet, &ttlDuration); err != nil {
 					log.Error().
-						Str("address", aRecord.A.String()).
+						Str("subnet", subnet.String()).
 						Err(err).
 						Msg("failed to add address")
 				} else {
 					log.Debug().
-						Str("address", aRecord.A.String()).
+						Str("subnet", subnet.String()).
 						Str("aRecordDomain", aRecord.Hdr.Name).
 						Str("cNameDomain", name).
-						Msg("add address")
+						Msg("add subnet")
 				}
 				break Rule
 			}
@@ -206,16 +208,18 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.Addr, net
 					continue
 				}
 				for _, aRecord := range aRecords {
-					if err := group.AddIP(aRecord.Address, uint32(now.Sub(aRecord.Deadline).Seconds())); err != nil {
+					subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(aRecord.Address)}
+					ttl := uint32(now.Sub(aRecord.Deadline).Seconds())
+					if err := group.AddIPv4Subnet(subnet, &ttl); err != nil {
 						log.Error().
-							Str("address", aRecord.Address.String()).
+							Str("subnet", subnet.String()).
 							Err(err).
-							Msg("failed to add address")
+							Msg("failed to add subnet")
 					} else {
 						log.Debug().
-							Str("address", aRecord.Address.String()).
+							Str("subnet", subnet.String()).
 							Str("cNameDomain", name).
-							Msg("add address")
+							Msg("add subnet")
 					}
 				}
 				continue Rule
