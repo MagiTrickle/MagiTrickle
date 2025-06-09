@@ -68,9 +68,10 @@ func (h *Handler) ListInterfaces(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusInternalServerError, fmt.Errorf("failed to get interfaces: %w", err).Error())
 		return
 	}
-	res := make([]types.InterfaceRes, len(interfaces))
+	res := make([]types.InterfaceRes, len(interfaces)+1)
+	res[0] = types.InterfaceRes{ID: "blackhole"}
 	for i, iface := range interfaces {
-		res[i] = types.InterfaceRes{ID: iface.Name}
+		res[i+1] = types.InterfaceRes{ID: iface.Name}
 	}
 	WriteJson(w, http.StatusOK, types.InterfacesRes{Interfaces: res})
 }

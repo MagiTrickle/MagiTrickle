@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sync/atomic"
 
+	"magitrickle/constant"
 	dnsMitmProxy "magitrickle/dns-mitm-proxy"
 	"magitrickle/models"
 	netfilterHelper "magitrickle/netfilter-helper"
@@ -148,7 +150,7 @@ func (a *App) ListInterfaces() ([]net.Interface, error) {
 
 	var filteredInterfaces []net.Interface
 	for _, iface := range interfaces {
-		if iface.Flags&net.FlagPointToPoint == 0 {
+		if iface.Flags&net.FlagPointToPoint == 0 || slices.Contains(constant.IgnoredInterfaces, iface.Name) {
 			continue
 		}
 		filteredInterfaces = append(filteredInterfaces, iface)
