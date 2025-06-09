@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
+	"golang.org/x/sys/unix"
 )
 
 type IPSetToLink struct {
@@ -25,7 +27,7 @@ type IPSetToLink struct {
 	mark      uint32
 	table     int
 	ip4Rule   *netlink.Rule
-	ip4Route  *netlink.Route
+	ip4Route  [3]*netlink.Route
 }
 
 func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables, table string) error {
@@ -199,49 +201,72 @@ func (r *IPSetToLink) deleteIPRule() error {
 }
 
 func (r *IPSetToLink) insertIPRoute() error {
-	iface, err := netlink.LinkByName(r.ifaceName)
-	if err != nil {
-		if errors.As(err, &netlink.LinkNotFoundError{}) {
-			log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
-			return nil
-		}
-		return fmt.Errorf("error while getting interface: %w", err)
-	}
-	if iface.Attrs().Flags&net.FlagUp == 0 {
-		log.Warn().Str("iface", r.ifaceName).Msg("interface is down")
-		return nil
-	}
+	var route *netlink.Route
 
-	route := &netlink.Route{
-		LinkIndex: iface.Attrs().Index,
-		Table:     r.table,
-		Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
+	route = &netlink.Route{
+		Dst:   &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
+		Table: r.table,
+		Type:  unix.RTN_BLACKHOLE,
 	}
-	err = netlink.RouteAdd(route)
-	if err != nil {
-		// TODO: Нормально отлавливать ошибку
-		if err.Error() == "file exists" {
-			r.ip4Route = route
-			return nil
-		}
+	err := netlink.RouteAdd(route)
+	if err != nil && !errors.Is(err, unix.EEXIST) {
 		return fmt.Errorf("error while adding route: %w", err)
 	}
-	r.ip4Route = route
+	r.ip4Route[0] = route
+
+	if r.ifaceName != "blackhole" {
+		iface, err := netlink.LinkByName(r.ifaceName)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
+				return nil
+			}
+			return fmt.Errorf("error while getting interface: %w", err)
+		}
+		if iface.Attrs().Flags&net.FlagUp == 0 {
+			log.Warn().Str("iface", r.ifaceName).Msg("interface is down")
+			return nil
+		}
+
+		route = &netlink.Route{
+			LinkIndex: iface.Attrs().Index,
+			Table:     r.table,
+			Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{128, 0, 0, 0}},
+		}
+		err = netlink.RouteAdd(route)
+		if err != nil && !errors.Is(err, unix.EEXIST) {
+			return fmt.Errorf("error while adding route: %w", err)
+		}
+		r.ip4Route[1] = route
+
+		route = &netlink.Route{
+			LinkIndex: iface.Attrs().Index,
+			Table:     r.table,
+			Dst:       &net.IPNet{IP: []byte{128, 0, 0, 0}, Mask: []byte{128, 0, 0, 0}},
+		}
+		err = netlink.RouteAdd(route)
+		if err != nil && !errors.Is(err, unix.EEXIST) {
+			return fmt.Errorf("error while adding route: %w", err)
+		}
+		r.ip4Route[2] = route
+	}
 
 	return nil
 }
 
 func (r *IPSetToLink) deleteIPRoute() error {
-	if r.ip4Route == nil {
-		return nil
+	errs := make([]error, 0)
+	for i := 2; i >= 0; i-- {
+		if r.ip4Route[i] == nil {
+			continue
+		}
+		err := netlink.RouteDel(r.ip4Route[i])
+		if err != nil {
+			errs = append(errs, fmt.Errorf("error while deleting route: %w", err))
+		}
+		r.ip4Route[i] = nil
 	}
-
-	err := netlink.RouteDel(r.ip4Route)
-	if err != nil {
-		return fmt.Errorf("error while deleting route: %w", err)
-	}
-	r.ip4Route = nil
-	return nil
+	return errors.Join(errs...)
 }
 
 func (r *IPSetToLink) getUnusedMarkAndTable() (mark uint32, table int, err error) {
