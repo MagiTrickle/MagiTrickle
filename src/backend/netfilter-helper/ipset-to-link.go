@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -217,7 +216,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 	if r.ifaceName != "blackhole" {
 		iface, err := netlink.LinkByName(r.ifaceName)
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			if errors.As(err, &netlink.LinkNotFoundError{}) {
 				log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
 				return nil
 			}
