@@ -24,6 +24,19 @@ func (subnet IPv4Subnet) String() string {
 	}
 }
 
+type IPv6Subnet struct {
+	Address [16]byte
+	CIDR    uint8
+}
+
+func (subnet IPv6Subnet) String() string {
+	if subnet.CIDR == 0 {
+		return fmt.Sprintf("%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x", subnet.Address[0], subnet.Address[1], subnet.Address[2], subnet.Address[3], subnet.Address[4], subnet.Address[5], subnet.Address[6], subnet.Address[7], subnet.Address[8], subnet.Address[9], subnet.Address[10], subnet.Address[11], subnet.Address[12], subnet.Address[13], subnet.Address[14], subnet.Address[15])
+	} else {
+		return fmt.Sprintf("%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x/%d", subnet.Address[0], subnet.Address[1], subnet.Address[2], subnet.Address[3], subnet.Address[4], subnet.Address[5], subnet.Address[6], subnet.Address[7], subnet.Address[8], subnet.Address[9], subnet.Address[10], subnet.Address[11], subnet.Address[12], subnet.Address[13], subnet.Address[14], subnet.Address[15], subnet.CIDR)
+	}
+}
+
 type IPSetTimeout *uint32
 
 var zeroTimeout = IPSetTimeout(new(uint32))
@@ -60,6 +73,31 @@ func (r *IPSet) AddIPv4Subnet(subnet IPv4Subnet, timeout IPSetTimeout) error {
 	return nil
 }
 
+func (r *IPSet) AddIPv6Subnet(subnet IPv6Subnet, timeout IPSetTimeout) error {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+
+	if !r.enabled.Load() {
+		return nil
+	}
+
+	if timeout == nil {
+		timeout = zeroTimeout
+	}
+
+	err := netlink.IpsetAdd(r.ipsetName+"_6", &netlink.IPSetEntry{
+		IP:      subnet.Address[:],
+		CIDR:    subnet.CIDR,
+		Timeout: timeout,
+		Replace: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add address: %w", err)
+	}
+
+	return nil
+}
+
 func (r *IPSet) DelIPv4Subnet(subnet IPv4Subnet) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
@@ -69,6 +107,25 @@ func (r *IPSet) DelIPv4Subnet(subnet IPv4Subnet) error {
 	}
 
 	err := netlink.IpsetDel(r.ipsetName+"_4", &netlink.IPSetEntry{
+		IP:   subnet.Address[:],
+		CIDR: subnet.CIDR,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete address: %w", err)
+	}
+
+	return nil
+}
+
+func (r *IPSet) DelIPv6Subnet(subnet IPv6Subnet) error {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+
+	if !r.enabled.Load() {
+		return nil
+	}
+
+	err := netlink.IpsetDel(r.ipsetName+"_6", &netlink.IPSetEntry{
 		IP:   subnet.Address[:],
 		CIDR: subnet.CIDR,
 	})
@@ -96,6 +153,35 @@ func (r *IPSet) ListIPv4Subnets() (map[IPv4Subnet]IPSetTimeout, error) {
 	for _, entry := range list.Entries {
 		subnet := IPv4Subnet{
 			Address: [4]byte(entry.IP),
+			CIDR:    entry.CIDR,
+		}
+		if entry.Timeout != nil && *entry.Timeout == 0 {
+			addresses[subnet] = nil
+		} else {
+			addresses[subnet] = entry.Timeout
+		}
+	}
+
+	return addresses, nil
+}
+
+func (r *IPSet) ListIPv6Subnets() (map[IPv6Subnet]IPSetTimeout, error) {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+
+	if !r.enabled.Load() {
+		return nil, nil
+	}
+
+	addresses := make(map[IPv6Subnet]IPSetTimeout)
+
+	list, err := netlink.IpsetList(r.ipsetName + "_6")
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range list.Entries {
+		subnet := IPv6Subnet{
+			Address: [16]byte(entry.IP),
 			CIDR:    entry.CIDR,
 		}
 		if entry.Timeout != nil && *entry.Timeout == 0 {

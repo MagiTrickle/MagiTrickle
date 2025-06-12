@@ -61,6 +61,24 @@ func (g *Group) AddIPv4Subnet(subnet netfilterHelper.IPv4Subnet, ttl netfilterHe
 	return g.addIPv4Subnet(subnet, ttl)
 }
 
+func (g *Group) addIPv6Subnet(subnet netfilterHelper.IPv6Subnet, ttl netfilterHelper.IPSetTimeout) error {
+	return g.ipset.AddIPv6Subnet(subnet, ttl)
+}
+
+func (g *Group) AddIPv6Subnet(subnet netfilterHelper.IPv6Subnet, ttl netfilterHelper.IPSetTimeout) error {
+	g.locker.Lock()
+	defer g.locker.Unlock()
+	if !g.Enabled() {
+		return nil
+	}
+
+	if !g.Group.Enable {
+		return nil
+	}
+
+	return g.addIPv6Subnet(subnet, ttl)
+}
+
 func (g *Group) delIPv4Subnet(subnet netfilterHelper.IPv4Subnet) error {
 	return g.ipset.DelIPv4Subnet(subnet)
 }
@@ -79,6 +97,24 @@ func (g *Group) DelIPv4Subnet(subnet netfilterHelper.IPv4Subnet) error {
 	return g.delIPv4Subnet(subnet)
 }
 
+func (g *Group) delIPv6Subnet(subnet netfilterHelper.IPv6Subnet) error {
+	return g.ipset.DelIPv6Subnet(subnet)
+}
+
+func (g *Group) DelIPv6Subnet(subnet netfilterHelper.IPv6Subnet) error {
+	g.locker.Lock()
+	defer g.locker.Unlock()
+	if !g.Enabled() {
+		return nil
+	}
+
+	if !g.Group.Enable {
+		return nil
+	}
+
+	return g.delIPv6Subnet(subnet)
+}
+
 func (g *Group) listIPv4Subnets() (map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout, error) {
 	return g.ipset.ListIPv4Subnets()
 }
@@ -95,6 +131,24 @@ func (g *Group) ListIPv4Subnets() (map[netfilterHelper.IPv4Subnet]netfilterHelpe
 	}
 
 	return g.listIPv4Subnets()
+}
+
+func (g *Group) listIPv6Subnets() (map[netfilterHelper.IPv6Subnet]netfilterHelper.IPSetTimeout, error) {
+	return g.ipset.ListIPv6Subnets()
+}
+
+func (g *Group) ListIPv6Subnets() (map[netfilterHelper.IPv6Subnet]netfilterHelper.IPSetTimeout, error) {
+	g.locker.Lock()
+	defer g.locker.Unlock()
+	if !g.Enabled() {
+		return nil, nil
+	}
+
+	if !g.Group.Enable {
+		return nil, nil
+	}
+
+	return g.listIPv6Subnets()
 }
 
 func (g *Group) enable() error {
@@ -175,9 +229,10 @@ func (g *Group) Disable() error {
 	return g.disable()
 }
 
-func (g *Group) syncIPv4Subnets() error {
+func (g *Group) syncSubnets() error {
 	now := time.Now()
 	newIPv4SubnetList := make(map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout)
+	newIPv6SubnetList := make(map[netfilterHelper.IPv6Subnet]netfilterHelper.IPSetTimeout)
 	knownDomains := g.app.records.ListKnownDomains()
 RuleLoop:
 	for _, domain := range g.Rules {
@@ -234,12 +289,19 @@ RuleLoop:
 				if !domain.IsMatch(domainName) {
 					continue
 				}
-				domainAddresses := g.app.records.GetARecords(domainName)
+				domainAddresses := g.app.records.GetAddresses(domainName)
 				for _, address := range domainAddresses {
 					ttl := uint32(now.Sub(address.Deadline).Seconds())
-					subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(address.Address)}
-					if oldTTL, exists := newIPv4SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
-						newIPv4SubnetList[subnet] = &ttl
+					if len(address.Address) == net.IPv4len {
+						subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(address.Address)}
+						if oldTTL, exists := newIPv4SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
+							newIPv4SubnetList[subnet] = &ttl
+						}
+					} else {
+						subnet := netfilterHelper.IPv6Subnet{Address: [16]byte(address.Address)}
+						if oldTTL, exists := newIPv6SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
+							newIPv6SubnetList[subnet] = &ttl
+						}
 					}
 				}
 			}
@@ -274,6 +336,36 @@ RuleLoop:
 			log.Trace().Str("subnet", subnet.String()).Msg("deleted subnet")
 		}
 	}
+
+	oldIPv6SubnetList, err := g.listIPv6Subnets()
+	if err != nil {
+		return fmt.Errorf("failed to get old ipset list: %w", err)
+	}
+	for subnet, newTTL := range newIPv6SubnetList {
+		if oldTTL, ok := oldIPv6SubnetList[subnet]; ok {
+			if oldTTL == nil || (newTTL != nil && *newTTL < *oldTTL) {
+				continue
+			}
+		}
+
+		if err := g.addIPv6Subnet(subnet, newTTL); err != nil {
+			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to add subnet")
+		} else {
+			log.Trace().Str("subnet", subnet.String()).Msg("added subnet")
+		}
+	}
+	for subnet := range oldIPv6SubnetList {
+		if _, ok := newIPv6SubnetList[subnet]; ok {
+			continue
+		}
+
+		if err := g.delIPv6Subnet(subnet); err != nil {
+			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to delete subnet")
+		} else {
+			log.Trace().Str("subnet", subnet.String()).Msg("deleted subnet")
+		}
+	}
+
 	return nil
 }
 
@@ -289,7 +381,7 @@ func (g *Group) Sync() error {
 		return nil
 	}
 
-	return g.syncIPv4Subnets()
+	return g.syncSubnets()
 }
 
 func (g *Group) NetfilterDHook(iptType, table string) error {

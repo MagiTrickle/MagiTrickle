@@ -9,21 +9,21 @@ import (
 
 func TestLoop(t *testing.T) {
 	r := New()
-	r.AddCNameRecord("1", "2", 60)
-	r.AddCNameRecord("2", "1", 60)
-	if r.GetARecords("1") != nil {
+	r.AddAlias("1", "2", 60)
+	r.AddAlias("2", "1", 60)
+	if r.GetAddresses("1") != nil {
 		t.Fatal("loop detected")
 	}
-	if r.GetARecords("2") != nil {
+	if r.GetAddresses("2") != nil {
 		t.Fatal("loop detected")
 	}
 }
 
 func TestCName(t *testing.T) {
 	r := New()
-	r.AddARecord("example.com", []byte{1, 2, 3, 4}, 60)
-	r.AddCNameRecord("gateway.example.com", "example.com", 60)
-	records := r.GetARecords("gateway.example.com")
+	r.AddAddress("example.com", []byte{1, 2, 3, 4}, 60)
+	r.AddAlias("gateway.example.com", "example.com", 60)
+	records := r.GetAddresses("gateway.example.com")
 	if records == nil {
 		t.Fatal("no records")
 	}
@@ -34,8 +34,8 @@ func TestCName(t *testing.T) {
 
 func TestA(t *testing.T) {
 	r := New()
-	r.AddARecord("example.com", []byte{1, 2, 3, 4}, 60)
-	records := r.GetARecords("example.com")
+	r.AddAddress("example.com", []byte{1, 2, 3, 4}, 60)
+	records := r.GetAddresses("example.com")
 	if records == nil {
 		t.Fatal("no records")
 	}
@@ -46,9 +46,9 @@ func TestA(t *testing.T) {
 
 func TestDeprecated(t *testing.T) {
 	r := New()
-	r.AddARecord("example.com", []byte{1, 2, 3, 4}, 0)
+	r.AddAddress("example.com", []byte{1, 2, 3, 4}, 0)
 	time.Sleep(time.Second)
-	records := r.GetARecords("example.com")
+	records := r.GetAddresses("example.com")
 	if records != nil {
 		t.Fatal("deprecated records")
 	}
@@ -56,7 +56,7 @@ func TestDeprecated(t *testing.T) {
 
 func TestNotExistedA(t *testing.T) {
 	r := New()
-	records := r.GetARecords("example.com")
+	records := r.GetAddresses("example.com")
 	if records != nil {
 		t.Fatal("not existed records")
 	}
@@ -64,8 +64,8 @@ func TestNotExistedA(t *testing.T) {
 
 func TestNotExistedCNameAlias(t *testing.T) {
 	r := New()
-	r.AddCNameRecord("gateway.example.com", "example.com", 60)
-	records := r.GetARecords("gateway.example.com")
+	r.AddAlias("gateway.example.com", "example.com", 60)
+	records := r.GetAddresses("gateway.example.com")
 	if records != nil {
 		t.Fatal("not existed records")
 	}
@@ -73,9 +73,9 @@ func TestNotExistedCNameAlias(t *testing.T) {
 
 func TestReplacing(t *testing.T) {
 	r := New()
-	r.AddCNameRecord("gateway.example.com", "example.com", 60)
-	r.AddARecord("gateway.example.com", []byte{1, 2, 3, 4}, 60)
-	records := r.GetARecords("gateway.example.com")
+	r.AddAlias("gateway.example.com", "example.com", 60)
+	r.AddAddress("gateway.example.com", []byte{1, 2, 3, 4}, 60)
+	records := r.GetAddresses("gateway.example.com")
 	if bytes.Compare(records[0].Address, []byte{1, 2, 3, 4}) != 0 {
 		t.Fatal("mismatch")
 	}
@@ -83,11 +83,11 @@ func TestReplacing(t *testing.T) {
 
 func TestAliases(t *testing.T) {
 	r := New()
-	r.AddARecord("1", []byte{1, 2, 3, 4}, 60)
-	r.AddCNameRecord("2", "1", 60)
-	r.AddCNameRecord("3", "2", 60)
-	r.AddCNameRecord("4", "2", 60)
-	r.AddCNameRecord("5", "1", 60)
+	r.AddAddress("1", []byte{1, 2, 3, 4}, 60)
+	r.AddAlias("2", "1", 60)
+	r.AddAlias("3", "2", 60)
+	r.AddAlias("4", "2", 60)
+	r.AddAlias("5", "1", 60)
 	aliases := r.GetAliases("1")
 	if aliases == nil {
 		t.Fatal("no aliases")

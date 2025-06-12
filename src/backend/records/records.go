@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-type ARecord struct {
+type Address struct {
 	Address  net.IP
 	Deadline time.Time
 }
 
-type CNameRecord struct {
+type Alias struct {
 	Alias    string
 	Deadline time.Time
 }
@@ -22,27 +22,27 @@ type Records struct {
 	records map[string]interface{}
 }
 
-func (r *Records) AddCNameRecord(domainName, alias string, ttl uint32) {
+func (r *Records) AddAlias(domainName, alias string, ttl uint32) {
 	if domainName == alias {
 		return
 	}
 
 	r.locker.Lock()
-	r.records[domainName] = &CNameRecord{
+	r.records[domainName] = &Alias{
 		Alias:    alias,
 		Deadline: time.Now().Add(time.Duration(ttl) * time.Second),
 	}
 	r.locker.Unlock()
 }
 
-func (r *Records) AddARecord(domainName string, addr net.IP, ttl uint32) {
+func (r *Records) AddAddress(domainName string, addr net.IP, ttl uint32) {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
 	deadline := time.Now().Add(time.Duration(ttl) * time.Second)
 
-	aRecords, _ := r.records[domainName].([]*ARecord)
-	for _, aRecord := range aRecords {
+	address, _ := r.records[domainName].([]*Address)
+	for _, aRecord := range address {
 		if bytes.Compare(aRecord.Address, addr) != 0 {
 			continue
 		}
@@ -50,7 +50,7 @@ func (r *Records) AddARecord(domainName string, addr net.IP, ttl uint32) {
 		return
 	}
 
-	r.records[domainName] = append(aRecords, &ARecord{
+	r.records[domainName] = append(address, &Address{
 		Address:  addr,
 		Deadline: deadline,
 	})
@@ -66,11 +66,11 @@ func (r *Records) GetAliases(domainName string) []string {
 
 	for {
 		var addedNew bool
-		for name, aRecord := range r.records {
+		for name, record := range r.records {
 			if _, ok := domains[name]; ok {
 				continue
 			}
-			cname, ok := aRecord.(*CNameRecord)
+			cname, ok := record.(*Alias)
 			if !ok {
 				continue
 			}
@@ -96,7 +96,7 @@ func (r *Records) GetAliases(domainName string) []string {
 	return domainList
 }
 
-func (r *Records) GetARecords(domainName string) []*ARecord {
+func (r *Records) GetAddresses(domainName string) []*Address {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 	r.cleanupRecords()
@@ -105,13 +105,13 @@ func (r *Records) GetARecords(domainName string) []*ARecord {
 	loopDetect[domainName] = struct{}{}
 	for {
 		switch v := r.records[domainName].(type) {
-		case *CNameRecord:
+		case *Alias:
 			if _, ok := loopDetect[v.Alias]; ok {
 				return nil
 			}
 			domainName = v.Alias
 			loopDetect[v.Alias] = struct{}{}
-		case []*ARecord:
+		case []*Address:
 			return v
 		default:
 			return nil
@@ -137,7 +137,7 @@ func (r *Records) cleanupRecords() {
 	now := time.Now()
 	for name, records := range r.records {
 		switch v := records.(type) {
-		case []*ARecord:
+		case []*Address:
 			idx := 0
 			for _, aRecord := range v {
 				if now.After(aRecord.Deadline) {
@@ -151,7 +151,7 @@ func (r *Records) cleanupRecords() {
 				break
 			}
 			r.records[name] = v[:idx]
-		case *CNameRecord:
+		case *Alias:
 			if !now.After(v.Deadline) {
 				continue
 			}
