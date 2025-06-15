@@ -15,6 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const Blackhole = "blackhole"
+
 type IPSetToLink struct {
 	enabled atomic.Bool
 	locker  sync.Mutex
@@ -45,9 +47,11 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables, table string) 
 			}
 		}
 
-		err = ipt.AppendUnique("filter", r.chainName, "-o", r.ifaceName, "-j", "ACCEPT")
-		if err != nil {
-			return fmt.Errorf("failed to fix protect for IPv4: %w", err)
+		if r.ifaceName != Blackhole {
+			err = ipt.AppendUnique("filter", r.chainName, "-o", r.ifaceName, "-j", "ACCEPT")
+			if err != nil {
+				return fmt.Errorf("failed to fix protect for IPv4: %w", err)
+			}
 		}
 
 		if ipt.Proto() == iptables.ProtocolIPv4 {
@@ -252,7 +256,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 		}
 		r.ip4Route[0] = route
 
-		if r.ifaceName != "blackhole" {
+		if r.ifaceName != Blackhole {
 			iface, err := netlink.LinkByName(r.ifaceName)
 			if err != nil {
 				if errors.As(err, &netlink.LinkNotFoundError{}) {
@@ -303,7 +307,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 		}
 		r.ip6Route[0] = route
 
-		if r.ifaceName != "blackhole" {
+		if r.ifaceName != Blackhole {
 			iface, err := netlink.LinkByName(r.ifaceName)
 			if err != nil {
 				if errors.As(err, &netlink.LinkNotFoundError{}) {
