@@ -10,9 +10,11 @@ type NetfilterHelper struct {
 	IpsetPrefix string
 	IPTables4   *iptables.IPTables
 	IPTables6   *iptables.IPTables
+
+	StartIdx uint32
 }
 
-func New(chainPrefix, ipsetPrefix string, disableIPv4, disableIPv6 bool) (*NetfilterHelper, error) {
+func New(chainPrefix, ipsetPrefix string, disableIPv4, disableIPv6 bool, startIdx uint32) (*NetfilterHelper, error) {
 	var err error
 	var ipt4, ipt6 *iptables.IPTables
 
@@ -35,5 +37,6 @@ func New(chainPrefix, ipsetPrefix string, disableIPv4, disableIPv6 bool) (*Netfi
 		IpsetPrefix: ipsetPrefix,
 		IPTables4:   ipt4,
 		IPTables6:   ipt6,
+		StartIdx:    startIdx,
 	}, nil
 }

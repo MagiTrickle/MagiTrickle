@@ -23,6 +23,7 @@ type IPSetToLink struct {
 
 	chainName string
 	ifaceName string
+	startIdx  uint32
 	ipset     *IPSet
 	nh        *NetfilterHelper
 	mark      uint32
@@ -378,14 +379,14 @@ func (r *IPSetToLink) deleteIPRoute() error {
 	return errors.Join(errs...)
 }
 
-func (r *IPSetToLink) getUnusedMarkAndTable() (mark uint32, table int, err error) {
+func (r *IPSetToLink) getUnusedMarkAndTable() (idx uint32, err error) {
 	// Find unused mark and table
 	markMap := make(map[uint32]struct{})
 	tableMap := map[int]struct{}{0: {}, 253: {}, 254: {}, 255: {}}
 
 	rules, err := netlink.RuleList(nl.FAMILY_ALL)
 	if err != nil {
-		return 0, 0, fmt.Errorf("error while getting rules: %w", err)
+		return 0, fmt.Errorf("error while getting rules: %w", err)
 	}
 	for _, rule := range rules {
 		markMap[rule.Mark] = struct{}{}
@@ -394,25 +395,22 @@ func (r *IPSetToLink) getUnusedMarkAndTable() (mark uint32, table int, err error
 
 	routes, err := netlink.RouteListFiltered(nl.FAMILY_ALL, &netlink.Route{}, netlink.RT_FILTER_TABLE)
 	if err != nil {
-		return 0, 0, fmt.Errorf("error while getting routes: %w", err)
+		return 0, fmt.Errorf("error while getting routes: %w", err)
 	}
 	for _, route := range routes {
 		tableMap[route.Table] = struct{}{}
 	}
 
-	for table = 0; table < 0x7ffffffe; table++ {
-		if _, exists := tableMap[table]; !exists {
+	for idx = r.startIdx; idx < 0xfffffffe; idx++ {
+		if _, exists := tableMap[int(idx)]; !exists {
+			break
+		}
+		if _, exists := markMap[idx]; !exists {
 			break
 		}
 	}
 
-	for mark = 0; mark < 0xfffffffe; mark++ {
-		if _, exists := markMap[mark]; !exists {
-			break
-		}
-	}
-
-	return mark, table, nil
+	return idx, nil
 }
 
 func (r *IPSetToLink) enable() error {
@@ -421,10 +419,11 @@ func (r *IPSetToLink) enable() error {
 	}
 
 	var err error
-	r.mark, r.table, err = r.getUnusedMarkAndTable()
+	idx, err := r.getUnusedMarkAndTable()
 	if err != nil {
 		return err
 	}
+	r.mark, r.table = idx, int(idx)
 
 	err = r.deleteIPTablesRules(r.nh.IPTables4)
 	if err != nil {
@@ -553,5 +552,6 @@ func (nh *NetfilterHelper) IPSetToLink(name string, ifaceName string, ipset *IPS
 		chainName: nh.ChainPrefix + name,
 		ifaceName: ifaceName,
 		ipset:     ipset,
+		startIdx:  nh.StartIdx,
 	}
 }

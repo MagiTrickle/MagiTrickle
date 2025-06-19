@@ -39,10 +39,11 @@ type DNSProxyServer struct {
 }
 
 type Netfilter struct {
-	IPTables    IPTables
-	IPSet       IPSet
-	DisableIPv4 bool
-	DisableIPv6 bool
+	IPTables            IPTables
+	IPSet               IPSet
+	DisableIPv4         bool
+	DisableIPv6         bool
+	StartMarkTableIndex uint32
 }
 
 type IPTables struct {

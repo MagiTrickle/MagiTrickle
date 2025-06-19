@@ -124,6 +124,9 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			if cfg.App.Netfilter.DisableIPv6 != nil {
 				a.config.Netfilter.DisableIPv6 = *cfg.App.Netfilter.DisableIPv6
 			}
+			if cfg.App.Netfilter.StartMarkTableIndex != nil {
+				a.config.Netfilter.StartMarkTableIndex = *cfg.App.Netfilter.StartMarkTableIndex
+			}
 		}
 
 		if cfg.App.Link != nil {
@@ -240,8 +243,9 @@ func (a *App) ExportConfig() config.Config {
 					TablePrefix:   &a.config.Netfilter.IPSet.TablePrefix,
 					AdditionalTTL: &a.config.Netfilter.IPSet.AdditionalTTL,
 				},
-				DisableIPv4: &a.config.Netfilter.DisableIPv4,
-				DisableIPv6: &a.config.Netfilter.DisableIPv6,
+				DisableIPv4:         &a.config.Netfilter.DisableIPv4,
+				DisableIPv6:         &a.config.Netfilter.DisableIPv6,
+				StartMarkTableIndex: &a.config.Netfilter.StartMarkTableIndex,
 			},
 			Link:              &a.config.Link,
 			ShowAllInterfaces: &a.config.ShowAllInterfaces,
