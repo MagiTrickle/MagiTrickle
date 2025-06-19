@@ -47,8 +47,9 @@ var defaultAppConfig = models.App{
 			TablePrefix:   "mt_",
 			AdditionalTTL: 3600,
 		},
-		DisableIPv4: false,
-		DisableIPv6: false,
+		DisableIPv4:         false,
+		DisableIPv6:         false,
+		StartMarkTableIndex: 0x4D616769, // Magi
 	},
 	Link:              []string{"br0"},
 	ShowAllInterfaces: false,

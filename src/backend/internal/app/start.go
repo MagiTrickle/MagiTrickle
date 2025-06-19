@@ -118,7 +118,7 @@ func (a *App) setupLogging() {
 }
 
 func (a *App) createNetfilterHelper() (*netfilterHelper.NetfilterHelper, error) {
-	return netfilterHelper.New(a.config.Netfilter.IPTables.ChainPrefix, a.config.Netfilter.IPSet.TablePrefix, a.config.Netfilter.DisableIPv4, a.config.Netfilter.DisableIPv6)
+	return netfilterHelper.New(a.config.Netfilter.IPTables.ChainPrefix, a.config.Netfilter.IPSet.TablePrefix, a.config.Netfilter.DisableIPv4, a.config.Netfilter.DisableIPv6, a.config.Netfilter.StartMarkTableIndex)
 }
 
 func (a *App) getInterfaceAddresses() ([]netlink.Addr, error) {
