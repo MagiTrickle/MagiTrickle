@@ -1,7 +1,12 @@
 // deno-lint-ignore-file prefer-const
 export function persistedState<T>(key: string, defaults: T) {
   const stored = localStorage.getItem(key);
-  const value = stored ? JSON.parse(stored) : { value: defaults };
+  let value = { value: defaults }
+  if (stored) {
+    try {
+      value = JSON.parse(stored)
+    } catch { }
+  }
 
   let state = $state(value);
   $effect.root(() => {
