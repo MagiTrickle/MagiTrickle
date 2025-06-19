@@ -229,7 +229,7 @@ func (g *Group) Disable() error {
 	return g.disable()
 }
 
-func (g *Group) syncSubnets() error {
+func (g *Group) sync() error {
 	now := time.Now()
 	newIPv4SubnetList := make(map[netfilterHelper.IPv4Subnet]netfilterHelper.IPSetTimeout)
 	newIPv6SubnetList := make(map[netfilterHelper.IPv6Subnet]netfilterHelper.IPSetTimeout)
@@ -385,7 +385,7 @@ func (g *Group) Sync() error {
 		return nil
 	}
 
-	return g.syncSubnets()
+	return g.sync()
 }
 
 func (g *Group) NetfilterDHook(iptType, table string) error {
