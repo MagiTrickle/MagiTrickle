@@ -53,7 +53,7 @@ func (p DNSMITMProxy) requestDNS(req []byte, network string) ([]byte, error) {
 		}
 		resp = make([]byte, respLen)
 	} else {
-		resp = make([]byte, 512)
+		resp = make([]byte, dns.MaxMsgSize)
 	}
 
 	n, err = upstreamConn.Read(resp)
@@ -196,7 +196,7 @@ func (p DNSMITMProxy) ListenUDP(ctx context.Context, addr *net.UDPAddr) error {
 			return nil
 		}
 
-		req := make([]byte, 512)
+		req := make([]byte, dns.MaxMsgSize)
 		n, clientAddr, err := conn.ReadFromUDP(req)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to read udp request")
