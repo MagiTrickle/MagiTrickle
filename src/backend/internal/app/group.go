@@ -291,7 +291,11 @@ RuleLoop:
 				}
 				domainAddresses := g.app.records.GetAddresses(domainName)
 				for _, address := range domainAddresses {
-					ttl := uint32(now.Sub(address.Deadline).Seconds())
+					ttlDuration := address.Deadline.Sub(now).Seconds()
+					if ttlDuration <= 0 {
+						continue
+					}
+					ttl := uint32(ttlDuration)
 					if len(address.Address) == net.IPv4len {
 						subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(address.Address)}
 						if oldTTL, exists := newIPv4SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
