@@ -401,7 +401,7 @@ func (r *IPSetToLink) getUnusedMarkAndTable() (idx uint32, err error) {
 		tableMap[route.Table] = struct{}{}
 	}
 
-	for idx = r.startIdx; idx < 0xfffffffe; idx++ {
+	for idx = r.startIdx; idx < 0x7ffffffe; idx++ {
 		if _, exists := tableMap[int(idx)]; !exists {
 			break
 		}
