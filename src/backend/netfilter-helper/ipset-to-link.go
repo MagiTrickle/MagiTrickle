@@ -537,7 +537,7 @@ func (r *IPSetToLink) LinkUpdateHook(event netlink.LinkUpdate) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
-	if !r.enabled.Load() || event.Change != 1 || event.Link.Attrs().Name != r.ifaceName {
+	if !r.enabled.Load() || event.Link.Attrs().Name != r.ifaceName {
 		return nil
 	}
 

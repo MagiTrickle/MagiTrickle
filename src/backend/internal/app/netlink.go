@@ -2,9 +2,13 @@ package app
 
 import (
 	"fmt"
+	"slices"
+
+	"magitrickle/constant"
 
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 func subscribeLinkUpdates() (chan netlink.LinkUpdate, chan struct{}, error) {
@@ -18,13 +22,15 @@ func subscribeLinkUpdates() (chan netlink.LinkUpdate, chan struct{}, error) {
 
 // handleLink обрабатывает события изменения состояния сетевых интерфейсов
 func (a *App) handleLink(event netlink.LinkUpdate) {
-	switch event.Change {
-	case 0x00000001:
-		log.Trace().
-			Str("interface", event.Link.Attrs().Name).
-			Int("change", int(event.Change)).
-			Msg("interface event")
+	switch event.Header.Type {
+	case unix.RTM_NEWLINK:
 		ifaceName := event.Link.Attrs().Name
+		if !slices.Contains(constant.IgnoredInterfaces, ifaceName) {
+			log.Debug().
+				Str("interface", ifaceName).
+				Int("type", int(event.Header.Type)).
+				Msg("interface add")
+		}
 		for _, group := range a.groups {
 			if group.Interface != ifaceName {
 				continue
@@ -36,18 +42,10 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 					Msg("error while handling interface up")
 			}
 		}
-	case 0xFFFFFFFF:
-		switch event.Header.Type {
-		case 16:
-			log.Debug().
-				Str("interface", event.Link.Attrs().Name).
-				Int("type", int(event.Header.Type)).
-				Msg("interface add")
-		case 17:
-			log.Debug().
-				Str("interface", event.Link.Attrs().Name).
-				Int("type", int(event.Header.Type)).
-				Msg("interface del")
-		}
+	case unix.RTM_DELLINK:
+		log.Debug().
+			Str("interface", event.Link.Attrs().Name).
+			Int("type", int(event.Header.Type)).
+			Msg("interface del")
 	}
 }
