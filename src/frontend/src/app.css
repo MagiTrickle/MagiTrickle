@@ -53,6 +53,8 @@ body {
   background-color: var(--bg-dark);
   margin: 0;
   padding: 0;
+  /* disable pinch zoom gestures and and double-tap to zoom */
+  touch-action: pan-x pan-y;
 }
 
 *::-webkit-scrollbar {

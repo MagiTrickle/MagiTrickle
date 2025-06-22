@@ -262,11 +262,11 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.Addr, net
 				}
 				for _, aRecord := range aRecords {
 					subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(aRecord.Address)}
-					ttlSeconds := int64(aRecord.Deadline.Sub(now).Seconds())
-					if ttlSeconds <= 0 {
+					ttlDuration := int64(aRecord.Deadline.Sub(now).Seconds())
+					if ttlDuration <= 0 {
 						continue
 					}
-					ttl := uint32(ttlSeconds)
+					ttl := uint32(ttlDuration)
 					if err := group.AddIPv4Subnet(subnet, &ttl); err != nil {
 						log.Error().
 							Str("subnet", subnet.String()).

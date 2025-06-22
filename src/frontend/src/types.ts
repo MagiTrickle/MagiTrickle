@@ -6,7 +6,7 @@ import {
   pipe,
   string,
   object,
-  check,
+  optional,
   array,
   regex,
   length,
@@ -50,7 +50,7 @@ export type Rule = InferOutput<typeof RuleSchema>;
 export const GroupSchema = object({
   id: fallback(pipe(string(), length(8), regex(/^[0-9a-f]{8}/)), randomId()),
   name: fallback(string(), ""),
-  color: string(),
+  color: fallback(optional(string()), "#ffffff"),
   interface: string(),
   enable: fallback(boolean(), true),
   rules: array(RuleSchema),
