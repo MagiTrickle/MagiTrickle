@@ -20,6 +20,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: visible;
     }
 
     &::after {
@@ -37,13 +38,17 @@
       white-space: nowrap;
       visibility: hidden;
       opacity: 0;
-      transition: opacity 0.2s;
+      z-index: 9999;
+      transition:
+        opacity 0.2s,
+        transform 0.2s;
     }
 
     @media (hover: hover) and (pointer: fine) {
       &:hover::after {
         visibility: visible;
         opacity: 1;
+        transform: translateX(-50%) translateY(-5%);
       }
     }
 
