@@ -262,7 +262,7 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.Addr, net
 				}
 				for _, aRecord := range aRecords {
 					subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(aRecord.Address)}
-					ttlDuration := int64(aRecord.Deadline.Sub(now).Seconds())
+					ttlDuration := aRecord.Deadline.Sub(now).Seconds()
 					if ttlDuration <= 0 {
 						continue
 					}
