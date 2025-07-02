@@ -1,4 +1,4 @@
-import { randomId } from "./utils/defaults.ts";
+import { randomId } from "./utils/defaults";
 import {
   parse,
   boolean,

@@ -97,8 +97,7 @@
     showed_limit[group_index]++;
     if (!focus) return;
     await tick();
-    const selector = `.rule[data-group-index="${group_index}"][data-index="0"]`;
-    const el = document.querySelector(selector);
+    const el = document.querySelector(`.rule[data-group-index="${group_index}"][data-index="0"]`);
     if (el) {
       requestAnimationFrame(() => {
         el.querySelector<HTMLInputElement>("div.name input")?.focus();
