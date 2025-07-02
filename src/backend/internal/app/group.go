@@ -265,18 +265,14 @@ RuleLoop:
 
 				cidr = uint8(n)
 				addr = [4]byte(net.IP(addr[:]).Mask(net.CIDRMask(n, 32)))
-			} else if addr == [4]byte{0, 0, 0, 0} {
-				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{0, 0, 0, 0}, CIDR: 1}] = nil
-				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{128, 0, 0, 0}, CIDR: 1}] = nil
-				continue
-			} else {
-				cidr = 32
 			}
 
-			newIPv4SubnetList[netfilterHelper.IPv4Subnet{
-				Address: addr,
-				CIDR:    cidr,
-			}] = nil
+			if !(addr == [4]byte{0, 0, 0, 0} && cidr == 0) {
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: addr, CIDR: cidr}] = nil
+			} else {
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{0, 0, 0, 0}, CIDR: 1}] = nil
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{128, 0, 0, 0}, CIDR: 1}] = nil
+			}
 
 		default:
 			for _, domainName := range knownDomains {
