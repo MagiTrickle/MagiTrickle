@@ -119,7 +119,10 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 	}
 	a.groups = append(a.groups, grp)
 
-	log.Debug().Str("id", grp.ID.String()).Str("name", grp.Name).Msg("added group")
+	log.Info().
+		Str("id", grp.ID.String()).
+		Str("name", grp.Name).
+		Msg("added group")
 
 	// если приложение уже запущено – включаем группу и выполняем синхронизацию
 	if a.enabled.Load() {

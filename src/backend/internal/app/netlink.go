@@ -37,8 +37,8 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 			}
 			if err := group.LinkUpdateHook(event); err != nil {
 				log.Error().
-					Str("group", group.ID.String()).
 					Err(err).
+					Str("group", group.ID.String()).
 					Msg("error while handling interface up")
 			}
 		}

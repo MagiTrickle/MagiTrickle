@@ -265,18 +265,14 @@ RuleLoop:
 
 				cidr = uint8(n)
 				addr = [4]byte(net.IP(addr[:]).Mask(net.CIDRMask(n, 32)))
-			} else if addr == [4]byte{0, 0, 0, 0} {
-				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{0, 0, 0, 0}, CIDR: 1}] = nil
-				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{128, 0, 0, 0}, CIDR: 1}] = nil
-				continue
-			} else {
-				cidr = 32
 			}
 
-			newIPv4SubnetList[netfilterHelper.IPv4Subnet{
-				Address: addr,
-				CIDR:    cidr,
-			}] = nil
+			if !(addr == [4]byte{0, 0, 0, 0} && cidr == 0) {
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: addr, CIDR: cidr}] = nil
+			} else {
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{0, 0, 0, 0}, CIDR: 1}] = nil
+				newIPv4SubnetList[netfilterHelper.IPv4Subnet{Address: [4]byte{128, 0, 0, 0}, CIDR: 1}] = nil
+			}
 
 		default:
 			for _, domainName := range knownDomains {
@@ -318,9 +314,14 @@ RuleLoop:
 		}
 
 		if err := g.addIPv4Subnet(subnet, newTTL); err != nil {
-			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to add subnet")
+			log.Error().
+				Err(err).
+				Str("subnet", subnet.String()).
+				Msg("failed to add subnet")
 		} else {
-			log.Trace().Str("subnet", subnet.String()).Msg("added subnet")
+			log.Debug().
+				Str("subnet", subnet.String()).
+				Msg("added subnet")
 		}
 	}
 	for subnet := range oldIPv4SubnetList {
@@ -329,9 +330,14 @@ RuleLoop:
 		}
 
 		if err := g.delIPv4Subnet(subnet); err != nil {
-			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to delete subnet")
+			log.Error().
+				Err(err).
+				Str("subnet", subnet.String()).
+				Msg("failed to delete subnet")
 		} else {
-			log.Trace().Str("subnet", subnet.String()).Msg("deleted subnet")
+			log.Debug().
+				Str("subnet", subnet.String()).
+				Msg("deleted subnet")
 		}
 	}
 
@@ -347,9 +353,14 @@ RuleLoop:
 		}
 
 		if err := g.addIPv6Subnet(subnet, newTTL); err != nil {
-			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to add subnet")
+			log.Error().
+				Err(err).
+				Str("subnet", subnet.String()).
+				Msg("failed to add subnet")
 		} else {
-			log.Trace().Str("subnet", subnet.String()).Msg("added subnet")
+			log.Debug().
+				Str("subnet", subnet.String()).
+				Msg("added subnet")
 		}
 	}
 	for subnet := range oldIPv6SubnetList {
@@ -358,9 +369,14 @@ RuleLoop:
 		}
 
 		if err := g.delIPv6Subnet(subnet); err != nil {
-			log.Error().Str("subnet", subnet.String()).Err(err).Msg("failed to delete subnet")
+			log.Error().
+				Err(err).
+				Str("subnet", subnet.String()).
+				Msg("failed to delete subnet")
 		} else {
-			log.Trace().Str("subnet", subnet.String()).Msg("deleted subnet")
+			log.Debug().
+				Str("subnet", subnet.String()).
+				Msg("deleted subnet")
 		}
 	}
 
