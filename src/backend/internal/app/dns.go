@@ -54,8 +54,17 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
 	}
+	idStr := fmt.Sprintf("%04x", reqMsg.Id)
+
+	log.Trace().
+		Str("id", idStr).
+		Str("clientAddr", clientAddrStr).
+		Str("network", network).
+		Msg("request received")
+
 	for _, q := range reqMsg.Question {
 		log.Trace().
+			Str("id", idStr).
 			Str("name", q.Name).
 			Int("qtype", int(q.Qtype)).
 			Int("qclass", int(q.Qclass)).
@@ -86,7 +95,7 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 
 // dnsResponseHook обрабатывает ответы DNS
 func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.Msg, network string) (*dns.Msg, error) {
-	defer a.handleMessage(respMsg, clientAddr, &network)
+	defer a.handleMessage(respMsg, clientAddr, network)
 
 	if a.config.DNSProxy.DisableDropAAAA {
 		return nil, nil
@@ -105,39 +114,64 @@ func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.M
 }
 
 // handleMessage обрабатывает полученное DNS-сообщение
-func (a *App) handleMessage(msg dns.Msg, clientAddr net.Addr, network *string) {
+func (a *App) handleMessage(msg dns.Msg, clientAddr net.Addr, network string) {
+	if msg.Rcode != dns.RcodeSuccess {
+		var clientAddrStr string
+		if clientAddr != nil {
+			clientAddrStr = clientAddr.String()
+		}
+		log.Error().
+			Str("id", fmt.Sprintf("%04x", msg.Id)).
+			Str("clientAddr", clientAddrStr).
+			Str("network", network).
+			Msg("unprocessable response")
+
+		return
+	}
+
 	for _, rr := range msg.Answer {
-		a.handleRecord(rr, clientAddr, network)
+		if rr == nil {
+			continue
+		}
+
+		switch v := rr.(type) {
+		case *dns.A:
+			a.processARecord(*v, msg.Id, clientAddr, network)
+		case *dns.AAAA:
+			a.processAAAARecord(*v, msg.Id, clientAddr, network)
+		case *dns.CNAME:
+			a.processCNameRecord(*v, msg.Id, clientAddr, network)
+		}
 	}
 }
 
-// handleRecord маршрутизирует обработку DNS-записи в зависимости от её типа (A или CNAME)
-func (a *App) handleRecord(rr dns.RR, clientAddr net.Addr, network *string) {
-	switch v := rr.(type) {
-	case *dns.A:
-		a.processARecord(*v, clientAddr, network)
-	case *dns.AAAA:
-		a.processAAAARecord(*v, clientAddr, network)
-	case *dns.CNAME:
-		a.processCNameRecord(*v, clientAddr, network)
-	}
-}
-
-func (a *App) processARecord(aRecord dns.A, clientAddr net.Addr, network *string) {
-	var clientAddrStr, networkStr string
+func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, network string) {
+	var clientAddrStr string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
 	}
-	if network != nil {
-		networkStr = *network
+	idStr := fmt.Sprintf("%04x", id)
+
+	if len(aRecord.A) != 4 {
+		log.Error().
+			Str("id", idStr).
+			Str("name", aRecord.Hdr.Name).
+			Str("address", aRecord.A.String()).
+			Int("ttl", int(aRecord.Hdr.Ttl)).
+			Str("clientAddr", clientAddrStr).
+			Str("network", network).
+			Msg("unprocessable A response")
+		return
 	}
+
 	log.Trace().
+		Str("id", idStr).
 		Str("name", aRecord.Hdr.Name).
 		Str("address", aRecord.A.String()).
 		Int("ttl", int(aRecord.Hdr.Ttl)).
 		Str("clientAddr", clientAddrStr).
-		Str("network", networkStr).
-		Msg("processing a record")
+		Str("network", network).
+		Msg("processing A record")
 
 	ttlDuration := aRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
 
@@ -174,21 +208,33 @@ func (a *App) processARecord(aRecord dns.A, clientAddr net.Addr, network *string
 	}
 }
 
-func (a *App) processAAAARecord(aaaaRecord dns.AAAA, clientAddr net.Addr, network *string) {
-	var clientAddrStr, networkStr string
+func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.Addr, network string) {
+	var clientAddrStr string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
 	}
-	if network != nil {
-		networkStr = *network
+	idStr := fmt.Sprintf("%04x", id)
+
+	if len(aaaaRecord.AAAA) != 16 {
+		log.Error().
+			Str("id", idStr).
+			Str("name", aaaaRecord.Hdr.Name).
+			Str("address", aaaaRecord.AAAA.String()).
+			Int("ttl", int(aaaaRecord.Hdr.Ttl)).
+			Str("clientAddr", clientAddrStr).
+			Str("network", network).
+			Msg("unprocessable AAAA response")
+		return
 	}
+
 	log.Trace().
+		Str("id", idStr).
 		Str("name", aaaaRecord.Hdr.Name).
 		Str("address", aaaaRecord.AAAA.String()).
 		Int("ttl", int(aaaaRecord.Hdr.Ttl)).
 		Str("clientAddr", clientAddrStr).
-		Str("network", networkStr).
-		Msg("processing aaaa record")
+		Str("network", network).
+		Msg("processing AAAA record")
 
 	ttlDuration := aaaaRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
 
@@ -225,21 +271,21 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, clientAddr net.Addr, networ
 	}
 }
 
-func (a *App) processCNameRecord(cNameRecord dns.CNAME, clientAddr net.Addr, network *string) {
-	var clientAddrStr, networkStr string
+func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr net.Addr, network string) {
+	var clientAddrStr string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
 	}
-	if network != nil {
-		networkStr = *network
-	}
+	idStr := fmt.Sprintf("%04x", id)
+
 	log.Trace().
+		Str("id", idStr).
 		Str("name", cNameRecord.Hdr.Name).
 		Str("cname", cNameRecord.Target).
 		Int("ttl", int(cNameRecord.Hdr.Ttl)).
 		Str("clientAddr", clientAddrStr).
-		Str("network", networkStr).
-		Msg("processing cname record")
+		Str("network", network).
+		Msg("processing CNAME record")
 
 	ttlDuration := cNameRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
 
