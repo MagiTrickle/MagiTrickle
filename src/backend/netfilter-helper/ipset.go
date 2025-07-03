@@ -3,6 +3,7 @@ package netfilterHelper
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -151,6 +152,9 @@ func (r *IPSet) ListIPv4Subnets() (map[IPv4Subnet]IPSetTimeout, error) {
 		return nil, err
 	}
 	for _, entry := range list.Entries {
+		if len(entry.IP) != net.IPv4len {
+			continue
+		}
 		subnet := IPv4Subnet{
 			Address: [4]byte(entry.IP),
 			CIDR:    entry.CIDR,
@@ -180,6 +184,9 @@ func (r *IPSet) ListIPv6Subnets() (map[IPv6Subnet]IPSetTimeout, error) {
 		return nil, err
 	}
 	for _, entry := range list.Entries {
+		if len(entry.IP) != net.IPv6len {
+			continue
+		}
 		subnet := IPv6Subnet{
 			Address: [16]byte(entry.IP),
 			CIDR:    entry.CIDR,
