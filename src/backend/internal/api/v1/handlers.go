@@ -40,7 +40,10 @@ func (h *Handler) NetfilterDHook(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	log.Debug().Str("type", req.Type).Str("table", req.Table).Msg("netfilter.d event")
+	log.Debug().
+		Str("type", req.Type).
+		Str("table", req.Table).
+		Msg("received netfilter.d event")
 	if h.app.DnsOverrider() != nil {
 		if err := h.app.DnsOverrider().NetfilterDHook(req.Type, req.Table); err != nil {
 			log.Error().Err(err).Msg("error fixing iptables after netfilter.d")

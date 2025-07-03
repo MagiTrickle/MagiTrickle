@@ -56,14 +56,14 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 	}
 	idStr := fmt.Sprintf("%04x", reqMsg.Id)
 
-	log.Trace().
+	log.Debug().
 		Str("id", idStr).
 		Str("clientAddr", clientAddrStr).
 		Str("network", network).
 		Msg("request received")
 
 	for _, q := range reqMsg.Question {
-		log.Trace().
+		log.Info().
 			Str("id", idStr).
 			Str("name", q.Name).
 			Int("qtype", int(q.Qtype)).
@@ -120,7 +120,7 @@ func (a *App) handleMessage(msg dns.Msg, clientAddr net.Addr, network string) {
 		if clientAddr != nil {
 			clientAddrStr = clientAddr.String()
 		}
-		log.Error().
+		log.Warn().
 			Str("id", fmt.Sprintf("%04x", msg.Id)).
 			Str("clientAddr", clientAddrStr).
 			Str("network", network).
@@ -153,7 +153,7 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 	idStr := fmt.Sprintf("%04x", id)
 
 	if len(aRecord.A) != 4 {
-		log.Error().
+		log.Warn().
 			Str("id", idStr).
 			Str("name", aRecord.Hdr.Name).
 			Str("address", aRecord.A.String()).
@@ -164,7 +164,7 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 		return
 	}
 
-	log.Trace().
+	log.Debug().
 		Str("id", idStr).
 		Str("name", aRecord.Hdr.Name).
 		Str("address", aRecord.A.String()).
@@ -188,20 +188,31 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 				if !domain.IsMatch(name) {
 					continue
 				}
+
 				// TODO: Check already existed
 				subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(aRecord.A)}
 				if err := group.AddIPv4Subnet(subnet, &ttlDuration); err != nil {
 					log.Error().
-						Str("subnet", subnet.String()).
 						Err(err).
-						Msg("failed to add address")
+						Str("subnet", subnet.String()).
+						Str("aRecordDomain", aRecord.Hdr.Name).
+						Str("cNameDomain", name).
+						Msg("failed to add subnet")
 				} else {
 					log.Debug().
 						Str("subnet", subnet.String()).
 						Str("aRecordDomain", aRecord.Hdr.Name).
 						Str("cNameDomain", name).
-						Msg("add subnet")
+						Msg("added subnet")
 				}
+
+				log.Info().
+					Str("name", aRecord.Hdr.Name).
+					Str("address", aRecord.A.String()).
+					Str("group", group.Name).
+					Str("groupId", group.ID.String()).
+					Msg("added to routing")
+
 				break Rule
 			}
 		}
@@ -216,7 +227,7 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 	idStr := fmt.Sprintf("%04x", id)
 
 	if len(aaaaRecord.AAAA) != 16 {
-		log.Error().
+		log.Warn().
 			Str("id", idStr).
 			Str("name", aaaaRecord.Hdr.Name).
 			Str("address", aaaaRecord.AAAA.String()).
@@ -227,7 +238,7 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 		return
 	}
 
-	log.Trace().
+	log.Debug().
 		Str("id", idStr).
 		Str("name", aaaaRecord.Hdr.Name).
 		Str("address", aaaaRecord.AAAA.String()).
@@ -251,20 +262,31 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 				if !domain.IsMatch(name) {
 					continue
 				}
+
 				// TODO: Check already existed
 				subnet := netfilterHelper.IPv6Subnet{Address: [16]byte(aaaaRecord.AAAA)}
 				if err := group.AddIPv6Subnet(subnet, &ttlDuration); err != nil {
 					log.Error().
-						Str("subnet", subnet.String()).
 						Err(err).
-						Msg("failed to add address")
+						Str("subnet", subnet.String()).
+						Str("aaaaRecordDomain", aaaaRecord.Hdr.Name).
+						Str("cNameDomain", name).
+						Msg("failed to add subnet")
 				} else {
 					log.Debug().
 						Str("subnet", subnet.String()).
 						Str("aaaaRecordDomain", aaaaRecord.Hdr.Name).
 						Str("cNameDomain", name).
-						Msg("add subnet")
+						Msg("added subnet")
 				}
+
+				log.Info().
+					Str("name", aaaaRecord.Hdr.Name).
+					Str("address", aaaaRecord.AAAA.String()).
+					Str("group", group.Name).
+					Str("groupId", group.ID.String()).
+					Msg("added to routing")
+
 				break Rule
 			}
 		}

@@ -466,7 +466,10 @@ func (r *IPSetToLink) Enable() error {
 	if err != nil {
 		r.disable()
 	} else {
-		log.Trace().Int("table", r.table).Int("mark", int(r.mark)).Msg("using ip table and mark")
+		log.Debug().
+			Int("table", r.table).
+			Int("mark", int(r.mark)).
+			Msg("using ip table and mark")
 	}
 
 	return err
