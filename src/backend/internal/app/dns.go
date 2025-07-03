@@ -356,7 +356,7 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr ne
 							Str("subnet", subnet.String()).
 							Str("cNameDomain", alias).
 							Msg("added subnet")
-					} else {
+					} else if len(address.Address) == net.IPv6len {
 						subnet := netfilterHelper.IPv6Subnet{Address: [16]byte(address.Address)}
 						if err := group.AddIPv6Subnet(subnet, &ttl); err != nil {
 							log.Error().

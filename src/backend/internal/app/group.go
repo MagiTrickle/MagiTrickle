@@ -291,7 +291,7 @@ RuleLoop:
 						if oldTTL, exists := newIPv4SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
 							newIPv4SubnetList[subnet] = &ttl
 						}
-					} else {
+					} else if len(address.Address) == net.IPv6len {
 						subnet := netfilterHelper.IPv6Subnet{Address: [16]byte(address.Address)}
 						if oldTTL, exists := newIPv6SubnetList[subnet]; !exists || (oldTTL != nil && ttl > *oldTTL) {
 							newIPv6SubnetList[subnet] = &ttl
