@@ -300,7 +300,7 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr ne
 	}
 	idStr := fmt.Sprintf("%04x", id)
 
-	log.Trace().
+	log.Debug().
 		Str("id", idStr).
 		Str("name", cNameRecord.Hdr.Name).
 		Str("cname", cNameRecord.Target).
@@ -316,35 +316,59 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr ne
 		ttlDuration)
 
 	now := time.Now()
-	aRecords := a.records.GetAddresses(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1])
-	names := a.records.GetAliases(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1])
+	addresses := a.records.GetAddresses(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1])
+	aliases := a.records.GetAliases(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1])
 	for _, group := range a.groups {
 	Rule:
 		for _, domain := range group.Rules {
 			if !domain.IsEnabled() {
 				continue
 			}
-			for _, name := range names {
-				if !domain.IsMatch(name) {
+			for _, alias := range aliases {
+				if !domain.IsMatch(alias) {
 					continue
 				}
-				for _, aRecord := range aRecords {
-					subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(aRecord.Address)}
-					ttlDuration := aRecord.Deadline.Sub(now).Seconds()
+
+				log.Info().
+					Str("name", cNameRecord.Hdr.Name).
+					Str("cname", cNameRecord.Target).
+					Str("group", group.Name).
+					Str("groupId", group.ID.String()).
+					Msg("added alias")
+
+				for _, address := range addresses {
+					ttlDuration := address.Deadline.Sub(now).Seconds()
 					if ttlDuration <= 0 {
 						continue
 					}
 					ttl := uint32(ttlDuration)
-					if err := group.AddIPv4Subnet(subnet, &ttl); err != nil {
-						log.Error().
-							Str("subnet", subnet.String()).
-							Err(err).
-							Msg("failed to add subnet")
-					} else {
+
+					if len(address.Address) == net.IPv4len {
+						subnet := netfilterHelper.IPv4Subnet{Address: [4]byte(address.Address)}
+						if err := group.AddIPv4Subnet(subnet, &ttl); err != nil {
+							log.Error().
+								Err(err).
+								Str("subnet", subnet.String()).
+								Str("cNameDomain", alias).
+								Msg("failed to add subnet")
+						}
 						log.Debug().
 							Str("subnet", subnet.String()).
-							Str("cNameDomain", name).
-							Msg("add subnet")
+							Str("cNameDomain", alias).
+							Msg("added subnet")
+					} else {
+						subnet := netfilterHelper.IPv6Subnet{Address: [16]byte(address.Address)}
+						if err := group.AddIPv6Subnet(subnet, &ttl); err != nil {
+							log.Error().
+								Err(err).
+								Str("subnet", subnet.String()).
+								Str("cNameDomain", alias).
+								Msg("failed to add subnet")
+						}
+						log.Debug().
+							Str("subnet", subnet.String()).
+							Str("cNameDomain", alias).
+							Msg("added subnet")
 					}
 				}
 				continue Rule
