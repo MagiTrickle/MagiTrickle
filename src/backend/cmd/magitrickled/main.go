@@ -35,28 +35,28 @@ func getPIDPath(pid int) (string, error) {
 	return os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 }
 
-func checkPIDFile() error {
+func checkPIDFile() (int, error) {
 	data, err := os.ReadFile(constant.PIDPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return 0, nil
 		}
-		return err
+		return 0, err
 	}
 
 	pid, err := strconv.Atoi(string(data))
 	if err != nil {
-		return errors.New("invalid PID file content")
+		return 0, nil
 	}
 
 	currPID, _ := getPIDPath(os.Getpid())
 	filePID, _ := getPIDPath(pid)
 	if path.Base(currPID) == path.Base(filePID) {
-		return fmt.Errorf("process %d is already running", pid)
+		return pid, nil
 	}
 
 	_ = os.Remove(constant.PIDPath)
-	return nil
+	return 0, nil
 }
 
 func createPIDFile() error {
@@ -177,9 +177,14 @@ func main() {
 		Str("version", constant.Version).
 		Msg("starting MagiTrickle daemon")
 
-	if err := checkPIDFile(); err != nil {
+	pid, err := checkPIDFile()
+	if err != nil {
 		log.Fatal().Err(err).Msg("failed to check PID file")
 	}
+	if pid != 0 {
+		log.Fatal().Msg(fmt.Sprintf("process %d is already running", pid))
+	}
+
 	if err := createPIDFile(); err != nil {
 		log.Fatal().Err(err).Msg("failed to create PID file")
 	}
