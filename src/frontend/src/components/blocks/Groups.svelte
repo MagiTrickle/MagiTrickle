@@ -13,6 +13,7 @@
   import Tooltip from "../common/Tooltip.svelte";
   import Button from "../common/Button.svelte";
   import GroupComponent from "../features/Group.svelte";
+  import ImportRulesDialog from "./ImportRulesDialog.svelte";
 
   const INITIAL_RULES_LIMIT = 30 as const;
   const INCREMENT_RULES_LIMIT = 40 as const;
@@ -22,6 +23,11 @@
   let counter = $state(-2); // skip first update on init
   let valid_rules = $state(true);
   let open_state = persistedState<Record<string, boolean>>("group_open_state", {});
+
+  let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
+    open: false,
+    groupIndex: null,
+  });
 
   function onRuleDrop(event: CustomEvent) {
     const { from_group_index, from_rule_index, to_group_index, to_rule_index } = event.detail;
@@ -220,9 +226,15 @@
     }
     loaderState.loaded();
   }
-</script>
 
-<svelte:window onbeforeunload={unsavedChanges} />
+  function openImportRulesModal(groupIndex: number) {
+    importRulesModal = { open: true, groupIndex };
+  }
+
+  function closeImportRulesModal() {
+    importRulesModal = { open: false, groupIndex: null };
+  }
+</script>
 
 <div class="group-controls">
   <div class="group-controls-actions">
@@ -266,8 +278,27 @@
     {groupMoveUp}
     {groupMoveDown}
     {loadMore}
+    on:importRules={() => openImportRulesModal(group_index)}
   />
 {/each}
+
+<ImportRulesDialog
+  open={importRulesModal.open}
+  group_index={importRulesModal.groupIndex}
+  on:close={closeImportRulesModal}
+  on:import={(e) => {
+    const { group_index, rules } = e.detail;
+    data[group_index].rules.unshift(...rules);
+    if (rules.length > 500) {
+      showed_limit[group_index] = Math.max(showed_limit[group_index], 30);
+    } else {
+      showed_limit[group_index] = Math.min(
+        showed_limit[group_index] + rules.length,
+        data[group_index].rules.length,
+      );
+    }
+  }}
+/>
 
 <style>
   .group-controls {

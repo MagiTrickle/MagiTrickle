@@ -43,10 +43,6 @@ html {
   color: var(--text);
   font-family: var(--font);
   font-size: var(--font-size-base);
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: overlay;
-  scrollbar-gutter: stable both-edges;
 }
 
 body {
@@ -55,8 +51,13 @@ body {
   padding: 0;
   /* disable pinch zoom gestures and and double-tap to zoom */
   touch-action: pan-x pan-y;
+  /* bits ui changes only body scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: overlay;
+  scrollbar-gutter: stable both-edges;
 }
-
+/* 
 *::-webkit-scrollbar {
   height: 0.5rem;
   width: 0.5rem;
@@ -91,4 +92,4 @@ body {
 }
 *::-webkit-scrollbar-corner {
   background-color: transparent;
-}
+} */

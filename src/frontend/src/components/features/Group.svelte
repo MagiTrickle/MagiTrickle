@@ -2,6 +2,7 @@
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
   import { InfiniteLoader } from "svelte-infinite";
+  import { createEventDispatcher } from "svelte";
 
   import { type Group, type Rule } from "../../types";
   import { droppable } from "../actions/dnd";
@@ -17,6 +18,7 @@
     Dots,
     Check,
     Toggle,
+    ImportList,
   } from "../common/icons";
   import Switch from "../common/Switch.svelte";
   import Tooltip from "../common/Tooltip.svelte";
@@ -61,6 +63,8 @@
     loadMore,
     ...rest
   }: Props = $props();
+
+  const dispatch = createEventDispatcher();
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
@@ -124,6 +128,11 @@
               <MoveDown size={20} />
             </Button>
           </Tooltip>
+          <Tooltip value="Import rule list">
+            <Button small onclick={() => dispatch('importRules')}>
+              <ImportList size={20} />
+            </Button>
+          </Tooltip>
         {:else}
           <DropdownMenu>
             {#snippet trigger()}
@@ -172,6 +181,12 @@
               >
                 <div class="dd-icon"><MoveDown size={20} /></div>
                 <div class="dd-label">Move Down</div>
+              </Button>
+            {/snippet}
+            {#snippet item6()}
+              <Button general onclick={() => dispatch('importRules')}>
+                <div class="dd-icon"><ImportList size={20} /></div>
+                <div class="dd-label">Import rule list</div>
               </Button>
             {/snippet}
           </DropdownMenu>
