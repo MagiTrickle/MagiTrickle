@@ -7,6 +7,7 @@
   import { VALIDATOP_MAP } from "../../utils/rule-validators";
   import Button from "../common/Button.svelte";
   import Select from "../common/Select.svelte";
+  import { t } from "../../data/locale.svelte";
 
   type Props = {
     rule: Rule;
@@ -100,10 +101,10 @@
 >
   <div class="grip" data-index={rule_index} data-group-index={group_index}><Grip /></div>
   <div class="name">
-    <div class="label">Name</div>
+    <div class="label">{t("rule_name")}</div>
     <input
       type="text"
-      placeholder="rule name..."
+      placeholder={t("rule_name_placeholder")}
       class="table-input"
       bind:value={rule.name}
       onfocus={onFocusInput}
@@ -111,14 +112,14 @@
     />
   </div>
   <div class="type">
-    <div class="label">Type</div>
+    <div class="label">{t("rule_type")}</div>
     <Select options={RULE_TYPES} bind:selected={rule.type} onValueChange={patternValidation} />
   </div>
   <div class="pattern">
-    <div class="label">Pattern</div>
+    <div class="label">{t("rule_pattern")}</div>
     <input
       type="text"
-      placeholder="rule pattern..."
+      placeholder={t("rule_pattern_placeholder")}
       class="table-input pattern-input"
       bind:value={rule.rule}
       bind:this={input}
@@ -129,10 +130,10 @@
     />
   </div>
   <div class="actions">
-    <Tooltip value="Enable Rule">
+    <Tooltip value={t(rule.enable ? "disable_rule" : "enable_rule")}>
       <Switch bind:checked={rule.enable} />
     </Tooltip>
-    <Tooltip value="Delete Rule">
+    <Tooltip value={t("delete_rule")}>
       <Button
         small
         onclick={() => onDelete?.(group_index, rule_index)}

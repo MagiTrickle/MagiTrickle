@@ -23,14 +23,24 @@
       ><Gitlab size={22} /></a
     >
   </div>
-  <!-- <div class="locale">
-    <Locale size={22} />
+
+  <div class="locale">
+    <Locale size={18} />
     <Select
-      options={Object.keys(locales).map((item) => ({ label: item, value: item }))}
+      options={Object.keys(locales).map((localeKey) => {
+        switch (localeKey) {
+          case "en":
+            return { label: "en", value: localeKey };
+          case "ru":
+            return { label: "ру", value: localeKey };
+          default:
+            return { label: localeKey, value: localeKey };
+        }
+      })}
       bind:selected={locale.current}
       style="width:55px"
     />
-  </div> -->
+  </div>
 </div>
 
 <style>
@@ -50,7 +60,7 @@
     gap: 1.2rem;
   }
 
-  /* .locale, */
+  .locale,
   .links,
   .version {
     display: flex;
@@ -80,5 +90,12 @@
     justify-content: center;
     font-size: smaller;
     color: var(--text-2);
+  }
+
+  .locale {
+    gap: 0.3rem;
+    background: var(--bg-light);
+    border-radius: 6px;
+    padding: 2px 2px 2px 6px;
   }
 </style>
