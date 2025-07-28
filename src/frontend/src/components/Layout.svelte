@@ -7,6 +7,7 @@
   import Toast from "./features/Toast.svelte";
   import ScrollToTop from "./features/ScrollToTop.svelte";
   // import SettingsPage from "./blocks/Settings.svelte";
+  import { t } from "../data/locale.svelte";
 
   let active_tab = $state("groups");
 </script>
@@ -22,9 +23,9 @@
   <Tabs.Root bind:value={active_tab}>
     <nav>
       <Tabs.List>
-        <Tabs.Trigger value="groups">Groups</Tabs.Trigger>
-        <!-- <Tabs.Trigger value="settings">Settings</Tabs.Trigger> -->
-        <!-- <Tabs.Trigger value="logs">Logs</Tabs.Trigger> -->
+        <Tabs.Trigger value="groups">{t("groups_tab")}</Tabs.Trigger>
+        <!-- <Tabs.Trigger value="settings">{t("settings_tab")}</Tabs.Trigger> -->
+        <!-- <Tabs.Trigger value="logs">{t("logs_tab")}</Tabs.Trigger> -->
       </Tabs.List>
       <div class="header-settings">
         <HeaderSettings />
@@ -58,6 +59,10 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .header-settings {
+    overflow: hidden;
   }
 
   :global {

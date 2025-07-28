@@ -14,6 +14,7 @@
   import Button from "../common/Button.svelte";
   import GroupComponent from "../features/Group.svelte";
   import ImportRulesDialog from "./ImportRulesDialog.svelte";
+  import { t } from "../../data/locale.svelte";
 
   const INITIAL_RULES_LIMIT = 30 as const;
   const INCREMENT_RULES_LIMIT = 40 as const;
@@ -240,25 +241,25 @@
   <div class="group-controls-actions">
     {#if counter > 0 && valid_rules}
       <div transition:scale>
-        <Tooltip value="Save Changes">
+        <Tooltip value={t("save_changes")}>
           <Button onclick={saveChanges} id="save-changes">
             <Save size={22} />
           </Button>
         </Tooltip>
       </div>
     {/if}
-    <Tooltip value="Export Config">
+    <Tooltip value={t("export_config")}>
       <Button onclick={exportConfig}>
         <Upload size={22} />
       </Button>
     </Tooltip>
-    <Tooltip value="Import Config">
+    <Tooltip value={t("import_config")}>
       <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
       <Button onclick={() => document.getElementById("import-config")!.click()}>
         <Download size={22} />
       </Button>
     </Tooltip>
-    <Tooltip value="Add Group">
+    <Tooltip value={t("add_group")}>
       <Button onclick={addGroup}><Add size={22} /></Button>
     </Tooltip>
   </div>

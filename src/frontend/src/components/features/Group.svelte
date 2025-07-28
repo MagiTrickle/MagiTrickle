@@ -26,6 +26,7 @@
   import Button from "../common/Button.svelte";
   import Select from "../common/Select.svelte";
   import DropdownMenu from "../common/DropdownMenu.svelte";
+  import { t } from "../../data/locale.svelte";
 
   type Props = {
     group: Group;
@@ -95,15 +96,15 @@
         />
 
         {#if is_desktop}
-          <Tooltip value="Enable Group">
+          <Tooltip value={t(group.enable ? "disable_group" : "enable_group")}>
             <Switch class="enable-group" bind:checked={group.enable} />
           </Tooltip>
-          <Tooltip value="Delete Group">
+          <Tooltip value={t("delete_group")}>
             <Button small onclick={() => deleteGroup(group_index)}>
               <Delete size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value="Add Rule">
+          <Tooltip value={t("add_rule")}>
             <Button
               small
               onclick={() => {
@@ -114,12 +115,12 @@
               <Add size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value="Move Up">
+          <Tooltip value={t("move_up")}>
             <Button small inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
               <MoveUp size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value="Move Down">
+          <Tooltip value={t("move_down")}>
             <Button
               small
               inactive={group_index === total_groups - 1}
@@ -192,7 +193,7 @@
           </DropdownMenu>
         {/if}
 
-        <Tooltip value="Collapse Group">
+        <Tooltip value={t(open ? "collapse_group" : "expand_group")}>
           <Collapsible.Trigger>
             {#if open}
               <GroupCollapse size={20} />
@@ -211,11 +212,10 @@
             <div class="group-rules-header-column total">
               #{group.rules.length}
             </div>
-            <div class="group-rules-header-column">Name</div>
-            <div class="group-rules-header-column">Type</div>
-            <div class="group-rules-header-column">Pattern</div>
-            <div class="group-rules-header-column">Enabled</div>
-            <div></div>
+            <div class="group-rules-header-column">{t("pattern")}</div>
+            <div class="group-rules-header-column">{t("iface")}</div>
+            <div class="group-rules-header-column">{t("description")}</div>
+            <div class="group-rules-header-column">{t("actions")}</div>
           </div>
         {/if}
         <div class="group-rules">
