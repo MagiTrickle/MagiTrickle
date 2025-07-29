@@ -23,9 +23,9 @@
   <Tabs.Root bind:value={active_tab}>
     <nav>
       <Tabs.List>
-        <Tabs.Trigger value="groups">{t("groups_tab")}</Tabs.Trigger>
-        <!-- <Tabs.Trigger value="settings">{t("settings_tab")}</Tabs.Trigger> -->
-        <!-- <Tabs.Trigger value="logs">{t("logs_tab")}</Tabs.Trigger> -->
+        <Tabs.Trigger value="groups">{t("Groups")}</Tabs.Trigger>
+        <!-- <Tabs.Trigger value="settings">{t("Settings")}</Tabs.Trigger> -->
+        <!-- <Tabs.Trigger value="logs">{t("Logs")}</Tabs.Trigger> -->
       </Tabs.List>
       <div class="header-settings">
         <HeaderSettings />

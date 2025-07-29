@@ -17,7 +17,8 @@
     MoveDown,
     Dots,
     Check,
-    Toggle,
+    ToggleLeft,
+    ToggleRight,
     ImportList,
   } from "../common/icons";
   import Switch from "../common/Switch.svelte";
@@ -87,7 +88,7 @@
         <label class="group-color" style="background: {group.color}">
           <input type="color" bind:value={group.color} />
         </label>
-        <input type="text" placeholder="group name..." class="group-name" bind:value={group.name} />
+        <input type="text" placeholder={t("group name...")} class="group-name" bind:value={group.name} />
       </div>
       <div class="group-actions">
         <Select
@@ -96,15 +97,15 @@
         />
 
         {#if is_desktop}
-          <Tooltip value={t(group.enable ? "disable_group" : "enable_group")}>
+          <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
             <Switch class="enable-group" bind:checked={group.enable} />
           </Tooltip>
-          <Tooltip value={t("delete_group")}>
+          <Tooltip value={t("Delete Group")}>
             <Button small onclick={() => deleteGroup(group_index)}>
               <Delete size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value={t("add_rule")}>
+          <Tooltip value={t("Add Rule")}>
             <Button
               small
               onclick={() => {
@@ -115,23 +116,23 @@
               <Add size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value={t("move_up")}>
+          <Tooltip value={t("Import Rule List")}>
+            <Button small onclick={() => dispatch("importRules")}>
+              <ImportList size={20} />
+            </Button>
+          </Tooltip>
+          <Tooltip value={t("Move Up")}>
             <Button small inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
               <MoveUp size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value={t("move_down")}>
+          <Tooltip value={t("Move Down")}>
             <Button
               small
               inactive={group_index === total_groups - 1}
               onclick={() => groupMoveDown(group_index)}
             >
               <MoveDown size={20} />
-            </Button>
-          </Tooltip>
-          <Tooltip value="Import rule list">
-            <Button small onclick={() => dispatch('importRules')}>
-              <ImportList size={20} />
             </Button>
           </Tooltip>
         {:else}
@@ -141,8 +142,14 @@
             {/snippet}
             {#snippet item1()}
               <Button general onclick={() => (group.enable = !group.enable)}>
-                <div class="dd-icon"><Toggle size={20} /></div>
-                <div class="dd-label">Enable Group</div>
+                <div class="dd-icon">
+                  {#if group.enable}
+                    <ToggleRight size={20} />
+                  {:else}
+                    <ToggleLeft size={20} />
+                  {/if}
+                </div>
+                <div class="dd-label">{t(group.enable ? "Disable Group" : "Enable Group")}</div>
                 <div class="dd-check">
                   {#if group.enable}
                     <Check size={16} />
@@ -153,7 +160,7 @@
             {#snippet item2()}
               <Button general onclick={() => deleteGroup(group_index)}>
                 <div class="dd-icon"><Delete size={20} /></div>
-                <div class="dd-label">Delete Group</div>
+                <div class="dd-label">{t("Delete Group")}</div>
               </Button>
             {/snippet}
             {#snippet item3()}
@@ -165,35 +172,35 @@
                 }}
               >
                 <div class="dd-icon"><Add size={20} /></div>
-                <div class="dd-label">Add Rule</div>
+                <div class="dd-label">{t("Add Rule")}</div>
               </Button>
             {/snippet}
             {#snippet item4()}
-              <Button general inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
-                <div class="dd-icon"><MoveUp size={20} /></div>
-                <div class="dd-label">Move Up</div>
+              <Button general onclick={() => dispatch("importRules")}>
+                <div class="dd-icon"><ImportList size={20} /></div>
+                <div class="dd-label">{t("Import Rule List")}</div>
               </Button>
             {/snippet}
             {#snippet item5()}
+              <Button general inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
+                <div class="dd-icon"><MoveUp size={20} /></div>
+                <div class="dd-label">{t("Move Up")}</div>
+              </Button>
+            {/snippet}
+            {#snippet item6()}
               <Button
                 general
                 inactive={group_index === total_groups - 1}
                 onclick={() => groupMoveDown(group_index)}
               >
                 <div class="dd-icon"><MoveDown size={20} /></div>
-                <div class="dd-label">Move Down</div>
-              </Button>
-            {/snippet}
-            {#snippet item6()}
-              <Button general onclick={() => dispatch('importRules')}>
-                <div class="dd-icon"><ImportList size={20} /></div>
-                <div class="dd-label">Import rule list</div>
+                <div class="dd-label">{t("Move Down")}</div>
               </Button>
             {/snippet}
           </DropdownMenu>
         {/if}
 
-        <Tooltip value={t(open ? "collapse_group" : "expand_group")}>
+        <Tooltip value={t(open ? "Collapse Group" : "Expand Group")}>
           <Collapsible.Trigger>
             {#if open}
               <GroupCollapse size={20} />
@@ -212,10 +219,10 @@
             <div class="group-rules-header-column total">
               #{group.rules.length}
             </div>
-            <div class="group-rules-header-column">{t("pattern")}</div>
-            <div class="group-rules-header-column">{t("iface")}</div>
-            <div class="group-rules-header-column">{t("description")}</div>
-            <div class="group-rules-header-column">{t("actions")}</div>
+            <div class="group-rules-header-column">{t("Name")}</div>
+            <div class="group-rules-header-column">{t("Type")}</div>
+            <div class="group-rules-header-column">{t("Pattern")}</div>
+            <div class="group-rules-header-column">{t("Enabled")}</div>
           </div>
         {/if}
         <div class="group-rules">
