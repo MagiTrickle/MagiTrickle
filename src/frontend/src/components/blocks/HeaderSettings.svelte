@@ -1,9 +1,16 @@
 <script lang="ts">
-  import Select from "../common/Select.svelte";
+  import Button from "../common/Button.svelte";
   import { Locale, Gitlab, Bug } from "../common/icons";
   import { t, locale, locales } from "../../data/locale.svelte";
   const version = import.meta.env.VITE_PKG_VERSION || "0.0.0";
   const isDev = import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true";
+
+  const rotateLocale = () => {
+    const keys = Object.keys(locales);
+    const idx = keys.indexOf(locale.current);
+    locale.current = keys[(idx + 1) % keys.length];
+  };
+  const flag = (key: string) => (key === "en" ? "🇺🇸" : key === "ru" ? "🇷🇺" : key);
 </script>
 
 <div class="container">
@@ -25,21 +32,13 @@
   </div>
 
   <div class="locale">
-    <Locale size={18} />
-    <Select
-      options={Object.keys(locales).map((localeKey) => {
-        switch (localeKey) {
-          case "en":
-            return { label: "en", value: localeKey };
-          case "ru":
-            return { label: "ру", value: localeKey };
-          default:
-            return { label: localeKey, value: localeKey };
-        }
-      })}
-      bind:selected={locale.current}
-      style="width:55px"
-    />
+    <Button small onclick={rotateLocale}>
+      <div class="locale-content">
+        <Locale size={16} />
+
+        {flag(locale.current)}
+      </div>
+    </Button>
   </div>
 </div>
 
@@ -93,9 +92,14 @@
   }
 
   .locale {
-    gap: 0.3rem;
     background: var(--bg-light);
-    border-radius: 6px;
-    padding: 2px 2px 2px 6px;
+    border-radius: 0.5rem;
+  }
+  .locale-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 1rem;
+    line-height: 1;
   }
 </style>

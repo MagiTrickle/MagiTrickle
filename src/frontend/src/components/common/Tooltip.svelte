@@ -10,8 +10,7 @@
 
   let wrapperEl: HTMLElement;
   let tooltipEl: HTMLElement;
-  let observer: ResizeObserver;
-  const PAD = 16;
+  const PAD = 6;
 
   function reposition() {
     tooltipEl.style.left = "50%";
@@ -22,6 +21,7 @@
     if (rect.left < PAD) shift = PAD - rect.left;
     else if (rect.right > vw - PAD) shift = -(rect.right - (vw - PAD));
     tooltipEl.style.transform = `translateX(calc(-50% + ${shift}px))`;
+
     const maxWidth = vw - PAD * 2;
     if (rect.width > maxWidth) {
       tooltipEl.style.maxWidth = `${maxWidth}px`;
@@ -30,28 +30,18 @@
     }
   }
 
-  function show() {
-    tooltipEl.style.visibility = "visible";
-    reposition();
-    tooltipEl.style.opacity = "1";
-  }
-
-  function hide() {
-    tooltipEl.style.opacity = "0";
-    const onEnd = () => {
-      tooltipEl.style.visibility = "hidden";
-      tooltipEl.removeEventListener("transitionend", onEnd);
-    };
-    tooltipEl.addEventListener("transitionend", onEnd, { once: true });
-  }
-
   onMount(() => {
-    wrapperEl.addEventListener("mouseenter", show);
-    wrapperEl.addEventListener("mouseleave", hide);
+    wrapperEl.addEventListener("pointerenter", reposition);
     window.addEventListener("resize", reposition);
 
-    observer = new ResizeObserver(reposition);
+    const observer = new ResizeObserver(reposition);
     observer.observe(tooltipEl);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", reposition);
+      wrapperEl.removeEventListener("pointerenter", reposition);
+    };
   });
 </script>
 
@@ -83,8 +73,20 @@
     white-space: nowrap;
     visibility: hidden;
     opacity: 0;
+    pointer-events: none;
+
+    transition:
+      opacity 0.2s ease-out,
+      visibility 0s linear 0.2s;
     z-index: 9999;
-    transition: opacity 0.2s ease-out;
+  }
+
+  .tooltip-wrapper:hover .tooltip {
+    opacity: 1;
+    visibility: visible;
+    transition:
+      opacity 0.2s ease-out,
+      visibility 0s;
   }
 
   @media (max-width: 700px) {

@@ -16,6 +16,15 @@
   import ImportRulesDialog from "./ImportRulesDialog.svelte";
   import { t } from "../../data/locale.svelte";
 
+  function handleSaveShortcut(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      if (counter > 0 && valid_rules) {
+        event.preventDefault();
+        saveChanges();
+      }
+    }
+  }
+
   const INITIAL_RULES_LIMIT = 30 as const;
   const INCREMENT_RULES_LIMIT = 40 as const;
 
@@ -42,14 +51,14 @@
 
   function saveChanges() {
     if (counter === 0) return;
-    overlay.show("saving changes...");
+    overlay.show(t("saving changes..."));
 
     fetcher
       .put("/groups?save=true", { groups: data })
       .then(() => {
         counter = 0;
         overlay.hide();
-        toast.success("Saved");
+        toast.success(t("Saved"));
       })
       .catch(() => {
         overlay.hide();
@@ -84,10 +93,12 @@
     initOpenState();
     setTimeout(cleanOrphanedOpenState, 5000);
     window.addEventListener("rule_drop", onRuleDrop);
+    window.addEventListener("keydown", handleSaveShortcut);
   });
 
   onDestroy(() => {
     window.removeEventListener("rule_drop", onRuleDrop);
+    window.removeEventListener("keydown", handleSaveShortcut);
   });
 
   $effect(() => {
@@ -141,7 +152,7 @@
   }
 
   function deleteGroup(index: number) {
-    if (!confirm("Delete this group?")) return;
+    if (!confirm(t("Delete this group?"))) return;
     data.splice(index, 1);
     showed_limit.splice(index, 1);
   }
@@ -201,20 +212,20 @@
             group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
           );
           initOpenState();
-          toast.success("Config imported");
+          toast.success(t("Config imported"));
         } catch (error) {
           console.error("Error parsing CONFIG:", error); // why is this not writing to console?
-          toast.error("Invalid config file");
+          toast.error(t("Invalid config file"));
         }
       };
       reader.onerror = function (event) {
         console.error("Error reading file:", event.target?.error);
-        toast.error("Invalid config file");
+        toast.error(t("Invalid config file"));
       };
       reader.readAsText(file);
       input.value = "";
     } else {
-      alert("Please select a CONFIG file to load.");
+      alert(t("Please select a CONFIG file to load."));
     }
   }
 
@@ -241,25 +252,25 @@
   <div class="group-controls-actions">
     {#if counter > 0 && valid_rules}
       <div transition:scale>
-        <Tooltip value={t("save_changes")}>
+        <Tooltip value={t("Save Changes")}>
           <Button onclick={saveChanges} id="save-changes">
             <Save size={22} />
           </Button>
         </Tooltip>
       </div>
     {/if}
-    <Tooltip value={t("export_config")}>
+    <Tooltip value={t("Export Config")}>
       <Button onclick={exportConfig}>
         <Upload size={22} />
       </Button>
     </Tooltip>
-    <Tooltip value={t("import_config")}>
+    <Tooltip value={t("Import Config")}>
       <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
       <Button onclick={() => document.getElementById("import-config")!.click()}>
         <Download size={22} />
       </Button>
     </Tooltip>
-    <Tooltip value={t("add_group")}>
+    <Tooltip value={t("Add Group")}>
       <Button onclick={addGroup}><Add size={22} /></Button>
     </Tooltip>
   </div>
