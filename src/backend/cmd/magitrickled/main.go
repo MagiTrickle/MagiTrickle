@@ -86,6 +86,7 @@ func setupUnixSocket(apiRouter chi.Router, errChan chan error) (*http.Server, er
 		Handler: r,
 	}
 
+	log.Info().Msgf("Starting UNIX socket on %s", api.SocketPath)
 	go func() {
 		if e := srv.Serve(socket); e != nil && e != http.ErrServerClosed {
 			errChan <- fmt.Errorf("failed to serve UNIX socket: %v", e)
@@ -98,10 +99,15 @@ func setupUnixSocket(apiRouter chi.Router, errChan chan error) (*http.Server, er
 }
 
 func setupHTTP(a *app.App, apiRouter chi.Router, errChan chan error) (*http.Server, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d",
-		a.Config().HTTPWeb.Host.Address, a.Config().HTTPWeb.Host.Port))
+	if !a.Config().HTTPWeb.Enabled {
+		log.Info().Msg("HTTP WebUI disabled by configuration")
+		return nil, nil
+	}
+
+	addr := fmt.Sprintf("%s:%d", a.Config().HTTPWeb.Host.Address, a.Config().HTTPWeb.Host.Port)
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("error while listening HTTP: %v", err)
+		return nil, fmt.Errorf("error while listening HTTP %s: %v", addr, err)
 	}
 
 	// Создаем основной роутер и монтируем API-роутер, а также статику
@@ -157,10 +163,9 @@ func setupHTTP(a *app.App, apiRouter chi.Router, errChan chan error) (*http.Serv
 		w.Write(fileData)
 	})
 
-	srv := &http.Server{
-		Handler: r,
-	}
-	// Запуск HTTP сервера в горутине
+	srv := &http.Server{Handler: r}
+
+	log.Info().Msgf("Starting HTTP server on %s", addr)
 	go func() {
 		if e := srv.Serve(listener); e != nil && e != http.ErrServerClosed {
 			errChan <- fmt.Errorf("failed to serve HTTP: %v", e)
@@ -202,22 +207,17 @@ func main() {
 	apiHandler := v1.NewHandler(core)
 	apiRouter := v1.NewRouter(apiHandler)
 
-	// Запуск HTTP сервера (для WebUI)
 	errChan := make(chan error, 1)
+	// Запуск HTTP сервера (для WebUI)
 	srvHTTP, err := setupHTTP(core, apiRouter, errChan)
 	if err != nil {
 		log.Fatal().Err(err).Msg("setupHTTP error")
 	}
-
 	// Запуск UNIX-сокет сервера
 	srvUnix, err := setupUnixSocket(apiRouter, errChan)
 	if err != nil {
 		log.Fatal().Err(err).Msg("setupUnixSocket error")
 	}
-
-	addr := fmt.Sprintf("%s:%d", core.Config().HTTPWeb.Host.Address, core.Config().HTTPWeb.Host.Port)
-	log.Info().Msgf("Starting UNIX socket on %s", api.SocketPath)
-	log.Info().Msgf("Starting HTTP server on %s", addr)
 
 	// Обработка системных сигналов для graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -227,11 +227,15 @@ func main() {
 	shutdown := func() {
 		log.Info().Msg("shutting down service")
 		cancel()
-		if err := srvHTTP.Shutdown(context.Background()); err != nil {
-			log.Error().Err(err).Msg("HTTP server shutdown error")
+		if srvHTTP != nil {
+			if err := srvHTTP.Shutdown(context.Background()); err != nil {
+				log.Error().Err(err).Msg("HTTP server shutdown error")
+			}
 		}
-		if err := srvUnix.Shutdown(context.Background()); err != nil {
-			log.Error().Err(err).Msg("UNIX socket server shutdown error")
+		if srvUnix != nil {
+			if err := srvUnix.Shutdown(context.Background()); err != nil {
+				log.Error().Err(err).Msg("UNIX socket server shutdown error")
+			}
 		}
 	}
 
