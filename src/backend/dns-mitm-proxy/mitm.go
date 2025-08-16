@@ -21,7 +21,7 @@ type DNSMITMProxy struct {
 }
 
 func (p DNSMITMProxy) requestDNS(req []byte, network string) ([]byte, error) {
-	upstreamConn, err := net.Dial(network, fmt.Sprintf("%s:%d", p.UpstreamDNSAddress, p.UpstreamDNSPort))
+	upstreamConn, err := net.Dial(network, net.JoinHostPort(p.UpstreamDNSAddress, fmt.Sprintf("%d", p.UpstreamDNSPort)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial DNS upstream: %w", err)
 	}
@@ -39,7 +39,7 @@ func (p DNSMITMProxy) requestDNS(req []byte, network string) ([]byte, error) {
 		}
 	}
 
-	n, err := upstreamConn.Write(req)
+	_, err = upstreamConn.Write(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write request: %w", err)
 	}
@@ -56,7 +56,7 @@ func (p DNSMITMProxy) requestDNS(req []byte, network string) ([]byte, error) {
 		resp = make([]byte, dns.MaxMsgSize)
 	}
 
-	n, err = upstreamConn.Read(resp)
+	n, err := upstreamConn.Read(resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
