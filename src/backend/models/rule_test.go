@@ -1,6 +1,8 @@
 package models
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestDomain_IsMatch_Domain(t *testing.T) {
 	rule := &Rule{

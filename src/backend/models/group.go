@@ -1,11 +1,11 @@
 package models
 
 import (
-	"magitrickle/api/types"
+	"magitrickle/utils/intID"
 )
 
 type Group struct {
-	ID        types.ID
+	ID        intID.ID
 	Name      string
 	Color     string
 	Interface string
