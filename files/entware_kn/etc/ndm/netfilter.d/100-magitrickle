@@ -1,6 +1,6 @@
 #!/bin/sh
 SOCKET_PATH="/opt/var/run/magitrickle.sock"
-[ -S "$SOCKET_PATH" ] || exit
+[ -S "$SOCKET_PATH" ] || exit 0
 
 BODY="{\"type\":\"$type\",\"table\":\"$table\"}"
 LENGTH=$(printf "%s" "$BODY" | wc -c)
