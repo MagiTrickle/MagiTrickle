@@ -1,56 +1,51 @@
 package models
 
-type Config struct {
-	App    App
-	Groups []Group
-}
-
-type App struct {
-	HTTPWeb           HTTPWeb
-	DNSProxy          DNSProxy
-	Netfilter         Netfilter
+type AppConfig struct {
+	HTTPWeb           AppConfigHTTPWeb
+	DNSProxy          AppConfigDNSProxy
+	Netfilter         AppConfigNetfilter
 	Link              []string
 	ShowAllInterfaces bool
 	LogLevel          string
 }
 
-type HTTPWeb struct {
+type AppConfigHTTPWeb struct {
 	Enabled bool
-	Host    HTTPWebServer
+	Host    AppConfigHTTPWebServer
 	Skin    string
 }
 
-type HTTPWebServer struct {
+type AppConfigHTTPWebServer struct {
 	Address string
 	Port    uint16
 }
 
-type DNSProxy struct {
-	Host            DNSProxyServer
-	Upstream        DNSProxyServer
+type AppConfigDNSProxy struct {
+	Host            AppConfigDNSProxyServer
+	Upstream        AppConfigDNSProxyServer
 	DisableRemap53  bool
 	DisableFakePTR  bool
 	DisableDropAAAA bool
 }
 
-type DNSProxyServer struct {
+type AppConfigDNSProxyServer struct {
 	Address string
 	Port    uint16
 }
 
-type Netfilter struct {
-	IPTables            IPTables
-	IPSet               IPSet
+type AppConfigNetfilter struct {
+	IPTables            AppConfigIPTables
+	IPSet               AppConfigIPSet
 	DisableIPv4         bool
 	DisableIPv6         bool
 	StartMarkTableIndex uint32
 }
 
-type IPTables struct {
+type AppConfigIPTables struct {
 	ChainPrefix string
 }
 
-type IPSet struct {
+type AppConfigIPSet struct {
 	TablePrefix   string
 	AdditionalTTL uint32
 }

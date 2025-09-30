@@ -3,14 +3,14 @@ package models
 import (
 	"strings"
 
-	"magitrickle/api/types"
+	"magitrickle/utils/intID"
 
 	"github.com/IGLOU-EU/go-wildcard/v2"
 	"github.com/dlclark/regexp2"
 )
 
 type Rule struct {
-	ID     types.ID
+	ID     intID.ID
 	Name   string
 	Type   string
 	Rule   string
