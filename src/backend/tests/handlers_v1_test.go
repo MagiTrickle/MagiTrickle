@@ -1,4 +1,4 @@
-package v1
+package tests
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"magitrickle"
+	"magitrickle/api/v1"
 	"magitrickle/api/v1/types"
 
 	"github.com/go-chi/chi/v5"
@@ -52,14 +53,13 @@ func TestIntegration(t *testing.T) {
 	rootRouter := chi.NewRouter()
 	rootRouter.Use(middleware.Recoverer)
 
-	h := NewHandler(core)
-	apiHandler := NewHandler(core)
-	apiRouter := NewRouter(apiHandler)
+	h := v1.NewHandler(core)
+	apiRouter := v1.NewRouter(core)
 
-	apiRouter.Get("/v1/groups", h.GetGroups)
-	apiRouter.Post("/v1/groups", h.CreateGroup)
+	apiRouter.Get("/groups", h.GetGroups)
+	apiRouter.Post("/groups", h.CreateGroup)
 
-	rootRouter.Mount("/api", apiRouter)
+	rootRouter.Mount("/api/v1", apiRouter)
 
 	srv, err := setupHTTP(core, rootRouter, errChan)
 	if err != nil {
