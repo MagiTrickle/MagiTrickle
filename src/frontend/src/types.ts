@@ -15,13 +15,6 @@ import {
 
 declare global {
   interface WindowEventMap {
-    rule_drop: CustomEvent<{
-      from_group_index: number;
-      from_rule_index: number;
-      to_group_index: number;
-      to_rule_index: number;
-    }>;
-
     overlay: CustomEvent<{
       content: string;
       type: "show" | "hide";

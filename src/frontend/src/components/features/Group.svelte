@@ -5,7 +5,7 @@
   import { createEventDispatcher } from "svelte";
 
   import { type Group, type Rule } from "../../types";
-  import { droppable } from "../actions/dnd";
+  import { droppable, draggable } from "../actions/dnd";
   import { defaultRule } from "../../utils/defaults";
   import { INTERFACES } from "../../data/interfaces.svelte";
   import {
@@ -13,13 +13,9 @@
     Add,
     GroupExpand,
     GroupCollapse,
-    MoveUp,
-    MoveDown,
     Dots,
-    Check,
-    ToggleLeft,
-    ToggleRight,
     ImportList,
+    Grip,
   } from "../common/icons";
   import Switch from "../common/Switch.svelte";
   import Tooltip from "../common/Tooltip.svelte";
@@ -44,9 +40,9 @@
       to_group_index: number,
       to_rule_index: number,
     ) => void;
-    groupMoveUp: (group_index: number) => void;
-    groupMoveDown: (group_index: number) => void;
     loadMore: (group_index: number) => Promise<void>;
+    searchActive?: boolean;
+    visibleRuleIndices?: number[] | null;
     [key: string]: any;
   };
 
@@ -60,9 +56,9 @@
     addRuleToGroup,
     deleteRuleFromGroup,
     changeRuleIndex,
-    groupMoveUp,
-    groupMoveDown,
     loadMore,
+    searchActive = false,
+    visibleRuleIndices = null,
     ...rest
   }: Props = $props();
 
@@ -70,11 +66,93 @@
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
+
+  type GroupDnD = {
+    group_id: string;
+    group_index: number;
+    name: string;
+    color: string;
+    count: number;
+  };
+
+  function createGroupDragPreview(headerEl: HTMLElement, name: string, color: string, count: number) {
+    const badge = document.createElement("div");
+    badge.style.cssText =
+      "position:fixed;top:-1000px;left:-1000px;pointer-events:none;z-index:2147483647;transform:translateZ(0);font:600 13px/1.2 var(--font, -apple-system, system-ui, Segoe UI, Roboto, sans-serif);color:var(--text,#e5e7eb);";
+
+    const inner = document.createElement("div");
+    inner.style.cssText =
+      "display:flex;align-items:center;gap:.55rem;padding:.42rem .7rem;border-radius:.7rem;background:var(--bg-light,rgba(30,30,36,.92));border:1px solid var(--bg-light-extra,rgba(255,255,255,.12));box-shadow:0 6px 18px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(6px);";
+
+    const colorBadge = document.createElement("span");
+    colorBadge.style.cssText =
+      "display:inline-block;width:10px;height:10px;border-radius:999px;box-shadow:0 0 0 1px rgba(255,255,255,.25) inset;";
+    colorBadge.style.background = color || "#888";
+    inner.appendChild(colorBadge);
+
+    const title = document.createElement("span");
+    title.textContent = name || "group";
+    title.style.cssText = "max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    inner.appendChild(title);
+
+    const cnt = document.createElement("span");
+    cnt.textContent = `• ${count}`;
+    cnt.style.opacity = "0.8";
+    inner.appendChild(cnt);
+
+    const gripClone = headerEl.querySelector(".group-grip")?.cloneNode(true) as HTMLElement | null;
+    if (gripClone) {
+      gripClone.style.cssText += "opacity:.9;display:flex;align-items:center;margin-left:.25rem;";
+      inner.appendChild(gripClone);
+    }
+
+    badge.appendChild(inner);
+    document.body.appendChild(badge);
+    return badge;
+  }
+
+  let filteredRuleIndices: number[] | null = $state(null);
+  let displayedRulesCount = $state(0);
+
+  $effect(() => {
+    if (searchActive && Array.isArray(visibleRuleIndices)) {
+      filteredRuleIndices = visibleRuleIndices.length ? visibleRuleIndices : [];
+    } else {
+      filteredRuleIndices = null;
+    }
+
+    displayedRulesCount = Array.isArray(filteredRuleIndices)
+      ? filteredRuleIndices.length
+      : group.rules.length;
+  });
 </script>
 
 <svelte:window bind:innerWidth={client_width} />
 
-<div class="group" data-uuid={group.id}>
+<div
+  class="group"
+  role="listitem"
+  data-uuid={group.id}
+  use:draggable={{
+    data: {
+      group_id: group.id,
+      group_index,
+      name: group.name,
+      color: group.color,
+      count: group.rules.length
+    } as GroupDnD,
+    scope: "group",
+    handle: ".group-grip",
+    effects: { effectAllowed: "move", dropEffect: "move" },
+    dragImage: (node) =>
+      createGroupDragPreview(
+        (node.querySelector(".group-header") ?? node) as HTMLElement,
+        group.name,
+        group.color || "",
+        group.rules.length
+      ),
+  }}
+>
   <Collapsible.Root bind:open>
     <div
       class="group-header"
@@ -82,24 +160,37 @@
       use:droppable={{
         data: { rule_id: "", rule_index: 0, group_id: group.id, group_index },
         scope: "rule",
+        canDrop: (src) => src.group_id === group.id,
       }}
     >
       <div class="group-left">
         <label class="group-color" style="background: {group.color}">
           <input type="color" bind:value={group.color} />
         </label>
-        <input type="text" placeholder={t("group name...")} class="group-name" bind:value={group.name} />
+
+        <div class="group-grip" title={t("Drag Group")}>
+          <Grip />
+        </div>
+
+        <input
+          type="text"
+          placeholder={t("group name...")}
+          class="group-name"
+          bind:value={group.name}
+        />
       </div>
+
       <div class="group-actions">
         <Select
           options={INTERFACES.map((item) => ({ value: item, label: item }))}
           bind:selected={group.interface}
         />
 
+        <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
+          <Switch class="enable-group" bind:checked={group.enable} />
+        </Tooltip>
+
         {#if is_desktop}
-          <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
-            <Switch class="enable-group" bind:checked={group.enable} />
-          </Tooltip>
           <Tooltip value={t("Delete Group")}>
             <Button small onclick={() => deleteGroup(group_index)}>
               <Delete size={20} />
@@ -121,80 +212,33 @@
               <ImportList size={20} />
             </Button>
           </Tooltip>
-          <Tooltip value={t("Move Up")}>
-            <Button small inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
-              <MoveUp size={20} />
-            </Button>
-          </Tooltip>
-          <Tooltip value={t("Move Down")}>
-            <Button
-              small
-              inactive={group_index === total_groups - 1}
-              onclick={() => groupMoveDown(group_index)}
-            >
-              <MoveDown size={20} />
-            </Button>
-          </Tooltip>
         {:else}
           <DropdownMenu>
             {#snippet trigger()}
               <Dots size={20} />
             {/snippet}
             {#snippet item1()}
-              <Button general onclick={() => (group.enable = !group.enable)}>
-                <div class="dd-icon">
-                  {#if group.enable}
-                    <ToggleRight size={20} />
-                  {:else}
-                    <ToggleLeft size={20} />
-                  {/if}
-                </div>
-                <div class="dd-label">{t(group.enable ? "Disable Group" : "Enable Group")}</div>
-                <div class="dd-check">
-                  {#if group.enable}
-                    <Check size={16} />
-                  {/if}
-                </div>
-              </Button>
+            <Button
+            general
+            onclick={() => {
+              addRuleToGroup(group_index, defaultRule(), true);
+              open = true;
+            }}
+              >
+              <div class="dd-icon"><Add size={20} /></div>
+              <div class="dd-label">{t("Add Rule")}</div>
+            </Button>
             {/snippet}
             {#snippet item2()}
+            <Button general onclick={() => dispatch("importRules")}>
+              <div class="dd-icon"><ImportList size={20} /></div>
+              <div class="dd-label">{t("Import Rule List")}</div>
+            </Button>
+            {/snippet}
+            {#snippet item3()}
               <Button general onclick={() => deleteGroup(group_index)}>
                 <div class="dd-icon"><Delete size={20} /></div>
                 <div class="dd-label">{t("Delete Group")}</div>
-              </Button>
-            {/snippet}
-            {#snippet item3()}
-              <Button
-                general
-                onclick={() => {
-                  addRuleToGroup(group_index, defaultRule(), true);
-                  open = true;
-                }}
-              >
-                <div class="dd-icon"><Add size={20} /></div>
-                <div class="dd-label">{t("Add Rule")}</div>
-              </Button>
-            {/snippet}
-            {#snippet item4()}
-              <Button general onclick={() => dispatch("importRules")}>
-                <div class="dd-icon"><ImportList size={20} /></div>
-                <div class="dd-label">{t("Import Rule List")}</div>
-              </Button>
-            {/snippet}
-            {#snippet item5()}
-              <Button general inactive={group_index === 0} onclick={() => groupMoveUp(group_index)}>
-                <div class="dd-icon"><MoveUp size={20} /></div>
-                <div class="dd-label">{t("Move Up")}</div>
-              </Button>
-            {/snippet}
-            {#snippet item6()}
-              <Button
-                general
-                inactive={group_index === total_groups - 1}
-                onclick={() => groupMoveDown(group_index)}
-              >
-                <div class="dd-icon"><MoveDown size={20} /></div>
-                <div class="dd-label">{t("Move Down")}</div>
               </Button>
             {/snippet}
           </DropdownMenu>
@@ -214,10 +258,10 @@
 
     <Collapsible.Content>
       <div transition:slide>
-        {#if group.rules.length > 0}
+        {#if displayedRulesCount > 0}
           <div class="group-rules-header">
             <div class="group-rules-header-column total">
-              #{group.rules.length}
+              #{displayedRulesCount}
             </div>
             <div class="group-rules-header-column">{t("Name")}</div>
             <div class="group-rules-header-column">{t("Type")}</div>
@@ -226,21 +270,37 @@
           </div>
         {/if}
         <div class="group-rules">
-          <InfiniteLoader triggerLoad={() => loadMore(group_index)} loopDetectionTimeout={10}>
-            {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
+          {#if Array.isArray(filteredRuleIndices)}
+            {#each filteredRuleIndices as rule_index, visible_index (group.rules[rule_index].id)}
               <RuleComponent
-                key={rule.id}
+                key={group.rules[rule_index].id}
                 bind:rule={group.rules[rule_index]}
                 {rule_index}
                 {group_index}
-                rule_id={rule.id}
+                rule_id={group.rules[rule_index].id}
                 group_id={group.id}
                 onChangeIndex={changeRuleIndex}
                 onDelete={deleteRuleFromGroup}
-                style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
+                style={visible_index % 2 ? "" : "background-color: var(--bg-light)"}
               />
             {/each}
-          </InfiniteLoader>
+          {:else}
+            <InfiniteLoader triggerLoad={() => loadMore(group_index)} loopDetectionTimeout={10}>
+              {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
+                <RuleComponent
+                  key={rule.id}
+                  bind:rule={group.rules[rule_index]}
+                  {rule_index}
+                  {group_index}
+                  rule_id={rule.id}
+                  group_id={group.id}
+                  onChangeIndex={changeRuleIndex}
+                  onDelete={deleteRuleFromGroup}
+                  style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
+                />
+              {/each}
+            </InfiniteLoader>
+          {/if}
         </div>
       </div>
     </Collapsible.Content>
@@ -250,13 +310,10 @@
 <style>
   .group {
     & {
-      margin-bottom: 1rem;
       background-color: var(--bg-medium);
       border-radius: 0.5rem;
       border: 1px solid var(--bg-light-extra);
-    }
-    &:last-child {
-      margin-bottom: 0;
+      transition: transform .12s ease, opacity .12s ease, box-shadow .12s ease;
     }
   }
 
@@ -280,7 +337,7 @@
   .group-left {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: .4rem;
   }
 
   .group-color {
@@ -302,6 +359,22 @@
     }
   }
 
+  /* Ручка групп */
+  .group-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 2.2rem;
+    color: var(--text-2);
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+  }
+  .group-grip:hover {
+    color: var(--text);
+  }
+
   .group-name {
     & {
       border: none;
@@ -313,7 +386,7 @@
       border-bottom: 1px solid transparent;
       position: relative;
       top: 0.1rem;
-      margin-left: 2rem;
+      margin-left: .4rem;
     }
 
     &:focus-visible {
@@ -329,7 +402,6 @@
       justify-content: center;
       gap: 0.2rem;
     }
-
     &:global([data-switch-root]) {
       margin: 0 0.3rem;
     }
@@ -424,17 +496,25 @@
       }
     }
 
+    .group-grip {
+      display: none;
+    }
+
     .group-actions {
       width: calc(100% - 2rem);
-      justify-content: end;
+      justify-content: stretch;
+      gap: 0.25rem;
       margin-left: 2rem;
     }
 
     :global(.group-actions > *:nth-child(1)) {
       margin-right: auto;
       width: 150px;
+      min-width: 140px;
+      flex: 1 1 auto;
     }
-    :global(.group-actions > *:nth-child(2)) {
+
+    :global(.group-actions > *:nth-child(3)) {
       margin-left: auto;
     }
 

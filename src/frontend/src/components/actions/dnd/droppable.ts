@@ -1,80 +1,118 @@
-import { dnd_state } from "./dnd.svelte.ts";
+import { dnd_state } from "./dnd.svelte"
+
+type Effect = "none" | "copy" | "link" | "move"
 
 export type DroppableOptions<T> = {
-  data: T;
-  scope: string;
-};
+  data: T
+  scope: string
+  canDrop?: (source: any, target: T) => boolean
+  dropEffect?: Effect
+  onDrop?: (source: any, target: T) => void
+  debug?: boolean
+}
+
+// одна активная подсветка на scope
+let CURRENT: { node: HTMLElement | null; scope: string | null } = { node: null, scope: null }
 
 export function droppable<T>(node: HTMLElement, options: DroppableOptions<T>) {
-  node.setAttribute("data-droppable", options.scope);
+  node.setAttribute("data-droppable", options.scope)
+  const dbg = (...a: any[]) => options?.debug && console.debug("[dnd:droppable]", ...a)
 
-  let timer: number | null = null;
+  let enterCount = 0
 
-  function handleDrop(event: DragEvent) {
-    event.preventDefault();
-    if (dnd_state.source_scope !== options.scope) return;
-    dnd_state.target = options.data;
-    dnd_state.valid_droppable = true;
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
+  const active = () => dnd_state.is_dragging && dnd_state.source_scope === options.scope
+
+  function validateAndDecorate(e: DragEvent) {
+    if (!active()) return false
+
+    const valid = options?.canDrop ? !!options.canDrop(dnd_state.source, options.data) : true
+
+    dnd_state.target = options.data
+    dnd_state.valid_droppable = valid
+
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = valid ? options?.dropEffect ?? "move" : "none"
     }
-    if (event.target instanceof HTMLElement) {
-      const el = event.target.closest(`[data-droppable="${options.scope}"]`);
-      el?.classList.remove("dragover");
-    }
-  }
 
-  function handleDragOver(event: DragEvent) {
-    if (dnd_state.source_scope !== options.scope || !event.target) return;
-    if (event.target instanceof HTMLElement) {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
+    // статус для стилизации
+    (node as HTMLElement).dataset.drop = valid ? "allowed" : "denied"
+
+    if (valid) {
+      // обеспечить одну подсветку
+      if (CURRENT.node && CURRENT.node !== node && CURRENT.scope === options.scope) {
+        CURRENT.node.classList.remove("dragover");
+        (CURRENT.node as HTMLElement).dataset.drop = ""
       }
-      const el = event.target.closest(`[data-droppable="${options.scope}"]`);
-      el?.classList.add("dragover");
+      CURRENT = { node, scope: options.scope }
+      node.classList.add("dragover")
+    } else if (CURRENT.node === node) {
+      node.classList.remove("dragover");
+      (node as HTMLElement).dataset.drop = ""
+      CURRENT = { node: null, scope: null }
     }
-    event.preventDefault();
+
+    return valid
   }
 
-  function handleDragEnter(event: DragEvent) {
-    if (dnd_state.source_scope !== options.scope || !event.target) return;
-    if (event.target instanceof HTMLElement) {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
+  function onDragEnter(e: DragEvent) {
+    if (!active()) return
+    enterCount++
+    validateAndDecorate(e)
+    e.preventDefault() // Safari любит preventDefault на enter
+  }
+
+  function onDragOver(e: DragEvent) {
+    const valid = validateAndDecorate(e)
+    if (valid) e.preventDefault()
+  }
+
+  function onDragLeave(_e: DragEvent) {
+    if (!active()) return
+    enterCount = Math.max(0, enterCount - 1)
+    if (enterCount === 0 && CURRENT.node === node) {
+      node.classList.remove("dragover");
+      (node as HTMLElement).dataset.drop = ""
+      CURRENT = { node: null, scope: null }
+    }
+  }
+
+  function onDrop(e: DragEvent) {
+    const valid = validateAndDecorate(e)
+    e.preventDefault()
+    enterCount = 0
+    if (valid && options?.onDrop) {
+      // fire custom drop handler immediately so consumers can react before dragend
+      try {
+        options.onDrop(dnd_state.source, options.data)
+      } finally {
+        dnd_state.valid_droppable = false
       }
-      const el = event.target.closest(`[data-droppable="${options.scope}"]`);
-      el?.classList.add("dragover");
     }
-    event.preventDefault();
+    if (CURRENT.node === node) {
+      node.classList.remove("dragover");
+      (node as HTMLElement).dataset.drop = ""
+      CURRENT = { node: null, scope: null }
+    }
   }
 
-  function handleDragLeave(event: DragEvent) {
-    if (dnd_state.source_scope !== options.scope || !event.target) return;
-    if (event.target instanceof HTMLElement) {
-      const el = event.target.closest(`[data-droppable="${options.scope}"]`);
-      el?.classList.remove("dragover");
-      timer = setTimeout(() => node.classList.remove("dragover"), 50);
-    }
-    event.preventDefault();
-  }
-
-  node.addEventListener("drop", handleDrop);
-  node.addEventListener("dragover", handleDragOver);
-  node.addEventListener("dragenter", handleDragEnter);
-  node.addEventListener("dragleave", handleDragLeave);
+  node.addEventListener("dragenter", onDragEnter)
+  node.addEventListener("dragover", onDragOver)
+  node.addEventListener("dragleave", onDragLeave)
+  node.addEventListener("drop", onDrop)
 
   return {
     update(new_options: DroppableOptions<T>) {
-      options = new_options;
+      options = new_options
+      node.setAttribute("data-droppable", options.scope)
     },
     destroy() {
-      node.removeEventListener("drop", handleDrop);
-      node.removeEventListener("dragover", handleDragOver);
-      node.removeEventListener("dragenter", handleDragEnter);
-      node.removeEventListener("dragleave", handleDragLeave);
+      node.removeEventListener("dragenter", onDragEnter)
+      node.removeEventListener("dragover", onDragOver)
+      node.removeEventListener("dragleave", onDragLeave)
+      node.removeEventListener("drop", onDrop)
+      if (CURRENT.node === node) CURRENT = { node: null, scope: null }
+      node.classList.remove("dragover");
+      (node as HTMLElement).dataset.drop = ""
     },
-  };
+  }
 }

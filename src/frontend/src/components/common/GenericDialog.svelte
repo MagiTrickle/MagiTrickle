@@ -8,6 +8,7 @@
   export let title = "";
   export let textareaValue = "";
   export let textareaPlaceholder = "";
+  export let maxWidth = 300;
 
   let textArea: HTMLTextAreaElement;
 
@@ -30,8 +31,9 @@
       forceMount
       onOpenAutoFocus={(e) => {
         e.preventDefault();
-        textArea?.focus();
+        // textArea?.focus();
       }}
+      style={`--generic-dialog-max-width: ${maxWidth}px`}
     >
       {#snippet child({ props, open })}
         {#if open}
@@ -46,13 +48,18 @@
               <Add size={22} style="transform:rotate(45deg)" />
             </Dialog.Close>
             <form on:submit|preventDefault={() => dispatch("submit")}>
-              <textarea
-                bind:this={textArea}
-                bind:value={textareaValue}
-                placeholder={textareaPlaceholder}
-                class:invalid={triedSubmit && !textareaValue.trim()}
-                on:input={(e) => dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
-              ></textarea>
+              <div class="body">
+                <slot name="body">
+                  <textarea
+                    bind:this={textArea}
+                    bind:value={textareaValue}
+                    placeholder={textareaPlaceholder}
+                    class:invalid={triedSubmit && !textareaValue.trim()}
+                    on:input={(e) =>
+                      dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
+                  ></textarea>
+                </slot>
+              </div>
 
               <div class="actions">
                 <slot name="actions" />
@@ -71,10 +78,10 @@
     min-height: 120px;
     height: 120px;
     max-height: 50vh;
+    margin-top: 1rem;
     resize: vertical;
     font: inherit;
     padding: 0.75rem 1rem;
-    margin-top: 1rem;
     border-radius: 0.5rem;
     border: 1.5px solid var(--bg-light-extra);
     background: var(--bg-light);
@@ -100,6 +107,11 @@
     margin-top: 0.5rem;
   }
 
+  .body {
+    width: 100%;
+    margin-top: 1rem;
+  }
+
   :global([data-dialog-overlay]) {
     position: fixed;
     top: 0;
@@ -120,7 +132,7 @@
     top: 50%;
     transform: translate(-50%, -50%);
     width: 100%;
-    max-width: min(300px, calc(100vw - 5rem));
+    max-width: min(var(--generic-dialog-max-width, 300px), calc(100vw - 5rem));
     z-index: 9999;
     background-color: var(--bg-dark);
     border-radius: 0.5rem;
