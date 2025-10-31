@@ -102,13 +102,34 @@
 </GenericDialog>
 
 <style>
+  .rule-type-select :global(.select-wrap),
+  .rule-type-select :global([data-select-root]),
+  .rule-type-select :global([data-select-trigger]) {
+    display: block !important;
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+  .rule-type-select :global([data-select-trigger] .selected) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100% !important;
+  }
+  .rule-type-select :global([data-select-content]) {
+    min-width: 100% !important;
+    width: auto;
+  }
   .rule-type-select {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
     width: 100%;
   }
-
+  .rule-type-select :global(.select-root),
+  .rule-type-select :global([data-select-trigger]) {
+    width: 100% !important;
+    justify-content: space-between;
+  }
   .rule-type-select :global(.select-root),
   .rule-type-select :global(button) {
     height: 2.5rem;
@@ -118,16 +139,13 @@
     border-radius: 0.5rem;
     background-color: var(--bg-light);
   }
-
   .rule-type-select :global(button) {
     padding: 0 1rem;
   }
-
   .rule-type-select :global([data-select-trigger]:hover),
   .rule-type-select :global(button:hover) {
     background-color: var(--bg-light-extra);
   }
-
   @media (max-width: 315px) {
     .rule-type-select {
       grid-template-columns: 1fr;

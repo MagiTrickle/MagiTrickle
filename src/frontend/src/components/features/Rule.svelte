@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { droppable, draggable } from "../actions/dnd";
+  import { droppable, draggable, dnd_state } from "../actions/dnd";
   import { RULE_TYPES, type Rule } from "../../types";
   import Switch from "../common/Switch.svelte";
   import Tooltip from "../common/Tooltip.svelte";
@@ -20,6 +20,8 @@
       from_rule_index: number,
       to_group_index: number,
       to_rule_index: number,
+      to_rule_id: string,
+      insert?: "before" | "after",
     ) => void;
     onDelete?: (from_group_index: number, from_rule_index: number) => void;
     [key: string]: any;
@@ -54,128 +56,215 @@
     group_id: string;
     rule_index: number;
     group_index: number;
+    name?: string;
+    drop_position?: "before" | "after";
   };
 
+  const dropData: DnDTransferData = {
+    rule_id,
+    group_id,
+    rule_index,
+    group_index,
+    drop_position: "before",
+  };
+
+  let dropEdge = $state<"before" | "after">("before");
+
+  function applyDropEdge(after: boolean) {
+    const edge = after ? "after" : "before";
+    dropData.drop_position = edge;
+    dropEdge = edge;
+  }
+
+  function updateDropIntent(event: DragEvent) {
+    if (dnd_state.source_scope !== "rule") return;
+    const target = event.currentTarget as HTMLElement | null;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const after = event.clientY - rect.top > rect.height / 2;
+    applyDropEdge(after);
+  }
+
+  function resetDropIntent(delay = false) {
+    const reset = () => {
+      dropData.drop_position = "before";
+      dropEdge = "before";
+    };
+    if (delay) {
+      setTimeout(reset, 0);
+    } else {
+      reset();
+    }
+  }
+
+  $effect(() => {
+    dropData.rule_id = rule_id;
+    dropData.group_id = group_id;
+    dropData.rule_index = rule_index;
+    dropData.group_index = group_index;
+    dropData.drop_position = "before";
+    dropEdge = "before";
+  });
+
   function handlerDrop(source: DnDTransferData, target: DnDTransferData) {
-    window.dispatchEvent(
-      new CustomEvent("rule_drop", {
-        detail: {
-          from_group_index: source.group_index,
-          from_rule_index: source.rule_index,
-          to_group_index: target.group_index,
-          to_rule_index: target.rule_index,
-        },
-      }),
+    if (source.rule_id === target.rule_id && source.group_id === target.group_id) {
+      return;
+    }
+
+    onChangeIndex?.(
+      source.group_index,
+      source.rule_index,
+      target.group_index,
+      target.rule_index,
+      target.rule_id,
+      target.drop_position ?? (target.rule_id ? "before" : "after"),
     );
   }
 
-  function onFocusInput(event: FocusEvent) {
-    const target = event.target as HTMLElement;
-    if (!target) return;
-    target.closest(".rule")?.setAttribute("draggable", "false");
-  }
+  function createRuleDragPreview(rowEl: HTMLElement, title: string) {
+    const badge = document.createElement("div");
+    badge.style.cssText =
+      "position:fixed;top:-1000px;left:-1000px;pointer-events:none;z-index:2147483647;transform:translateZ(0);font:600 13px/1.2 var(--font, -apple-system, system-ui, Segoe UI, Roboto, sans-serif);color:var(--text,#e5e7eb);";
+    const inner = document.createElement("div");
+    inner.style.cssText =
+      "display:flex;align-items:center;gap:.5rem;padding:.35rem .6rem;border-radius:.6rem;background:var(--bg-light,rgba(30,30,36,.92));border:1px solid var(--bg-light-extra,rgba(255,255,255,.12));box-shadow:0 6px 18px rgba(0,0,0,.35);backdrop-filter:saturate(120%) blur(6px);";
 
-  function onBlurInput(event: FocusEvent) {
-    const target = event.target as HTMLElement;
-    if (!target) return;
-    target.closest(".rule")?.setAttribute("draggable", "true");
+    const gripClone = rowEl.querySelector(".grip")?.cloneNode(true) as HTMLElement | null;
+    if (gripClone) {
+      gripClone.style.cssText += "opacity:.85;display:flex;align-items:center;";
+      inner.appendChild(gripClone);
+    } else {
+      const dots = document.createElement("span");
+      dots.textContent = "⋮⋮";
+      (dots.style as any).letterSpacing = "2px";
+      dots.style.opacity = "0.85";
+      inner.appendChild(dots);
+    }
+
+    const label = document.createElement("span");
+    label.textContent = title || "rule";
+    label.style.cssText =
+      "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    inner.appendChild(label);
+
+    badge.appendChild(inner);
+    document.body.appendChild(badge);
+    return badge;
   }
 </script>
 
 <div
-  class="container rule"
+  class="rule no-native-dnd"
   data-index={rule_index}
   data-group-index={group_index}
   data-uuid={rule_id}
   data-group-uuid={group_id}
+  data-drop-edge={dropEdge}
   {...rest}
   use:draggable={{
-    data: { rule_id, rule_index, group_id, group_index },
+    data: { rule_id, rule_index, group_id, group_index, name: rule.name } as DnDTransferData,
     scope: "rule",
-    onDrop: handlerDrop,
+    handle: ".grip",
+    effects: { effectAllowed: "move", dropEffect: "move" },
+    dragImage: (node) =>
+      createRuleDragPreview((node.querySelector(".rule-row") ?? node) as HTMLElement, rule.name),
   }}
   use:droppable={{
-    data: { rule_id, rule_index, group_id, group_index },
+    data: dropData,
     scope: "rule",
+    canDrop: (src, tgt) => src.rule_id !== tgt.rule_id || src.group_id !== tgt.group_id,
+    dropEffect: "move",
+    onDrop: handlerDrop,
   }}
 >
-  <div class="grip" data-index={rule_index} data-group-index={group_index}><Grip /></div>
-  <div class="name">
-    <div class="label">{t("Name")}</div>
-    <input
-      type="text"
-      placeholder={t("rule name...")}
-      class="table-input"
-      bind:value={rule.name}
-      onfocus={onFocusInput}
-      onblur={onBlurInput}
-    />
-  </div>
-  <div class="type">
-    <div class="label">{t("Type")}</div>
-    <Select options={RULE_TYPES} bind:selected={rule.type} onValueChange={patternValidation} />
-  </div>
-  <div class="pattern">
-    <div class="label">{t("Pattern")}</div>
-    <input
-      type="text"
-      placeholder={t("rule pattern...")}
-      class="table-input pattern-input"
-      bind:value={rule.rule}
-      bind:this={input}
-      oninput={patternValidation}
-      onfocusout={patternValidation}
-      onfocus={onFocusInput}
-      onblur={onBlurInput}
-    />
-  </div>
-  <div class="actions">
-    <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
-      <Switch bind:checked={rule.enable} />
-    </Tooltip>
-    <Tooltip value={t("Delete Rule")}>
-      <Button
-        small
-        onclick={() => onDelete?.(group_index, rule_index)}
-        data-index={rule_index}
-        data-group-index={group_index}
-      >
-        <Delete size={20} />
-      </Button>
-    </Tooltip>
+  <div
+    class="rule-row"
+    role="presentation"
+    ondragenter={updateDropIntent}
+    ondragover={updateDropIntent}
+    ondragleave={() => resetDropIntent()}
+    ondrop={() => resetDropIntent(true)}
+  >
+    <div class="grip" data-index={rule_index} data-group-index={group_index} title={t("Drag Rule")}>
+      <Grip />
+    </div>
+    <div class="name">
+      <div class="label">{t("Name")}</div>
+      <input
+        type="text"
+        placeholder={t("rule name...")}
+        class="table-input"
+        bind:value={rule.name}
+      />
+    </div>
+    <div class="type">
+      <div class="label">{t("Type")}</div>
+      <Select options={RULE_TYPES} bind:selected={rule.type} onValueChange={patternValidation} />
+    </div>
+    <div class="pattern">
+      <div class="label">{t("Pattern")}</div>
+      <input
+        type="text"
+        placeholder={t("rule pattern...")}
+        class="table-input pattern-input"
+        bind:value={rule.rule}
+        bind:this={input}
+        oninput={patternValidation}
+        onfocusout={patternValidation}
+      />
+    </div>
+    <div class="actions">
+      <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
+        <Switch bind:checked={rule.enable} />
+      </Tooltip>
+      <Tooltip value={t("Delete Rule")}>
+        <Button
+          small
+          onclick={() => onDelete?.(group_index, rule_index)}
+          data-index={rule_index}
+          data-group-index={group_index}
+        >
+          <Delete size={20} />
+        </Button>
+      </Tooltip>
+    </div>
   </div>
 </div>
 
 <style>
-  .container {
+  .rule {
+    display: block;
+  }
+
+  .rule-row {
     display: grid;
     grid-template-columns: 1.1rem 2.5fr 1fr 3fr 1fr;
     gap: 0.5rem;
     padding: 0.1rem;
+    background: inherit;
+    border-radius: inherit;
   }
 
   .rule:global(.dragover) {
     outline: 1px solid var(--accent);
-    box-shadow: inset 0 0 5px 0 var(--accent);
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 50%, transparent);
+    border-radius: 10px;
   }
 
   .table-input {
-    & {
-      border: none;
-      background-color: transparent;
-      font-size: 1rem;
-      font-family: var(--font);
-      color: var(--text);
-      top: 0.1rem;
-      border-bottom: 1px solid transparent;
-      width: 100%;
-      position: relative;
-    }
-
-    &:focus-visible {
-      outline: none;
-      border-bottom: 1px solid var(--accent);
-    }
+    border: none;
+    background-color: transparent;
+    font-size: 1rem;
+    font-family: var(--font);
+    color: var(--text);
+    top: 0.1rem;
+    border-bottom: 1px solid transparent;
+    width: 100%;
+    position: relative;
+  }
+  .table-input:focus-visible {
+    outline: none;
+    border-bottom: 1px solid var(--accent);
   }
 
   .name,
@@ -195,20 +284,20 @@
   }
 
   .grip {
-    & {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: grab;
-      color: var(--text-2);
-      position: relative;
-      top: -0.05rem;
-      left: 0.1rem;
-    }
-
-    &:hover {
-      color: var(--text);
-    }
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    color: var(--text-2);
+    position: relative;
+    top: -0.05rem;
+    left: 0.1rem;
+    -webkit-user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .grip:hover {
+    color: var(--text);
   }
 
   :global(.pattern-input.invalid),
@@ -219,47 +308,74 @@
   .label {
     font-size: 0.9rem;
     color: var(--text-2);
-    width: 4.2rem;
+    width: 3.2rem;
     text-align: right;
     padding-right: 0.2rem;
     display: none;
   }
 
+  :global(html.dnd-possible),
+  :global(html.dnd-possible *) {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  :global(html.dnd-dragging),
+  :global(html.dnd-dragging *) {
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grabbing !important;
+  }
+
   @media (max-width: 700px) {
-    .container {
-      display: flex;
-      flex-direction: row;
-      flex-wrap: wrap;
-      padding-top: 0.5rem;
+    .rule-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 0.4rem;
+      row-gap: 0.35rem;
+      padding: 0.5rem 0.35rem 0.45rem;
+      align-items: start;
     }
     .label {
       display: block;
     }
+    .name,
+    .type,
+    .pattern {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.05rem 0;
+      grid-column: 1;
+    }
+    .name .label,
     .pattern .label,
-    .name .label {
-      position: relative;
-      top: 0.1rem;
-      right: 0.3rem;
+    .type .label {
+      justify-self: end;
+      text-align: right;
+      position: static;
+    }
+    .name .table-input,
+    .pattern .table-input {
+      width: 100%;
+      min-width: 0;
+    }
+    .type :global([data-select-trigger]) {
+      justify-content: flex-start;
     }
     .grip {
       display: none;
     }
-    .name {
-      order: 1;
-      width: 100%;
-    }
-    .pattern {
-      order: 2;
-      width: 100%;
-    }
-    .type {
-      order: 3;
-      margin-right: auto;
-    }
     .actions {
-      order: 4;
-      margin-left: auto;
-      justify-content: end;
+      grid-column: 2;
+      grid-row: 1;
+      align-self: start;
+      justify-content: flex-end;
+      flex-direction: row;
+      gap: 0.35rem;
+      margin-left: 0;
+      width: auto;
     }
   }
 </style>
