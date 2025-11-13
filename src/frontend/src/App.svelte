@@ -1,6 +1,6 @@
 <script lang="ts">
   import "./app.css";
-  import Layout from "./components/Layout.svelte";
+  import AppLayout from "./components/layout/AppLayout.svelte";
 </script>
 
-<Layout />
+<AppLayout />

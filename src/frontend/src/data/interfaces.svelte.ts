@@ -1,5 +1,5 @@
-import { type Interfaces } from "../types.ts";
-import { fetcher } from "../utils/fetcher.ts";
+import { type Interfaces } from "../types";
+import { fetcher } from "../utils/fetcher";
 
 export const INTERFACES = $state<string[]>(
   await fetcher

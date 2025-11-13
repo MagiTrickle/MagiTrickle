@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { slide } from "svelte/transition";
-  import { CircleCheck, CircleInfo, CircleX } from "../common/icons";
+  import { CircleCheck, CircleInfo, CircleX } from "../ui/icons";
 
   let text = $state("toast");
   let show = $state(false);

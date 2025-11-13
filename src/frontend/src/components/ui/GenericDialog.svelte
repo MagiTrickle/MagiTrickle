@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
-  import { scale } from "svelte/transition";
-  import { Add } from "../common/icons";
   import { createEventDispatcher } from "svelte";
+  import { scale } from "svelte/transition";
+  import { Add } from "./icons";
 
   export let open = false;
   export let title = "";

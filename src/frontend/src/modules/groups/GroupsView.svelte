@@ -8,14 +8,14 @@
   import { fetcher } from "../../utils/fetcher";
   import { overlay, toast } from "../../utils/events";
   import { persistedState } from "../../utils/persisted-state.svelte";
-  import { Add, Upload, Download, Save } from "../common/icons";
-  import Tooltip from "../common/Tooltip.svelte";
-  import Button from "../common/Button.svelte";
-  import GroupComponent from "../features/Group.svelte";
-  import { droppable } from "../actions/dnd";
-  import ImportRulesDialog from "./ImportRulesDialog.svelte";
-  import ImportConfigDialog from "./ImportConfigDialog.svelte";
+  import Button from "../../components/ui/Button.svelte";
+  import Tooltip from "../../components/ui/Tooltip.svelte";
+  import { Add, Upload, Download, Save } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
+  import { droppable } from "../../lib/dnd";
+  import GroupPanel from "./components/GroupPanel.svelte";
+  import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
+  import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
 
   function handleSaveShortcut(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -464,7 +464,7 @@
             }}
           ></div>
         {/if}
-        <GroupComponent
+        <GroupPanel
           bind:group={data[visible.group_index]}
           group_index={visible.group_index}
           bind:total_groups={data.length}
@@ -581,8 +581,12 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 0.75rem;
-    padding: 0.5rem 0;
-    margin-bottom: 0.5rem;
+    padding: 0.75rem 0.25rem;
+    margin-bottom: 0.75rem;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
   }
 
   .group-controls-search {
