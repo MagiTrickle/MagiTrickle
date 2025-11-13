@@ -1,13 +1,13 @@
 <script lang="ts">
   import { Tabs } from "bits-ui";
-  import Groups from "./blocks/Groups.svelte";
-  import HeaderSettings from "./blocks/HeaderSettings.svelte";
-  import Logs from "./blocks/Logs.svelte";
-  import Overlay from "./features/Overlay.svelte";
-  import Toast from "./features/Toast.svelte";
-  import ScrollToTop from "./features/ScrollToTop.svelte";
-  // import SettingsPage from "./blocks/Settings.svelte";
-  import { t } from "../data/locale.svelte";
+  import { t } from "../../data/locale.svelte";
+  import GroupsView from "../../modules/groups/GroupsView.svelte";
+  // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
+  // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
+  import Overlay from "../feedback/Overlay.svelte";
+  import Toast from "../feedback/Toast.svelte";
+  import ScrollToTop from "../feedback/ScrollToTop.svelte";
+  import HeaderSettings from "./HeaderSettings.svelte";
 
   let active_tab = $state("groups");
 </script>
@@ -33,13 +33,13 @@
     </nav>
     <article>
       <Tabs.Content value="groups">
-        <Groups />
+        <GroupsView />
       </Tabs.Content>
       <!-- <Tabs.Content value="settings">
-        <SettingsPage />
+        <SettingsPanel />
       </Tabs.Content> -->
       <!-- <Tabs.Content value="logs">
-        <Logs />
+        <LogsPanel />
       </Tabs.Content> -->
     </article>
   </Tabs.Root>

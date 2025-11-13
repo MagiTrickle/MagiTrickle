@@ -1,20 +1,20 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import GenericDialog from "../common/GenericDialog.svelte";
-  import Button from "../common/Button.svelte";
-  import Select from "../common/Select.svelte";
-  import { RULE_TYPES } from "../../types";
-  import { defaultRule } from "../../utils/defaults";
+  import GenericDialog from "../../../components/ui/GenericDialog.svelte";
+  import Button from "../../../components/ui/Button.svelte";
+  import Select from "../../../components/ui/Select.svelte";
+  import { RULE_TYPES } from "../../../types";
+  import { defaultRule } from "../../../utils/defaults";
   import {
     isValidSubnet,
     isValidNamespace,
     isValidDomain,
     isValidWildcard,
     VALIDATOP_MAP,
-  } from "../../utils/rule-validators";
-  import type { Rule } from "../../types";
-  import { toast } from "../../utils/events";
-  import { t } from "../../data/locale.svelte";
+  } from "../../../utils/rule-validators";
+  import type { Rule } from "../../../types";
+  import { toast } from "../../../utils/events";
+  import { t } from "../../../data/locale.svelte";
 
   export let open = false;
   export let group_index: number | null = null;

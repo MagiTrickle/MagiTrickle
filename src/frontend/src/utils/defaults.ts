@@ -1,5 +1,6 @@
-import type { Rule, Group } from "../types.ts";
-import { INTERFACES } from "../data/interfaces.svelte.ts";
+import type { Group, Rule } from "../types";
+import { INTERFACES } from "../data/interfaces.svelte";
+import { randomDarkishColor } from "./colors";
 
 export function defaultGroup(): Group {
   return {
@@ -7,7 +8,7 @@ export function defaultGroup(): Group {
     id: randomId(),
     interface: INTERFACES.at(0) ?? "",
     name: "",
-    color: "#ffffff",
+    color: randomDarkishColor(),
     rules: [],
   };
 }

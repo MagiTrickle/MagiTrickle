@@ -4,10 +4,16 @@
   import { InfiniteLoader } from "svelte-infinite";
   import { createEventDispatcher } from "svelte";
 
-  import { type Group, type Rule } from "../../types";
-  import { droppable, draggable } from "../actions/dnd";
-  import { defaultRule } from "../../utils/defaults";
-  import { INTERFACES } from "../../data/interfaces.svelte";
+  import { type Group, type Rule } from "../../../types";
+  import { defaultRule } from "../../../utils/defaults";
+  import { INTERFACES } from "../../../data/interfaces.svelte";
+  import { t } from "../../../data/locale.svelte";
+  import { droppable, draggable } from "../../../lib/dnd";
+  import Button from "../../../components/ui/Button.svelte";
+  import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
+  import Select from "../../../components/ui/Select.svelte";
+  import Switch from "../../../components/ui/Switch.svelte";
+  import Tooltip from "../../../components/ui/Tooltip.svelte";
   import {
     Delete,
     Add,
@@ -16,14 +22,8 @@
     Dots,
     ImportList,
     Grip,
-  } from "../common/icons";
-  import Switch from "../common/Switch.svelte";
-  import Tooltip from "../common/Tooltip.svelte";
-  import RuleComponent from "../features/Rule.svelte";
-  import Button from "../common/Button.svelte";
-  import Select from "../common/Select.svelte";
-  import DropdownMenu from "../common/DropdownMenu.svelte";
-  import { t } from "../../data/locale.svelte";
+  } from "../../../components/ui/icons";
+  import RuleRow from "./RuleRow.svelte";
 
   type Props = {
     group: Group;
@@ -272,7 +272,7 @@
         <div class="group-rules">
           {#if Array.isArray(filteredRuleIndices)}
             {#each filteredRuleIndices as rule_index, visible_index (group.rules[rule_index].id)}
-              <RuleComponent
+              <RuleRow
                 key={group.rules[rule_index].id}
                 bind:rule={group.rules[rule_index]}
                 {rule_index}
@@ -287,7 +287,7 @@
           {:else}
             <InfiniteLoader triggerLoad={() => loadMore(group_index)} loopDetectionTimeout={10}>
               {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
-                <RuleComponent
+                <RuleRow
                   key={rule.id}
                   bind:rule={group.rules[rule_index]}
                   {rule_index}

@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { droppable, draggable, dnd_state } from "../actions/dnd";
-  import { RULE_TYPES, type Rule } from "../../types";
-  import Switch from "../common/Switch.svelte";
-  import Tooltip from "../common/Tooltip.svelte";
-  import { Delete, Grip } from "../common/icons";
-  import { VALIDATOP_MAP } from "../../utils/rule-validators";
-  import Button from "../common/Button.svelte";
-  import Select from "../common/Select.svelte";
-  import { t } from "../../data/locale.svelte";
+  import Button from "../../../components/ui/Button.svelte";
+  import Select from "../../../components/ui/Select.svelte";
+  import Switch from "../../../components/ui/Switch.svelte";
+  import Tooltip from "../../../components/ui/Tooltip.svelte";
+  import { Delete, Grip } from "../../../components/ui/icons";
+  import { t } from "../../../data/locale.svelte";
+  import { droppable, draggable, dnd_state } from "../../../lib/dnd";
+  import { RULE_TYPES, type Rule } from "../../../types";
+  import { VALIDATOP_MAP } from "../../../utils/rule-validators";
 
   type Props = {
     rule: Rule;
@@ -343,7 +343,7 @@
     .type,
     .pattern {
       display: grid;
-      grid-template-columns: max-content minmax(0, 1fr);
+      grid-template-columns: 3.2rem minmax(0, 1fr);
       align-items: center;
       gap: 0.35rem;
       padding: 0.05rem 0;
@@ -369,13 +369,13 @@
     }
     .actions {
       grid-column: 2;
-      grid-row: 1;
-      align-self: start;
-      justify-content: flex-end;
+      grid-row: 1 / span 3;
+      display: flex;
       flex-direction: row;
       gap: 0.35rem;
-      margin-left: 0;
-      width: auto;
+      justify-content: center;
+      align-items: center;
+      align-self: stretch;
     }
   }
 </style>
