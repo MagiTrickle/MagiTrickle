@@ -46,7 +46,8 @@ endif
 GO_FLAGS := \
 	$(if $(GOOS),GOOS="$(GOOS)") \
 	$(if $(GOARCH),GOARCH="$(GOARCH)") \
-	$(if $(GOMIPS),GOMIPS="$(GOMIPS)")
+	$(if $(GOMIPS),GOMIPS="$(GOMIPS)") \
+	$(if $(GOARM),GOARM="$(GOARM)")
 GO_PARAMS = -v -trimpath -ldflags="-X 'magitrickle/constant.Version=$(PKG_VERSION)' -w -s" $(if $(GO_TAGS),-tags "$(GO_TAGS)")
 
 all: clear build package
@@ -77,6 +78,11 @@ define _copy_files
 endef
 
 package:
+ifeq ($(PLATFORM),entware)
+	$(MAKE) package_entware
+endif
+
+package_entware:
 	echo '2.0' > $(BUILD_DIR)/debian-binary
 
 	mkdir -p $(BUILD_DIR)/control
@@ -87,8 +93,11 @@ package:
 	echo 'Description: $(PKG_DESCRIPTION)' >> $(BUILD_DIR)/control/control
 	echo 'Section: net' >> $(BUILD_DIR)/control/control
 	echo 'Priority: optional' >> $(BUILD_DIR)/control/control
+ifeq ($(filter %_kn,$(TARGET)),$(TARGET))
 	echo 'Depends: libc, iptables, socat' >> $(BUILD_DIR)/control/control
-
+else
+	echo 'Depends: libc, iptables' >> $(BUILD_DIR)/control/control
+endif
 
 	$(call _copy_files,./files/common)
 	$(if $(filter entware,$(PLATFORM)), $(call _copy_files,./files/entware))
