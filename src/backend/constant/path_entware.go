@@ -7,4 +7,5 @@ const (
 	AppShareDir  = "/opt/usr/share/magitrickle"
 	AppDataDir   = "/opt/var/lib/magitrickle"
 	PIDPath      = "/opt/var/run/magitrickle.pid"
+	SockPath     = "/opt/var/run/magitrickle.sock"
 )

@@ -17,11 +17,11 @@ import (
 )
 
 func SetupUnixSocket(a app.Main, errChan chan error) (*http.Server, error) {
-	if err := os.Remove(constant.DefaultSocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(constant.SockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to remove existing UNIX socket: %w", err)
 	}
 
-	socket, err := net.Listen("unix", constant.DefaultSocketPath)
+	socket, err := net.Listen("unix", constant.SockPath)
 	if err != nil {
 		return nil, fmt.Errorf("error while serving UNIX socket: %v", err)
 	}
@@ -34,13 +34,13 @@ func SetupUnixSocket(a app.Main, errChan chan error) (*http.Server, error) {
 		Handler: r,
 	}
 
-	log.Info().Msgf("Starting UNIX socket on %s", constant.DefaultSocketPath)
+	log.Info().Msgf("Starting UNIX socket on %s", constant.SockPath)
 	go func() {
 		if e := srv.Serve(socket); e != nil && e != http.ErrServerClosed {
 			errChan <- fmt.Errorf("failed to serve UNIX socket: %v", e)
 		}
 		socket.Close()
-		os.Remove(constant.DefaultSocketPath)
+		os.Remove(constant.SockPath)
 	}()
 
 	return srv, nil
