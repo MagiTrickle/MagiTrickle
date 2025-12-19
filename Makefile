@@ -103,7 +103,7 @@ ifeq ($(PLATFORM),entware)
 endif
 
 ifeq ($(PLATFORM),entware)
-	echo "/opt/var/lib/magitrickle" >> $(BUILD_DIR)/control/conffiles
+	echo "/opt/var/lib/magitrickle/config.yaml" >> $(BUILD_DIR)/control/conffiles
 endif
 
 	$(call _copy_files,./files/common)
