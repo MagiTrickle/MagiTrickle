@@ -32,6 +32,25 @@ jobs:
             target: aarch64-3.10_kn
             goos: linux
             goarch: arm64
+          - platform: entware
+            target: aarch64-3.10
+            goos: linux
+            goarch: arm64
+          - platform: entware
+            target: armv7-3.2
+            goos: linux
+            goarch: arm
+            goarm: 7,softfloat
+          - platform: entware
+            target: mips-3.4
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+          - platform: entware
+            target: mipsel-3.4
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
