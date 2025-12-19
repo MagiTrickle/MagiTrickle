@@ -17,7 +17,7 @@ test:
     - GOOS=linux go vet -tags "${GO_TAGS}" ./...
     - GOOS=linux go test -tags "${GO_TAGS}" ./...
 
-build_keenetic:
+build_entware:
   stage: build
   image: golang:alpine
   parallel:
@@ -33,6 +33,25 @@ build_keenetic:
       - PLATFORM: entware
         TARGET: aarch64-3.10_kn
         GOARCH: arm64
+      - PLATFORM: entware
+        TARGET: aarch64-3.10
+        GOOS: linux
+        GOARCH: arm64
+      - PLATFORM: entware
+        TARGET: armv7-3.2
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7,softfloat
+      - PLATFORM: entware
+        TARGET: mips-3.4
+        GOOS: linux
+        GOARCH: mips
+        GOMIPS: softfloat
+      - PLATFORM: entware
+        TARGET: mipsel-3.4
+        GOOS: linux
+        GOARCH: mipsle
+        GOMIPS: softfloat
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
     - if: '$CI_COMMIT_TAG'
@@ -43,7 +62,7 @@ build_keenetic:
     - wget https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/upx-4.2.4-r0.apk
     - apk add nodejs npm git make upx-4.2.4-r0.apk fakeroot tar
   script:
-    - PLATFORM="${PLATFORM}" TARGET="${TARGET}" GOOS="${GOOS}" GOARCH="${GOARCH}" GOMIPS="${GOMIPS}" GO_TAGS="${GO_TAGS}" make
+    - PLATFORM="${PLATFORM}" TARGET="${TARGET}" GOOS="${GOOS}" GOARCH="${GOARCH}" GOMIPS="${GOMIPS}" GOARM="${GOARM}" GO_TAGS="${GO_TAGS}" make
   artifacts:
     paths:
       - .build/*.ipk
@@ -51,7 +70,7 @@ build_keenetic:
 
 upload:
   stage: release
-  needs: ["build_keenetic"]
+  needs: ["build_entware"]
   image: curlimages/curl:latest
   rules:
     - if: '$CI_COMMIT_TAG'
