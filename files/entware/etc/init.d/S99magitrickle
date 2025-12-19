@@ -5,6 +5,6 @@ PROCS=magitrickled
 ARGS=""
 PREARGS=""
 DESC="MagiTrickle Daemon"
-PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/sbin:/opt/bin
 
 . /opt/etc/init.d/rc.func
