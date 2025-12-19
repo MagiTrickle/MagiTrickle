@@ -21,7 +21,7 @@ endif
 
 BUILDS_DIR := ./.build
 
-BUILD_DIR := $(BUILDS_DIR)/$(TARGET)
+BUILD_DIR := $(BUILDS_DIR)/$(PLATFORM)_$(TARGET)
 
 DATA_DIR := $(BUILD_DIR)/data
 CONTROL_DIR := $(BUILD_DIR)/control
@@ -47,7 +47,8 @@ GO_FLAGS := \
 	$(if $(GOOS),GOOS="$(GOOS)") \
 	$(if $(GOARCH),GOARCH="$(GOARCH)") \
 	$(if $(GOMIPS),GOMIPS="$(GOMIPS)") \
-	$(if $(GOARM),GOARM="$(GOARM)")
+	$(if $(GOARM),GOARM="$(GOARM)") \
+
 GO_PARAMS = -v -trimpath -ldflags="-X 'magitrickle/constant.Version=$(PKG_VERSION)' -w -s" $(if $(GO_TAGS),-tags "$(GO_TAGS)")
 
 all: clear build package
@@ -79,10 +80,10 @@ endef
 
 package:
 ifeq ($(PLATFORM),entware)
-	$(MAKE) package_entware
+	$(MAKE) package_ipk
 endif
 
-package_entware:
+package_ipk:
 	echo '2.0' > $(BUILD_DIR)/debian-binary
 
 	mkdir -p $(BUILD_DIR)/control
@@ -93,16 +94,22 @@ package_entware:
 	echo 'Description: $(PKG_DESCRIPTION)' >> $(BUILD_DIR)/control/control
 	echo 'Section: net' >> $(BUILD_DIR)/control/control
 	echo 'Priority: optional' >> $(BUILD_DIR)/control/control
-ifeq ($(filter %_kn,$(TARGET)),$(TARGET))
-	echo 'Depends: libc, iptables, socat' >> $(BUILD_DIR)/control/control
-else
-	echo 'Depends: libc, iptables' >> $(BUILD_DIR)/control/control
+ifeq ($(PLATFORM),entware)
+	@DEPS="libc, iptables"; \
+	if echo "$(TARGET)" | grep -q '_kn$$'; then \
+		DEPS="$$DEPS, socat"; \
+	fi; \
+	echo "Depends: $$DEPS" >> $(BUILD_DIR)/control/control
+endif
+
+ifeq ($(PLATFORM),entware)
+	echo "/opt/var/lib/magitrickle" >> $(BUILD_DIR)/control/conffiles
 endif
 
 	$(call _copy_files,./files/common)
 	$(if $(filter entware,$(PLATFORM)), $(call _copy_files,./files/entware))
-	$(if $(filter entware,$(PLATFORM)), $(if $(filter %_kn,$(TARGET)),$(call _copy_files,./files/entware_kn)))
+	$(if $(filter entware,$(PLATFORM)), $(if $(filter %_kn,$(TARGET)), $(call _copy_files,./files/entware_kn)))
 
 	tar -C "$(BUILD_DIR)/control" -czvf "$(BUILD_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(BUILD_DIR)/data" -czvf "$(BUILD_DIR)/data.tar.gz" --owner=0 --group=0 .
-	tar -C "$(BUILD_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_RELEASE)_$(TARGET).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
+	tar -C "$(BUILD_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_RELEASE)_$(PLATFORM)_$(TARGET).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
