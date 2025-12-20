@@ -44,7 +44,7 @@ ifeq ($(PLATFORM),entware)
 endif
 
 ifeq ($(PLATFORM),openwrt)
-	BIN_DIR := $(DATA_DIR)/bin
+	BIN_DIR := $(DATA_DIR)/usr/bin
 	ETC_DIR := $(DATA_DIR)/etc
 	USRSHARE_DIR := $(DATA_DIR)/usr/share
 	VARLIB_DIR := $(DATA_DIR)/etc/var_lib
@@ -122,12 +122,14 @@ ifeq ($(PLATFORM),entware)
 	echo "/opt/var/lib/magitrickle/config.yaml" >> $(BUILD_DIR)/control/conffiles
 endif
 ifeq ($(PLATFORM),openwrt)
+	echo "/etc/config/magitrickle" >> $(BUILD_DIR)/control/conffiles
 	echo "/etc/var_lib/magitrickle/config.yaml" >> $(BUILD_DIR)/control/conffiles
 endif
 
 	$(call _copy_files,./files/common)
 	$(if $(filter entware,$(PLATFORM)), $(call _copy_files,./files/entware))
 	$(if $(filter entware,$(PLATFORM)), $(if $(filter %_kn,$(TARGET)), $(call _copy_files,./files/entware_kn)))
+	$(if $(filter openwrt,$(PLATFORM)), $(call _copy_files,./files/openwrt))
 
 	tar -C "$(BUILD_DIR)/control" -czvf "$(BUILD_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(BUILD_DIR)/data" -czvf "$(BUILD_DIR)/data.tar.gz" --owner=0 --group=0 .
