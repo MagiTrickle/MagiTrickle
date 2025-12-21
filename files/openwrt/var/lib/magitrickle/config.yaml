@@ -1,0 +1,57 @@
+configVersion: 0.1.2
+app:
+  httpWeb:
+    enabled: true
+    host:
+      address: "[::]"
+      port: 8080
+    skin: default
+  dnsProxy:
+    host:
+      address: "[::]"
+      port: 3553
+    upstream:
+      address: 127.0.0.1
+      port: 53
+    disableRemap53: false
+    disableFakePTR: false
+    disableDropAAAA: false
+  netfilter:
+    iptables:
+      chainPrefix: MT_
+    ipset:
+      tablePrefix: mt_
+      additionalTTL: 3600
+    disableIPv4: false
+    disableIPv6: false
+    startMarkTableIndex: 1298229097
+  link:
+    - br-lan
+  showAllInterfaces: false
+  logLevel: info
+groups:
+  - id: d663876a
+    name: Example
+    interface: nwg0
+    enable: true
+    rules:
+      - id: 6f34ee91
+        name: Wildcard Example
+        type: wildcard
+        rule: '*wildcard.example.com'
+        enable: true
+      - id: 00ae5f7c
+        name: RegEx Example
+        type: regex
+        rule: '^.*.regex.example.com$'
+        enable: true
+      - id: 6120dc8a
+        name: Domain Example
+        type: domain
+        rule: 'domain.example.com'
+        enable: true
+      - id: b9751782
+        name: Namespace Example
+        type: namespace
+        rule: 'namespace.example.com'
+        enable: true
