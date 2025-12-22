@@ -18,22 +18,15 @@ jobs:
     strategy:
       matrix:
         include:
+          #
+          # Entware
+          #
           - platform: entware
-            target: mipsel-3.4_kn
-            goos: linux
-            goarch: mipsle
-            gomips: softfloat
-          - platform: entware
-            target: mips-3.4_kn
-            goos: linux
-            goarch: mips
-            gomips: softfloat
-          - platform: entware
-            target: aarch64-3.10_kn
+            target: aarch64-3.10
             goos: linux
             goarch: arm64
           - platform: entware
-            target: aarch64-3.10
+            target: aarch64-3.10_kn
             goos: linux
             goarch: arm64
           - platform: entware
@@ -47,16 +40,182 @@ jobs:
             goarch: mips
             gomips: softfloat
           - platform: entware
+            target: mips-3.4_kn
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+          - platform: entware
             target: mipsel-3.4
             goos: linux
             goarch: mipsle
             gomips: softfloat
+          - platform: entware
+            target: mipsel-3.4_kn
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
+
+          #
+          # OpenWRT
+          #
+          - platform: openwrt
+            target: aarch64_cortex-a53
+            goos: linux
+            goarch: arm64
+          - platform: openwrt
+            target: aarch64_cortex-a72
+            goos: linux
+            goarch: arm64
+          - platform: openwrt
+            target: aarch64_cortex-a76
+            goos: linux
+            goarch: arm64
+          - platform: openwrt
+            target: aarch64_generic
+            goos: linux
+            goarch: arm64
+          - platform: openwrt
+            target: arm_arm1176jzf-s_vfp
+            goos: linux
+            goarch: arm
+            goarm: 6
+          - platform: openwrt
+            target: arm_arm926ej-s
+            goos: linux
+            goarch: arm
+            goarm: 5
+          - platform: openwrt
+            target: arm_cortex-a15_neon-vfpv4
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_cortex-a5_vfpv4
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_cortex-a7
+            goos: linux
+            goarch: arm
+            goarm: 5
+          - platform: openwrt
+            target: arm_cortex-a7_neon-vfpv4
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_cortex-a7_vfpv4
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_cortex-a8_vfpv3
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_cortex-a9
+            goos: linux
+            goarch: arm
+            goarm: 5
+          - platform: openwrt
+            target: arm_cortex-a9_neon
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_cortex-a9_vfpv3-d16
+            goos: linux
+            goarch: arm
+            goarm: 7
+          - platform: openwrt
+            target: arm_fa526
+            goos: linux
+            goarch: arm
+            goarm: 5
+          - platform: openwrt
+            target: arm_xscale
+            goos: linux
+            goarch: arm
+            goarm: 5
+          - platform: openwrt
+            target: i386_pentium4
+            goos: linux
+            goarch: 386
+            go386: sse2
+          - platform: openwrt
+            target: i386_pentium-mmx
+            goos: linux
+            goarch: 386
+            go386: softfloat
+          - platform: openwrt
+            target: loongarch64_generic
+            goos: linux
+            goarch: loong64
+          - platform: openwrt
+            target: mips_24kc
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+          - platform: openwrt
+            target: mips_4kec
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+          - platform: openwrt
+            target: mips64el_mips64r2
+            goos: linux
+            goarch: mips64le
+            gomips: softfloat
+          - platform: openwrt
+            target: mips64_mips64r2
+            goos: linux
+            goarch: mips64
+            gomips: softfloat
+          - platform: openwrt
+            target: mips64_octeonplus
+            goos: linux
+            goarch: mips64
+            gomips: softfloat
+          - platform: openwrt
+            target: mipsel_24kc_24kf
+            goos: linux
+            goarch: mipsle
+            gomips: hardfloat
+          - platform: openwrt
+            target: mipsel_24kc
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
+          - platform: openwrt
+            target: mipsel_74kc
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
+          - platform: openwrt
+            target: mipsel_mips32
+            goos: linux
+            goarch: mipsle
+            gomips: softfloat
+          - platform: openwrt
+            target: mips_mips32
+            goos: linux
+            goarch: mips
+            gomips: softfloat
+          - platform: openwrt
+            target: riscv64_generic
+            goos: linux
+            goarch: riscv64
+          - platform: openwrt
+            target: x86_64
+            goos: linux
+            goarch: amd64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
 
       - name: Set up Node.JS
         uses: actions/setup-node@v4
@@ -75,21 +234,29 @@ jobs:
 
       - name: Build and Package
         run: |
-          PLATFORM="${{ matrix.platform }}" TARGET="${{ matrix.target }}" GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" GOMIPS="${{ matrix.gomips }}" GOARM="${{ matrix.goarm }}" GO_TAGS="${{ matrix.go_tags }}" make
+          PLATFORM="${{ matrix.platform }}" \
+          TARGET="${{ matrix.target }}" \
+          GOOS="${{ matrix.goos }}" \
+          GOARCH="${{ matrix.goarch }}" \
+          GOMIPS="${{ matrix.gomips }}" \
+          GOARM="${{ matrix.goarm }}" \
+          GO386="${{ matrix.goarm }}" \
+          GO_TAGS="${{ matrix.go386 }}" \
+          make
 
       - name: Fetching file list for artifact
         if: ${{ github.event_name != 'release' }}
         id: create_file_list
         run: |
           echo 'file_list<<EOF' >> $GITHUB_OUTPUT
-          find . -name "magitrickle_*_${{ matrix.target }}.ipk" -print >> $GITHUB_OUTPUT
+          find . -name "magitrickle_*_${{ matrix.platform }}_${{ matrix.target }}.ipk" -print >> $GITHUB_OUTPUT
           echo 'EOF' >> $GITHUB_OUTPUT
 
       - name: Upload artifact
         if: ${{ github.event_name != 'release' }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
+          name: ${{ matrix.platform }}_${{ matrix.target }}
           path: ${{ steps.create_file_list.outputs.file_list }}
           if-no-files-found: error
           compression-level: 0
@@ -99,5 +266,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |-
-            ./.build/magitrickle_*_${{ matrix.target }}.ipk
+            ./.build/magitrickle_*_${{ matrix.platform }}_${{ matrix.target }}.ipk
           token: ${{ secrets.RELEASE_TOKEN }}

@@ -4,10 +4,6 @@ import (
 	"magitrickle/models"
 )
 
-const (
-	DefaultSocketPath = "/opt/var/run/magitrickle.sock"
-)
-
 var DefaultAppConfig = models.AppConfig{
 	DNSProxy: models.AppConfigDNSProxy{
 		Host:            models.AppConfigDNSProxyServer{Address: "[::]", Port: 3553},

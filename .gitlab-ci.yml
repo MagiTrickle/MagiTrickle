@@ -17,24 +17,20 @@ test:
     - GOOS=linux go vet -tags "${GO_TAGS}" ./...
     - GOOS=linux go test -tags "${GO_TAGS}" ./...
 
-build_entware:
+build:
   stage: build
   image: golang:alpine
   parallel:
     matrix:
-      - PLATFORM: entware
-        TARGET: mipsel-3.4_kn
-        GOARCH: mipsle
-        GOMIPS: softfloat
-      - PLATFORM: entware
-        TARGET: mips-3.4_kn
-        GOARCH: mips
-        GOMIPS: softfloat
-      - PLATFORM: entware
-        TARGET: aarch64-3.10_kn
-        GOARCH: arm64
+      #
+      # Entware
+      #
       - PLATFORM: entware
         TARGET: aarch64-3.10
+        GOOS: linux
+        GOARCH: arm64
+      - PLATFORM: entware
+        TARGET: aarch64-3.10_kn
         GOOS: linux
         GOARCH: arm64
       - PLATFORM: entware
@@ -48,10 +44,177 @@ build_entware:
         GOARCH: mips
         GOMIPS: softfloat
       - PLATFORM: entware
+        TARGET: mips-3.4_kn
+        GOOS: linux
+        GOARCH: mips
+        GOMIPS: softfloat
+      - PLATFORM: entware
         TARGET: mipsel-3.4
         GOOS: linux
         GOARCH: mipsle
         GOMIPS: softfloat
+      - PLATFORM: entware
+        TARGET: mipsel-3.4_kn
+        GOOS: linux
+        GOARCH: mipsle
+        GOMIPS: softfloat
+
+      #
+      # OpenWRT
+      #
+      - PLATFORM: openwrt
+        TARGET: aarch64_cortex-a53
+        GOOS: linux
+        GOARCH: arm64
+      - PLATFORM: openwrt
+        TARGET: aarch64_cortex-a72
+        GOOS: linux
+        GOARCH: arm64
+      - PLATFORM: openwrt
+        TARGET: aarch64_cortex-a76
+        GOOS: linux
+        GOARCH: arm64
+      - PLATFORM: openwrt
+        TARGET: aarch64_generic
+        GOOS: linux
+        GOARCH: arm64
+      - PLATFORM: openwrt
+        TARGET: arm_arm1176jzf-s_vfp
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 6
+      - PLATFORM: openwrt
+        TARGET: arm_arm926ej-s
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 5
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a15_neon-vfpv4
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a5_vfpv4
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a7
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 5
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a7_neon-vfpv4
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a7_vfpv4
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a8_vfpv3
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a9
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 5
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a9_neon
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_cortex-a9_vfpv3-d16
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 7
+      - PLATFORM: openwrt
+        TARGET: arm_fa526
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 5
+      - PLATFORM: openwrt
+        TARGET: arm_xscale
+        GOOS: linux
+        GOARCH: arm
+        GOARM: 5
+      - PLATFORM: openwrt
+        TARGET: i386_pentium4
+        GOOS: linux
+        GOARCH: 386
+        GO386: sse2
+      - PLATFORM: openwrt
+        TARGET: i386_pentium-mmx
+        GOOS: linux
+        GOARCH: 386
+        GO386: softfloat
+      - PLATFORM: openwrt
+        TARGET: loongarch64_generic
+        GOOS: linux
+        GOARCH: loong64
+      - PLATFORM: openwrt
+        TARGET: mips_24kc
+        GOOS: linux
+        GOARCH: mips
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mips_4kec
+        GOOS: linux
+        GOARCH: mips
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mips64el_mips64r2
+        GOOS: linux
+        GOARCH: mips64le
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mips64_mips64r2
+        GOOS: linux
+        GOARCH: mips64
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mips64_octeonplus
+        GOOS: linux
+        GOARCH: mips64
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mipsel_24kc_24kf
+        GOOS: linux
+        GOARCH: mipsle
+        GOMIPS: hardfloat
+      - PLATFORM: openwrt
+        TARGET: mipsel_24kc
+        GOOS: linux
+        GOARCH: mipsle
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mipsel_74kc
+        GOOS: linux
+        GOARCH: mipsle
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mipsel_mips32
+        GOOS: linux
+        GOARCH: mipsle
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: mips_mips32
+        GOOS: linux
+        GOARCH: mips
+        GOMIPS: softfloat
+      - PLATFORM: openwrt
+        TARGET: riscv64_generic
+        GOOS: linux
+        GOARCH: riscv64
+      - PLATFORM: openwrt
+        TARGET: x86_64
+        GOOS: linux
+        GOARCH: amd64
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
     - if: '$CI_COMMIT_TAG'
@@ -70,7 +233,7 @@ build_entware:
 
 upload:
   stage: release
-  needs: ["build_entware"]
+  needs: ["build"]
   image: curlimages/curl:latest
   rules:
     - if: '$CI_COMMIT_TAG'

@@ -43,11 +43,21 @@ ifeq ($(PLATFORM),entware)
 	endif
 endif
 
+ifeq ($(PLATFORM),openwrt)
+	BIN_DIR := $(DATA_DIR)/usr/bin
+	ETC_DIR := $(DATA_DIR)/etc
+	USRSHARE_DIR := $(DATA_DIR)/usr/share
+	VARLIB_DIR := $(DATA_DIR)/etc/var_lib
+
+	GO_TAGS += openwrt
+endif
+
 GO_FLAGS := \
 	$(if $(GOOS),GOOS="$(GOOS)") \
 	$(if $(GOARCH),GOARCH="$(GOARCH)") \
 	$(if $(GOMIPS),GOMIPS="$(GOMIPS)") \
 	$(if $(GOARM),GOARM="$(GOARM)") \
+	$(if $(GO386),GO386="$(GO386)") \
 
 GO_PARAMS = -v -trimpath -ldflags="-X 'magitrickle/constant.Version=$(PKG_VERSION)' -w -s" $(if $(GO_TAGS),-tags "$(GO_TAGS)")
 
@@ -79,6 +89,9 @@ define _copy_files
 endef
 
 package:
+ifeq ($(PLATFORM),openwrt)
+	$(MAKE) package_ipk
+endif
 ifeq ($(PLATFORM),entware)
 	$(MAKE) package_ipk
 endif
@@ -101,14 +114,22 @@ ifeq ($(PLATFORM),entware)
 	fi; \
 	echo "Depends: $$DEPS" >> $(BUILD_DIR)/control/control
 endif
+ifeq ($(PLATFORM),openwrt)
+	echo "Depends: libc, iptables-nft, iptables-mod-conntrack-extra, kmod-ipt-nat, kmod-ipt-ipset, ip6tables-nft" >> $(BUILD_DIR)/control/control
+endif
 
 ifeq ($(PLATFORM),entware)
 	echo "/opt/var/lib/magitrickle/config.yaml" >> $(BUILD_DIR)/control/conffiles
+endif
+ifeq ($(PLATFORM),openwrt)
+	echo "/etc/config/magitrickle" >> $(BUILD_DIR)/control/conffiles
+	echo "/etc/var_lib/magitrickle/config.yaml" >> $(BUILD_DIR)/control/conffiles
 endif
 
 	$(call _copy_files,./files/common)
 	$(if $(filter entware,$(PLATFORM)), $(call _copy_files,./files/entware))
 	$(if $(filter entware,$(PLATFORM)), $(if $(filter %_kn,$(TARGET)), $(call _copy_files,./files/entware_kn)))
+	$(if $(filter openwrt,$(PLATFORM)), $(call _copy_files,./files/openwrt))
 
 	tar -C "$(BUILD_DIR)/control" -czvf "$(BUILD_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(BUILD_DIR)/data" -czvf "$(BUILD_DIR)/data.tar.gz" --owner=0 --group=0 .
