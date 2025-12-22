@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: Build for "${{ matrix.target }}"
+    name: Build for "${{ matrix.target }} (${{ matrix.platform }})"
     runs-on: ubuntu-latest
     strategy:
       matrix:
