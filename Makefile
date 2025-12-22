@@ -73,7 +73,9 @@ build_backend:
 	cd ./src/backend && go mod tidy
 	mkdir -p "$(BIN_DIR)"
 	cd ./src/backend && $(GO_FLAGS) go build $(GO_PARAMS) -o "../../$(BIN_DIR)/magitrickled" ./cmd/magitrickled
+ifneq ($(filter $(GOARCH),riscv64 mips64 mips64le loong64),$(GOARCH))
 	upx -9 --lzma "$(BIN_DIR)/magitrickled"
+endif
 
 build_frontend:
 	cd ./src/frontend && npm install
