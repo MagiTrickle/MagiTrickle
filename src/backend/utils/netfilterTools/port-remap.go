@@ -41,25 +41,13 @@ func (r *PortRemap) insertIPTablesRules(ipt *iptables.IPTables, table string) er
 				continue
 			}
 
-			if ipt.Proto() != iptables.ProtocolIPv6 {
-				for _, iptablesArgs := range [][]string{
-					{"-p", "tcp", "-d", addr.IP.String(), "--dport", fmt.Sprintf("%d", r.from), "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", r.to)},
-					{"-p", "udp", "-d", addr.IP.String(), "--dport", fmt.Sprintf("%d", r.from), "-j", "REDIRECT", "--to-port", fmt.Sprintf("%d", r.to)},
-				} {
-					err = ipt.AppendUnique("nat", r.chainName, iptablesArgs...)
-					if err != nil {
-						return fmt.Errorf("failed to append rule: %w", err)
-					}
-				}
-			} else {
-				for _, iptablesArgs := range [][]string{
-					{"-p", "tcp", "-d", addr.IP.String(), "--dport", strconv.Itoa(int(r.from)), "-j", "DNAT", "--to-destination", fmt.Sprintf(":%d", r.to)},
-					{"-p", "udp", "-d", addr.IP.String(), "--dport", strconv.Itoa(int(r.from)), "-j", "DNAT", "--to-destination", fmt.Sprintf(":%d", r.to)},
-				} {
-					err = ipt.AppendUnique("nat", r.chainName, iptablesArgs...)
-					if err != nil {
-						return fmt.Errorf("failed to append rule: %w", err)
-					}
+			for _, iptablesArgs := range [][]string{
+				{"-p", "tcp", "-d", addr.IP.String(), "--dport", strconv.Itoa(int(r.from)), "-j", "DNAT", "--to-destination", fmt.Sprintf(":%d", r.to)},
+				{"-p", "udp", "-d", addr.IP.String(), "--dport", strconv.Itoa(int(r.from)), "-j", "DNAT", "--to-destination", fmt.Sprintf(":%d", r.to)},
+			} {
+				err = ipt.AppendUnique("nat", r.chainName, iptablesArgs...)
+				if err != nil {
+					return fmt.Errorf("failed to append rule: %w", err)
 				}
 			}
 		}
