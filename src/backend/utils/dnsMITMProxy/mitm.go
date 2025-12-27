@@ -10,6 +10,8 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 type DNSMITMProxy struct {
@@ -190,6 +192,16 @@ func (p DNSMITMProxy) ListenUDP(ctx context.Context, addr *net.UDPAddr) error {
 	}
 	defer func() { _ = conn.Close() }()
 
+	pconn4 := ipv4.NewPacketConn(conn)
+	if err := pconn4.SetControlMessage(ipv4.FlagDst, true); err != nil {
+		return fmt.Errorf("failed to enable IP_PKTINFO for IPv4: %w", err)
+	}
+
+	pconn6 := ipv6.NewPacketConn(conn)
+	if err := pconn6.SetControlMessage(ipv6.FlagDst, true); err != nil {
+		return fmt.Errorf("failed to enable IP_PKTINFO for IPv6: %w", err)
+	}
+
 	for {
 		// Exit if context is done
 		if ctx.Err() != nil {
@@ -197,14 +209,35 @@ func (p DNSMITMProxy) ListenUDP(ctx context.Context, addr *net.UDPAddr) error {
 		}
 
 		req := make([]byte, dns.MaxMsgSize)
-		n, clientAddr, err := conn.ReadFromUDP(req)
+		n, cm, clientAddr, err := pconn6.ReadFrom(req)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to read udp request")
 			continue
 		}
 		req = req[:n]
 
-		go func(clientConn *net.UDPConn, clientAddr *net.UDPAddr) {
+		clientUDPAddr, ok := clientAddr.(*net.UDPAddr)
+		if !ok {
+			log.Error().Msg("client addr is not a UDPAddr")
+			continue
+		}
+
+		isIPv4 := clientUDPAddr.IP.To4() != nil
+
+		if cm == nil || cm.Dst == nil {
+			log.Error().Msg("no destination IP in control message")
+			continue
+		}
+		requestedAddr := cm.Dst
+		if isIPv4 {
+			requestedAddr = requestedAddr.To4()
+			if requestedAddr == nil {
+				log.Error().Msg("failed to convert IPv6 address to IPv4")
+				continue
+			}
+		}
+
+		go func(requestedAddr net.IP, clientAddr *net.UDPAddr, req []byte) {
 			resp, err := p.processReq(clientAddr, req, "udp")
 			if err != nil {
 				var networkErr net.Error
@@ -216,11 +249,21 @@ func (p DNSMITMProxy) ListenUDP(ctx context.Context, addr *net.UDPAddr) error {
 				return
 			}
 
-			_, err = clientConn.WriteToUDP(resp, clientAddr)
+			if isIPv4 {
+				outCM := &ipv4.ControlMessage{
+					Src: requestedAddr,
+				}
+				_, err = pconn4.WriteTo(resp, outCM, clientAddr)
+			} else {
+				outCM := &ipv6.ControlMessage{
+					Src: requestedAddr,
+				}
+				_, err = pconn6.WriteTo(resp, outCM, clientAddr)
+			}
 			if err != nil {
 				log.Error().Err(err).Msg("failed to send response")
 				return
 			}
-		}(conn, clientAddr)
+		}(requestedAddr, clientUDPAddr, req)
 	}
 }
