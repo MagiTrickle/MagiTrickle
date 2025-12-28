@@ -5,6 +5,7 @@
   // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
   // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
   import Overlay from "../feedback/Overlay.svelte";
+  import SnowField from "../feedback/SnowField.svelte";
   import Toast from "../feedback/Toast.svelte";
   import ScrollToTop from "../feedback/ScrollToTop.svelte";
   import HeaderSettings from "./HeaderSettings.svelte";
@@ -18,6 +19,7 @@
 <Toast />
 <Overlay />
 <ScrollToTop />
+<SnowField variant="front" />
 
 <main>
   <Tabs.Root bind:value={active_tab}>
@@ -52,6 +54,8 @@
     align-items: center;
     margin-bottom: 2rem;
     padding: 0.3rem;
+    position: relative;
+    z-index: 1;
   }
 
   nav {
