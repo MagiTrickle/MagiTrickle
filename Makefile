@@ -29,13 +29,13 @@ CONTROL_DIR := $(BUILD_DIR)/control
 BIN_DIR := $(DATA_DIR)/bin
 ETC_DIR := $(DATA_DIR)/etc
 USRSHARE_DIR := $(DATA_DIR)/usr/share
-VARLIB_DIR := $(DATA_DIR)/var/lib
+STATE_DIR := $(DATA_DIR)/var/lib/magitrickle
 
 ifeq ($(PLATFORM),entware)
 	BIN_DIR := $(DATA_DIR)/opt/bin
 	ETC_DIR := $(DATA_DIR)/opt/etc
 	USRSHARE_DIR := $(DATA_DIR)/opt/usr/share
-	VARLIB_DIR := $(DATA_DIR)/opt/var/lib
+	STATE_DIR := $(DATA_DIR)/opt/var/lib/magitrickle
 
 	GO_TAGS += entware
 	ifeq ($(filter %_kn,$(TARGET)),$(TARGET))
@@ -47,7 +47,7 @@ ifeq ($(PLATFORM),openwrt)
 	BIN_DIR := $(DATA_DIR)/usr/bin
 	ETC_DIR := $(DATA_DIR)/etc
 	USRSHARE_DIR := $(DATA_DIR)/usr/share
-	VARLIB_DIR := $(DATA_DIR)/etc/var_lib
+	STATE_DIR := $(DATA_DIR)/etc/magitrickle/state
 
 	GO_TAGS += openwrt
 endif
@@ -87,7 +87,7 @@ define _copy_files
 	if [ -d $(1)/bin ]; then mkdir -p $(BIN_DIR); cp -r $(1)/bin/* $(BIN_DIR); fi
 	if [ -d $(1)/etc ]; then mkdir -p $(ETC_DIR); cp -r $(1)/etc/* $(ETC_DIR); fi
 	if [ -d $(1)/usr/share ]; then mkdir -p $(USRSHARE_DIR); cp -r $(1)/usr/share/* $(USRSHARE_DIR); fi
-	if [ -d $(1)/var/lib ]; then mkdir -p $(VARLIB_DIR); cp -r $(1)/var/lib/* $(VARLIB_DIR); fi
+	if [ -d $(1)/var/lib/magitrickle ]; then mkdir -p $(STATE_DIR); cp -r $(1)/var/lib/magitrickle/* $(STATE_DIR); fi
 endef
 
 package:
@@ -125,7 +125,7 @@ ifeq ($(PLATFORM),entware)
 endif
 ifeq ($(PLATFORM),openwrt)
 	echo "/etc/config/magitrickle" >> $(BUILD_DIR)/control/conffiles
-	echo "/etc/var_lib/magitrickle/config.yaml" >> $(BUILD_DIR)/control/conffiles
+	echo "/etc/magitrickle/state/config.yaml" >> $(BUILD_DIR)/control/conffiles
 endif
 
 	$(call _copy_files,./files/common)
