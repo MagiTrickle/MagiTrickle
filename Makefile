@@ -84,6 +84,7 @@ build_frontend:
 	cp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"
 
 define _copy_files
+	if [ -d $(1)/_ipk/control ]; then mkdir -p $(BUILD_DIR)/control; cp -r $(1)/_ipk/control/* $(BUILD_DIR)/control; fi
 	if [ -d $(1)/bin ]; then mkdir -p $(BIN_DIR); cp -r $(1)/bin/* $(BIN_DIR); fi
 	if [ -d $(1)/etc ]; then mkdir -p $(ETC_DIR); cp -r $(1)/etc/* $(ETC_DIR); fi
 	if [ -d $(1)/usr/share ]; then mkdir -p $(USRSHARE_DIR); cp -r $(1)/usr/share/* $(USRSHARE_DIR); fi
