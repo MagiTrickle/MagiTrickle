@@ -16,7 +16,7 @@ import (
 
 var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
 
-const cfgFolderLocation = constant.AppDataDir
+const cfgFolderLocation = constant.AppStateDir
 const cfgFileLocation = cfgFolderLocation + "/config.yaml"
 
 func (a *App) LoadConfig() error {
