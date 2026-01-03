@@ -15,6 +15,8 @@ type Rule struct {
 	Type   string
 	Rule   string
 	Enable bool
+
+	compiled func(string) bool
 }
 
 func (d *Rule) IsEnabled() bool {
@@ -26,12 +28,19 @@ func (d *Rule) IsMatch(domainName string) bool {
 	case "wildcard":
 		return wildcard.Match(d.Rule, domainName)
 	case "regex":
+		if d.compiled != nil {
+			return d.compiled(domainName)
+		}
 		re, err := regexp2.Compile(d.Rule, regexp2.IgnoreCase)
 		if err != nil {
 			return false
 		}
-		ok, _ := re.MatchString(domainName)
-		return ok
+		compiled := func(s string) bool {
+			ok, _ := re.MatchString(s)
+			return ok
+		}
+		d.compiled = compiled
+		return d.compiled(domainName)
 	case "domain":
 		return domainName == d.Rule
 	case "namespace":
