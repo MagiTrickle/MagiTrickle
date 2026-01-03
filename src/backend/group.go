@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"regexp"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,10 +13,6 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
-)
-
-var (
-	ipv4SubnetRe = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:/(\d{1,2}))?$`)
 )
 
 type Group struct {
@@ -238,44 +232,97 @@ func (g *Group) sync() error {
 	newIPv4SubnetList := make(map[netfilterTools.IPv4Subnet]netfilterTools.IPSetTimeout)
 	newIPv6SubnetList := make(map[netfilterTools.IPv6Subnet]netfilterTools.IPSetTimeout)
 	knownDomains := g.app.recordsCache.ListKnownDomains()
-RuleLoop:
 	for _, domain := range g.Rules {
 		if !domain.IsEnabled() {
 			continue
 		}
 		switch domain.Type {
 		case "subnet":
-			matches := ipv4SubnetRe.FindStringSubmatch(domain.Rule)
-			if matches == nil {
+			ip, ipNet, err := net.ParseCIDR(domain.Rule)
+			if err != nil {
+				ip = net.ParseIP(domain.Rule)
+				if ip == nil {
+					continue
+				}
+
+				ip = ip.To4()
+				if ip == nil {
+					continue
+				}
+
+				ipNet = &net.IPNet{
+					IP:   ip,
+					Mask: net.CIDRMask(32, 32),
+				}
+			}
+
+			ones, bits := ipNet.Mask.Size()
+			if bits != 32 || ones > 32 {
 				continue
 			}
 
 			var addr [4]byte
-			for i := 1; i <= 4; i++ {
-				n, _ := strconv.Atoi(matches[i])
-				if n > 255 {
-					continue RuleLoop
-				}
+			copy(addr[:], ipNet.IP.Mask(ipNet.Mask).To4())
+			cidr := uint8(ones)
 
-				addr[i-1] = uint8(n)
-			}
-
-			var cidr uint8
-			if matches[5] != "" {
-				n, _ := strconv.Atoi(matches[5])
-				if n > 32 {
-					continue RuleLoop
-				}
-
-				cidr = uint8(n)
-				addr = [4]byte(net.IP(addr[:]).Mask(net.CIDRMask(n, 32)))
-			}
-
-			if !(addr == [4]byte{0, 0, 0, 0} && cidr == 0) {
-				newIPv4SubnetList[netfilterTools.IPv4Subnet{Address: addr, CIDR: cidr}] = nil
+			if addr == ([4]byte{}) && cidr == 0 {
+				newIPv4SubnetList[netfilterTools.IPv4Subnet{
+					Address: [4]byte{0x00},
+					CIDR:    1,
+				}] = nil
+				newIPv4SubnetList[netfilterTools.IPv4Subnet{
+					Address: [4]byte{0x80},
+					CIDR:    1,
+				}] = nil
 			} else {
-				newIPv4SubnetList[netfilterTools.IPv4Subnet{Address: [4]byte{0, 0, 0, 0}, CIDR: 1}] = nil
-				newIPv4SubnetList[netfilterTools.IPv4Subnet{Address: [4]byte{128, 0, 0, 0}, CIDR: 1}] = nil
+				newIPv4SubnetList[netfilterTools.IPv4Subnet{
+					Address: addr,
+					CIDR:    cidr,
+				}] = nil
+			}
+
+		case "subnet6":
+			ip, ipNet, err := net.ParseCIDR(domain.Rule)
+			if err != nil {
+				ip = net.ParseIP(domain.Rule)
+				if ip == nil {
+					continue
+				}
+
+				ip = ip.To16()
+				if ip == nil {
+					continue
+				}
+
+				ipNet = &net.IPNet{
+					IP:   ip,
+					Mask: net.CIDRMask(128, 128),
+				}
+			}
+
+			ones, bits := ipNet.Mask.Size()
+			if bits != 128 || ones > 128 {
+				continue
+			}
+
+			var addr [16]byte
+			copy(addr[:], ipNet.IP.Mask(ipNet.Mask).To16())
+			cidr := uint8(ones)
+
+			if addr == ([16]byte{}) && cidr == 0 {
+				newIPv6SubnetList[netfilterTools.IPv6Subnet{
+					Address: [16]byte{0x00},
+					CIDR:    1,
+				}] = nil
+				newIPv6SubnetList[netfilterTools.IPv6Subnet{
+					Address: [16]byte{0x80},
+					CIDR:    1,
+				}] = nil
+			} else {
+				newIPv6SubnetList[netfilterTools.IPv6Subnet{
+					Address: addr,
+					CIDR:    cidr,
+				}] = nil
 			}
 
 		default:

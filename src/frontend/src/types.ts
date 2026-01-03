@@ -61,6 +61,7 @@ export const RULE_TYPES = [
   { value: "regex", label: "Regex" },
   { value: "domain", label: "Domain" },
   { value: "subnet", label: "IPv4 subnet" },
+  { value: "subnet6", label: "IPv6 subnet" },
 ];
 
 export type Interfaces = {

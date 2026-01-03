@@ -48,7 +48,7 @@ func (d *Rule) IsMatch(domainName string) bool {
 			return true
 		}
 		return strings.HasSuffix(domainName, "."+d.Rule)
-	case "subnet":
+	case "subnet", "subnet6":
 		return false
 	}
 	return false
