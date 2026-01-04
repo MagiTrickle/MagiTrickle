@@ -48,7 +48,9 @@ app.get(`${API_BASE}/groups`, (c) => c.json(DATA));
 app.put(`${API_BASE}/groups`, async (c) => {
   console.log("recieved", (await c.req.json())?.groups?.length, "groups");
   await new Promise((resolve) => setTimeout(resolve, 2000));
-  // throw new Error("random error");
+  if (Math.random() < 0.5) {
+    return c.json({ error: "random error" }, 500);
+  }
   return c.json({ status: "ok" });
 });
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));

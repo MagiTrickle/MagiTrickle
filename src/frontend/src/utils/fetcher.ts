@@ -1,4 +1,5 @@
-const TIMEOUT = 30000 as const;
+import { t } from "../data/locale.svelte";
+import { toast } from "./events";
 
 // @ts-ignore: vite specific
 export const API_BASE = import.meta.env.DEV ? "http://localhost:6969/api/v1" : "/api/v1";
@@ -19,6 +20,7 @@ export async function fetcher<T>(...args: any[]): Promise<T> {
     return (await res.json()) as T;
   } catch (e) {
     console.error("Fetch error:", e);
+    toast.error(t("Request failed"));
     throw e;
   }
 }
@@ -26,7 +28,6 @@ export async function fetcher<T>(...args: any[]): Promise<T> {
 fetcher.get = <T>(url: string) =>
   fetcher<T>(url, {
     method: "GET",
-    signal: AbortSignal.timeout(TIMEOUT),
   });
 
 fetcher.post = <T>(url: string, body: any) =>
@@ -34,7 +35,6 @@ fetcher.post = <T>(url: string, body: any) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT),
   });
 
 fetcher.put = <T>(url: string, body: any) =>
@@ -42,11 +42,9 @@ fetcher.put = <T>(url: string, body: any) =>
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT),
   });
 
 fetcher.delete = <T>(url: string) =>
   fetcher<T>(url, {
     method: "DELETE",
-    signal: AbortSignal.timeout(TIMEOUT),
   });
