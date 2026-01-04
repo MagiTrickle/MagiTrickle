@@ -22,6 +22,26 @@ export function isValidSubnet(pattern: string): boolean {
   );
 }
 
+function isValidIPv6(ip: string): boolean {
+    return /^[0-9a-fA-F:]+$/.test(ip) && ip.includes(":");
+}
+
+export function isValidSubnet6(pattern: string): boolean {
+    const parts = pattern.split("/");
+    if (parts.length === 1) {
+        return isValidIPv6(parts[0]);
+    }
+
+    if (parts.length !== 2) return false;
+
+    const prefix = Number(parts[1]);
+    if (!Number.isInteger(prefix) || prefix < 0 || prefix > 128) {
+        return false;
+    }
+
+    return isValidIPv6(parts[0]);
+}
+
 export function isValidRegex(pattern: string): boolean {
   try {
     new RegExp(pattern);
@@ -40,4 +60,5 @@ export const VALIDATOP_MAP: Record<string, (pattern: string) => boolean> = {
   domain: isValidDomain,
   namespace: isValidNamespace,
   subnet: isValidSubnet,
+  subnet6: isValidSubnet6,
 };

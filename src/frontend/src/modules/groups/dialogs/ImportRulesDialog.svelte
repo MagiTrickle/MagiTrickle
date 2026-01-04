@@ -7,6 +7,7 @@
   import { defaultRule } from "../../../utils/defaults";
   import {
     isValidSubnet,
+    isValidSubnet6,
     isValidNamespace,
     isValidDomain,
     isValidWildcard,
@@ -37,6 +38,7 @@
   function detectRuleType(pattern: string): keyof typeof VALIDATOP_MAP {
     const p = pattern.trim();
 
+    if (isValidSubnet6(p)) return "subnet6";
     if (isValidSubnet(p)) return "subnet";
     if (p.startsWith(".") && isValidNamespace(p.slice(1))) return "namespace";
     if (isValidDomain(p)) return "domain";
