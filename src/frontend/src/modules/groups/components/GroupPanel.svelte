@@ -314,7 +314,6 @@
       border-radius: 0.5rem;
       border: 1px solid var(--bg-light-extra);
       transition: transform .12s ease, opacity .12s ease, box-shadow .12s ease;
-      position: relative;
     }
   }
 
