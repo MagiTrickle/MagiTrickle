@@ -12,11 +12,35 @@
   let tooltipEl: HTMLElement;
   const PAD = 6;
 
+  function placeAbove() {
+    tooltipEl.style.top = "auto";
+    tooltipEl.style.bottom = "calc(100% + 5px)";
+  }
+
+  function placeBelow() {
+    tooltipEl.style.bottom = "auto";
+    tooltipEl.style.top = "calc(100% + 5px)";
+  }
+
   function reposition() {
     tooltipEl.style.left = "50%";
     tooltipEl.style.transform = "translateX(-50%)";
-    const rect = tooltipEl.getBoundingClientRect();
+    tooltipEl.style.maxWidth = "";
+    tooltipEl.style.overflow = "";
+    tooltipEl.style.textOverflow = "";
+    placeAbove();
+    let rect = tooltipEl.getBoundingClientRect();
     const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    if (rect.top < PAD) {
+      placeBelow();
+      rect = tooltipEl.getBoundingClientRect();
+    } else if (rect.bottom > vh - PAD) {
+      placeAbove();
+      rect = tooltipEl.getBoundingClientRect();
+    }
+
     let shift = 0;
     if (rect.left < PAD) shift = PAD - rect.left;
     else if (rect.right > vw - PAD) shift = -(rect.right - (vw - PAD));
