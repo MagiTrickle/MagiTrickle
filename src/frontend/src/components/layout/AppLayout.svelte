@@ -54,8 +54,6 @@
     align-items: center;
     margin-bottom: 2rem;
     padding: 0.3rem;
-    position: relative;
-    z-index: 1;
   }
 
   nav {

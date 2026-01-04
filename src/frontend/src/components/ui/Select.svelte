@@ -22,9 +22,12 @@
   const selected_label = $derived(
     options.find((o) => o.value === selected)?.label ?? selected ?? "",
   );
+  const missing_selection = $derived(
+    Boolean(selected) && !options.some((o) => o.value === selected),
+  );
 </script>
 
-<div class="select-wrap" {...rest}>
+<div class="select-wrap" class:missing={missing_selection} {...rest}>
   <Select.Root type="single" {onValueChange} items={options} bind:value={selected}>
     <Select.Trigger aria-label={ariaLabel}>
       <div class="selected">
@@ -141,6 +144,11 @@
     color: var(--text-2);
     transition: transform 0.16s ease;
   }
+
+  .select-wrap.missing :global([data-select-trigger]) {
+    color: var(--text-2);
+  }
+
   :global([data-select-trigger][aria-expanded="true"]) .selected-open,
   :global([data-select-trigger][data-state="open"]) .selected-open {
     transform: rotate(180deg);
