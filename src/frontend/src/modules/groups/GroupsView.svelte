@@ -10,7 +10,7 @@
   import { persistedState } from "../../utils/persisted-state.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
-  import { Add, Upload, Download, Save } from "../../components/ui/icons";
+  import { Add, Import, Export, Save } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
   import { droppable } from "../../lib/dnd";
   import GroupPanel from "./components/GroupPanel.svelte";
@@ -426,15 +426,15 @@
           </Tooltip>
         </div>
       {/if}
-      <Tooltip value={t("Export Config")}>
-        <Button onclick={exportConfig}>
-          <Upload size={22} />
-        </Button>
-      </Tooltip>
       <Tooltip value={t("Import Config")}>
         <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
         <Button onclick={() => document.getElementById("import-config")!.click()}>
-          <Download size={22} />
+          <Import size={22} />
+        </Button>
+      </Tooltip>
+      <Tooltip value={t("Export Config")}>
+        <Button onclick={exportConfig}>
+          <Export size={22} />
         </Button>
       </Tooltip>
       <Tooltip value={t("Add Group")}>
