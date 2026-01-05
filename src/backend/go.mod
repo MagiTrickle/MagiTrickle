@@ -4,7 +4,6 @@ go 1.21
 
 require (
 	github.com/IGLOU-EU/go-wildcard/v2 v2.0.2
-	github.com/coreos/go-iptables v0.7.0
 	github.com/dlclark/regexp2 v1.11.5
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/miekg/dns v1.1.63

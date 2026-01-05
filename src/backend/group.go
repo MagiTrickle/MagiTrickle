@@ -449,21 +449,6 @@ func (g *Group) Sync() error {
 	return g.sync()
 }
 
-func (g *Group) NetfilterDHook(iptType, table string) error {
-	g.locker.Lock()
-	defer g.locker.Unlock()
-
-	if !g.Enabled() {
-		return nil
-	}
-
-	if !g.Group.Enable {
-		return nil
-	}
-
-	return g.ipsetToLink.NetfilterDHook(iptType, table)
-}
-
 func (g *Group) LinkUpdateHook(event netlink.LinkUpdate) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()

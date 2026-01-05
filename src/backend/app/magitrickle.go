@@ -23,6 +23,7 @@ type Main interface {
 	SaveConfig() error
 	ImportConfig(cfg config.Config) error
 	ExportConfig() config.Config
+	ForceCommitIPTables() error
 	Start(ctx context.Context) (err error)
 }
 
@@ -38,6 +39,5 @@ type Group interface {
 	Enable() error
 	Disable() error
 	Sync() error
-	NetfilterDHook(iptType string, table string) error
 	LinkUpdateHook(event netlink.LinkUpdate) error
 }
