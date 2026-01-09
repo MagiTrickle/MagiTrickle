@@ -1,12 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  type Props = {
-    variant?: "front" | "back";
-  };
-
-  let { variant = "front" }: Props = $props();
-
   type Flake = {
     x: number;
     y: number;
@@ -18,34 +12,19 @@
     swing: number;
   };
 
-  const layerConfig =
-    variant === "back"
-      ? {
-          densityScale: 0.24,
-          minCount: 8,
-          maxCount: 60,
-          sizeScale: 0.45,
-          speedScale: 0.45,
-          alphaScale: 0.4,
-          swingScale: 0.45,
-          windScale: 0.35,
-          opacity: 0.42,
-          zIndex: 0,
-          fps: { normal: 32, low: 24 },
-        }
-      : {
-          densityScale: 0.7,
-          minCount: 20,
-          maxCount: 120,
-          sizeScale: 1,
-          speedScale: 1,
-          alphaScale: 1,
-          swingScale: 1,
-          windScale: 1,
-          opacity: 0.85,
-          zIndex: 10,
-          fps: { normal: 60, low: 40 },
-        };
+  const layerConfig = {
+    densityScale: 0.7,
+    minCount: 20,
+    maxCount: 120,
+    sizeScale: 1,
+    speedScale: 1,
+    alphaScale: 1,
+    swingScale: 1,
+    windScale: 1,
+    opacity: 0.85,
+    zIndex: 10,
+    fps: { normal: 60, low: 40 },
+  };
 
   let canvas: HTMLCanvasElement | null = null;
   let gl: WebGLRenderingContext | null = null;
@@ -368,11 +347,7 @@
       resize();
     };
     updateMotion();
-    if ("addEventListener" in motionMedia) {
-      motionMedia.addEventListener("change", updateMotion);
-    } else {
-      motionMedia.addListener(updateMotion);
-    }
+    motionMedia.addEventListener("change", updateMotion);
 
     const handleResize = () => {
       computeDeviceHints();
@@ -396,11 +371,7 @@
       stop();
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("visibilitychange", handleVisibility);
-      if ("removeEventListener" in motionMedia) {
-        motionMedia.removeEventListener("change", updateMotion);
-      } else {
-        motionMedia.removeListener(updateMotion);
-      }
+      motionMedia.removeEventListener("change", updateMotion);
       if (gl) {
         if (buffer) gl.deleteBuffer(buffer);
         if (program) gl.deleteProgram(program);

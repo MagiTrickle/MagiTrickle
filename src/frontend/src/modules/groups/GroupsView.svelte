@@ -7,19 +7,21 @@
   import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
   import { fetcher } from "../../utils/fetcher";
   import { overlay, toast } from "../../utils/events";
+  import { encodeGroupShare } from "../../utils/group-share";
   import { persistedState } from "../../utils/persisted-state.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
-  import { Add, Import, Export, Save } from "../../components/ui/icons";
+  import { Add, Import, Export, Save, ClipboardPaste } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
   import { droppable } from "../../lib/dnd";
   import GroupPanel from "./components/GroupPanel.svelte";
   import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
+  import ImportGroupDialog from "./dialogs/ImportGroupDialog.svelte";
 
   function handleSaveShortcut(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-      if (counter > 0 && valid_rules) {
+      if (canSave) {
         event.preventDefault();
         saveChanges();
       }
@@ -33,6 +35,7 @@
   let showed_limit: number[] = $state([]);
   let counter = $state(-2); // skip first update on init
   let valid_rules = $state(true);
+  let canSave = $derived(counter > 0 && valid_rules);
   let open_state = persistedState<Record<string, boolean>>("group_open_state", {});
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
@@ -47,6 +50,14 @@
   });
   function resetImportConfigModal() {
     importConfigModal = { open: false, groups: [], fileName: "" };
+  }
+
+  let importGroupModal = $state(false);
+  function openImportGroupModal() {
+    importGroupModal = true;
+  }
+  function closeImportGroupModal() {
+    importGroupModal = false;
   }
 
   function cloneGroupWithNewIds(group: Group): Group {
@@ -181,6 +192,17 @@
 
   onDestroy(() => {
     window.removeEventListener("keydown", handleSaveShortcut);
+  });
+
+  $effect(() => {
+    if (typeof window === "undefined" || !canSave) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   });
 
   $effect(() => {
@@ -387,6 +409,39 @@
     input.value = "";
   }
 
+  async function copyToClipboard(text: string) {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-1000px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (!ok) throw new Error("Clipboard copy failed");
+  }
+
+  async function exportGroup(group_index: number) {
+    const group = data[group_index];
+    if (!group) return;
+    try {
+      const payload = encodeGroupShare(group);
+      await copyToClipboard(payload);
+      toast.success(t("Group exported"));
+    } catch (error) {
+      console.error("Error exporting group", error);
+      toast.error(t("Failed to export group"));
+    }
+  }
+
   async function loadMore(group_index: number): Promise<void> {
     if (showed_limit[group_index] >= data[group_index].rules.length) return;
     showed_limit[group_index] += INCREMENT_RULES_LIMIT;
@@ -417,7 +472,7 @@
       />
     </div>
     <div class="group-controls-actions">
-      {#if counter > 0 && valid_rules}
+      {#if canSave}
         <div transition:scale>
           <Tooltip value={t("Save Changes")}>
             <Button onclick={saveChanges} id="save-changes">
@@ -435,6 +490,11 @@
       <Tooltip value={t("Export Config")}>
         <Button onclick={exportConfig}>
           <Export size={22} />
+        </Button>
+      </Tooltip>
+      <Tooltip value={t("Import Group")}>
+        <Button onclick={openImportGroupModal}>
+          <ClipboardPaste size={22} />
         </Button>
       </Tooltip>
       <Tooltip value={t("Add Group")}>
@@ -478,6 +538,7 @@
           {searchActive}
           visibleRuleIndices={visible.ruleIndices}
           on:importRules={() => openImportRulesModal(visible.group_index)}
+          on:exportGroup={(e) => exportGroup(e.detail.group_index)}
         />
         <div
           class="group-drop-slot group-drop-slot--bottom"
@@ -530,6 +591,20 @@
       open_state.current[group.id] = true;
     }
     toast.success(`${t("Config imported")}: ${imported.length}`);
+  }}
+/>
+
+<ImportGroupDialog
+  open={importGroupModal}
+  on:close={closeImportGroupModal}
+  on:import={(e) => {
+    const group = e.detail.group;
+    data.unshift(group);
+    showed_limit.unshift(
+      group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
+    );
+    open_state.current[group.id] = true;
+    recomputeVisibleGroups();
   }}
 />
 

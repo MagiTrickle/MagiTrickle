@@ -31,6 +31,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      font: 400 1rem var(--font);
       padding: 0.4rem;
       border-radius: 0.5rem;
       cursor: pointer;

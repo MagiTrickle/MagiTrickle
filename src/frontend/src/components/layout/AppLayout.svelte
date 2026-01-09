@@ -19,7 +19,9 @@
 <Toast />
 <Overlay />
 <ScrollToTop />
-<SnowField variant="front" />
+{#if [11, 0, 1].includes(new Date().getMonth())}
+  <SnowField />
+{/if}
 
 <main>
   <Tabs.Root bind:value={active_tab}>
