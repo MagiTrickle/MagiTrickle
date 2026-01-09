@@ -21,6 +21,7 @@
     GroupCollapse,
     Dots,
     ImportList,
+    ClipboardCopy,
     Grip,
   } from "../../../components/ui/icons";
   import RuleRow from "./RuleRow.svelte";
@@ -212,6 +213,11 @@
               <ImportList size={20} />
             </Button>
           </Tooltip>
+          <Tooltip value={t("Export Group")}>
+            <Button small onclick={() => dispatch("exportGroup", { group_index })}>
+              <ClipboardCopy size={20} />
+            </Button>
+          </Tooltip>
         {:else}
           <DropdownMenu>
             {#snippet trigger()}
@@ -236,6 +242,12 @@
             </Button>
             {/snippet}
             {#snippet item3()}
+              <Button general onclick={() => dispatch("exportGroup", { group_index })}>
+                <div class="dd-icon"><ClipboardCopy size={20} /></div>
+                <div class="dd-label">{t("Export Group")}</div>
+              </Button>
+            {/snippet}
+            {#snippet item4()}
               <Button general onclick={() => deleteGroup(group_index)}>
                 <div class="dd-icon"><Delete size={20} /></div>
                 <div class="dd-label">{t("Delete Group")}</div>
@@ -489,7 +501,7 @@
       }
       & input[type="text"] {
         width: calc(100% - 2rem);
-        margin-left: 2.5rem;
+        margin-left: 2rem;
       }
       & label {
         height: calc(100% + 1px);
