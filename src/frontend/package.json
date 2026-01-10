@@ -9,24 +9,24 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.node.json",
-    "dev:frontend": "vite",
+    "dev:frontend": "vite --host",
     "dev:backend": "deno -A ./dev/backend-mock.ts"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "5.0.3",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tsconfig/svelte": "^5.0.4",
-    "@types/node": "^22.13.4",
-    "bits-ui": "^1.3.0",
+    "@types/node": "^25.0.3",
+    "bits-ui": "^2.15.4",
     "hono": "^4.7.1",
-    "lucide-svelte": "^0.475.0",
+    "lucide-svelte": "^0.562.0",
     "prettier-plugin-svelte": "^3.3.3",
-    "svelte": "5.20.1",
+    "svelte": "^5.46.1",
     "svelte-check": "^4.1.4",
-    "svelte-infinite": "^0.4.0",
+    "svelte-infinite": "^0.5.1",
     "tslib": "^2.8.1",
     "typescript": "^5.7.3",
     "valibot": "^1.0.0-rc.3",
-    "vite": "^6.1.0",
+    "vite": "^7.3.1",
     "vite-plugin-minify": "^2.1.0"
   }
 }

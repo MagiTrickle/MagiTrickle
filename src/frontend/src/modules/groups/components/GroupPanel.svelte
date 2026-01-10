@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
-  import { InfiniteLoader } from "svelte-infinite";
+  import { InfiniteLoader, LoaderState } from "svelte-infinite";
   import { createEventDispatcher } from "svelte";
 
   import { type Group, type Rule } from "../../../types";
@@ -64,6 +64,9 @@
   }: Props = $props();
 
   const dispatch = createEventDispatcher();
+
+  const loaderState = new LoaderState();
+  const triggerLoad = () => loadMore(group_index);
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
@@ -297,7 +300,7 @@
               />
             {/each}
           {:else}
-            <InfiniteLoader triggerLoad={() => loadMore(group_index)} loopDetectionTimeout={10}>
+            <InfiniteLoader {loaderState} {triggerLoad} loopDetectionTimeout={10}>
               {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
                 <RuleRow
                   key={rule.id}
@@ -526,7 +529,7 @@
       flex: 1 1 auto;
     }
 
-    :global(.group-actions > *:nth-child(3)) {
+    :global(.group-actions > *:nth-child(2)) {
       margin-left: auto;
     }
 

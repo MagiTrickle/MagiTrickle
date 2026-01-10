@@ -1,7 +1,6 @@
 <script lang="ts">
   import { scale } from "svelte/transition";
   import { onDestroy, onMount, untrack, tick } from "svelte";
-  import { loaderState } from "svelte-infinite";
 
   import { parseConfig, type Group, type Rule } from "../../types";
   import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
@@ -443,13 +442,14 @@
   }
 
   async function loadMore(group_index: number): Promise<void> {
-    if (showed_limit[group_index] >= data[group_index].rules.length) return;
-    showed_limit[group_index] += INCREMENT_RULES_LIMIT;
-    if (showed_limit[group_index] > data[group_index].rules.length) {
-      showed_limit[group_index] = data[group_index].rules.length;
-      return;
-    }
-    loaderState.loaded();
+    const group = data[group_index];
+    if (!group) return;
+    const totalRules = group.rules.length;
+    if (showed_limit[group_index] >= totalRules) return;
+    showed_limit[group_index] = Math.min(
+      showed_limit[group_index] + INCREMENT_RULES_LIMIT,
+      totalRules,
+    );
   }
 
   function openImportRulesModal(groupIndex: number) {
