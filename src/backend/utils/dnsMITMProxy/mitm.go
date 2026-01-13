@@ -70,7 +70,6 @@ func (p DNSMITMProxy) processReq(clientAddr net.Addr, req []byte, network string
 	var reqMsg dns.Msg
 	if p.RequestHook != nil || p.ResponseHook != nil {
 		err := reqMsg.Unpack(req)
-		reqMsg.Compress = true
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse request: %w", err)
 		}
@@ -105,6 +104,7 @@ func (p DNSMITMProxy) processReq(clientAddr net.Addr, req []byte, network string
 	if p.ResponseHook != nil {
 		var respMsg dns.Msg
 		err = respMsg.Unpack(resp)
+		respMsg.Compress = true
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
