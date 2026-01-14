@@ -231,8 +231,7 @@
     to_rule_id?: string,
     insert: "before" | "after" = "before",
   ) {
-    const clamp = (value: number, min: number, max: number) =>
-      Math.max(min, Math.min(max, value));
+    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
     const sourceGroup = data[from_group_index];
     const targetGroup = data[to_group_index];
@@ -429,15 +428,16 @@
       />
     </div>
     <div class="group-controls-actions">
-      {#if canSave}
-        <div transition:scale>
-          <Tooltip value={t("Save Changes")}>
-            <Button onclick={saveChanges} id="save-changes">
-              <Save size={22} />
-            </Button>
-          </Tooltip>
-        </div>
-      {/if}
+      <Tooltip value={t("Save Changes")}>
+        <Button
+          onclick={saveChanges}
+          id="save-changes"
+          class={canSave ? "accent" : ""}
+          inactive={!canSave}
+        >
+          <Save size={22} />
+        </Button>
+      </Tooltip>
       <Tooltip value={t("Import Config")}>
         <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
         <Button onclick={() => document.getElementById("import-config")!.click()}>
@@ -616,7 +616,10 @@
     font-size: 1rem;
     line-height: 1.3;
     min-height: 2.7rem;
-    transition: border-color 0.12s ease, box-shadow 0.18s ease, background-color 0.12s ease,
+    transition:
+      border-color 0.12s ease,
+      box-shadow 0.18s ease,
+      background-color 0.12s ease,
       color 0.12s ease;
   }
 
