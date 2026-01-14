@@ -417,15 +417,16 @@
       />
     </div>
     <div class="group-controls-actions">
-      {#if canSave}
-        <div transition:scale>
-          <Tooltip value={t("Save Changes")}>
-            <Button onclick={saveChanges} id="save-changes">
-              <Save size={22} />
-            </Button>
-          </Tooltip>
-        </div>
-      {/if}
+      <Tooltip value={t("Save Changes")}>
+        <Button
+          onclick={saveChanges}
+          id="save-changes"
+          class={canSave ? "accent" : ""}
+          inactive={!canSave}
+        >
+          <Save size={22} />
+        </Button>
+      </Tooltip>
       <Tooltip value={t("Import Config")}>
         <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
         <Button onclick={() => document.getElementById("import-config")!.click()}>
