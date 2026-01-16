@@ -9,6 +9,7 @@
   import Toast from "../feedback/Toast.svelte";
   import ScrollToTop from "../feedback/ScrollToTop.svelte";
   import HeaderSettings from "./HeaderSettings.svelte";
+  import { smoothReflow } from "../../lib/smoot-reflow.svelte";
 
   let active_tab = $state("groups");
 </script>
@@ -23,7 +24,7 @@
   <SnowField />
 {/if}
 
-<main>
+<main use:smoothReflow>
   <Tabs.Root bind:value={active_tab}>
     <nav>
       <Tabs.List>
