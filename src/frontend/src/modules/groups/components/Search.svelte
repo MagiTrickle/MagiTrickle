@@ -45,7 +45,7 @@
   .group-controls-search {
     display: flex;
     align-items: center;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     transition: flex-grow 0.3s ease;
     min-width: 0;
   }
@@ -80,6 +80,7 @@
     background-color: var(--bg-light);
     color: var(--text);
     border-color: var(--accent);
+    max-width: 100%;
     box-shadow:
       0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent),
       0 6px 18px -14px color-mix(in oklab, var(--accent) 35%, transparent);
@@ -100,8 +101,7 @@
 
   .search-container.active .input-wrapper {
     margin-left: 0.3rem;
-    width: 500px;
-    max-width: 700px;
+    width: clamp(500px, 50vw, 700px);
   }
 
   .search-input {
@@ -121,19 +121,5 @@
 
   .search-container.active .search-input {
     opacity: 1;
-  }
-
-  @media (max-width: 700px) {
-    .group-controls-search {
-      flex: 1 1 auto;
-    }
-
-    .search-container.active {
-      width: 100%;
-    }
-
-    .search-container.active .input-wrapper {
-      width: 100vw;
-    }
   }
 </style>
