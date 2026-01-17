@@ -1,5 +1,7 @@
 export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
   let positions = new Map<HTMLElement, { left: number; top: number }>();
+  let hasInitialized = false;
+  let lastClientWidth = document.documentElement.clientWidth;
 
   const getPosition = (element: HTMLElement) => {
     return {
@@ -14,7 +16,12 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
   };
 
   const observer = new ResizeObserver(() => {
+    const currentClientWidth = document.documentElement.clientWidth;
+    const isResize = Math.abs(currentClientWidth - lastClientWidth) > 0.5;
+    lastClientWidth = currentClientWidth;
+
     const children = Array.from(node.children) as HTMLElement[];
+    const skipAnimation = !hasInitialized || isResize;
 
     children.forEach((child) => {
       const startPos = positions.get(child);
@@ -27,17 +34,20 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
 
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
 
-      child.animate(
-        [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
-        {
-          duration,
-          easing: "cubic-bezier(0.2, 0, 0.2, 1)",
-          fill: "both",
-        }
-      );
+      if (!skipAnimation) {
+        child.animate(
+          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
+          {
+            duration,
+            easing: "cubic-bezier(0.2, 0, 0.2, 1)",
+            fill: "both",
+          },
+        );
+      }
     });
 
     savePositions();
+    hasInitialized = true;
   });
 
   savePositions();
