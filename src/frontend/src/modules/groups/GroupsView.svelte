@@ -6,17 +6,15 @@
   import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
   import { fetcher } from "../../utils/fetcher";
   import { overlay, toast } from "../../utils/events";
-  import { encodeGroupShare } from "../../utils/group-share";
   import { persistedState } from "../../utils/persisted-state.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
-  import { Add, Import, Export, Save, ClipboardPaste } from "../../components/ui/icons";
+  import { Add, Import, Export, Save } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
   import { droppable } from "../../lib/dnd";
   import GroupPanel from "./components/GroupPanel.svelte";
   import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
-  import ImportGroupDialog from "./dialogs/ImportGroupDialog.svelte";
   import Search from "./components/Search.svelte";
   import { smoothReflow } from "../../lib/smooth-reflow.svelte";
   import { createGroupsVirtualList } from "../../lib/virtualization.svelte";
@@ -47,13 +45,6 @@
     importConfigModal = { open: false, groups: [], fileName: "" };
   }
 
-  let importGroupModal = $state(false);
-  function openImportGroupModal() {
-    importGroupModal = true;
-  }
-  function closeImportGroupModal() {
-    importGroupModal = false;
-  }
 
   function cloneGroupWithNewIds(group: Group): Group {
     return {
@@ -470,18 +461,6 @@
     if (!ok) throw new Error("Clipboard copy failed");
   }
 
-  async function exportGroup(group_index: number) {
-    const group = data[group_index];
-    if (!group) return;
-    try {
-      const payload = encodeGroupShare(group);
-      await copyToClipboard(payload);
-      toast.success(t("Group exported"));
-    } catch (error) {
-      console.error("Error exporting group", error);
-      toast.error(t("Failed to export group"));
-    }
-  }
 
   function openImportRulesModal(groupIndex: number) {
     importRulesModal = { open: true, groupIndex };
@@ -521,11 +500,6 @@
       <Tooltip value={t("Export Config")}>
         <Button onclick={exportConfig}>
           <Export size={22} />
-        </Button>
-      </Tooltip>
-      <Tooltip value={t("Import Group")}>
-        <Button onclick={openImportGroupModal}>
-          <ClipboardPaste size={22} />
         </Button>
       </Tooltip>
       <Tooltip value={t("Add Group")}>
@@ -575,7 +549,6 @@
             {searchActive}
             visibleRuleIndices={visible.ruleIndices}
             on:importRules={() => openImportRulesModal(visible.group_index)}
-            on:exportGroup={(e) => exportGroup(e.detail.group_index)}
           />
           <div
             class="group-drop-slot group-drop-slot--bottom"
@@ -626,20 +599,6 @@
   }}
 />
 
-<ImportGroupDialog
-  open={importGroupModal}
-  on:close={closeImportGroupModal}
-  on:import={(e) => {
-    const group = e.detail.group;
-    data.unshift(group);
-    open_state.current[group.id] = true;
-    markGroupOrderChanged();
-    markDirty();
-    if (searchActive) {
-      forceVisibleGroup(group.id);
-    }
-  }}
-/>
 
 <style>
   .group-list {
