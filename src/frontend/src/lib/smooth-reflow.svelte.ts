@@ -24,6 +24,8 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
     const skipAnimation = !hasInitialized || isResize;
 
     children.forEach((child) => {
+      if (child.hasAttribute("data-no-smooth-reflow")) return;
+
       const startPos = positions.get(child);
       const currentPos = getPosition(child);
 

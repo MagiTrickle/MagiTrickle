@@ -45,7 +45,6 @@
     importConfigModal = { open: false, groups: [], fileName: "" };
   }
 
-
   function cloneGroupWithNewIds(group: Group): Group {
     return {
       ...group,
@@ -461,7 +460,6 @@
     if (!ok) throw new Error("Clipboard copy failed");
   }
 
-
   function openImportRulesModal(groupIndex: number) {
     importRulesModal = { open: true, groupIndex };
   }
@@ -470,11 +468,12 @@
     importRulesModal = { open: false, groupIndex: null };
   }
 </script>
+
 <div class="groups-page" use:smoothReflow>
-  <div class="group-controls" use:smoothReflow>
+  <div class="group-controls" use:smoothReflow data-no-smooth-reflow>
     <Search
       groups={data}
-      dataRevision={dataRevision}
+      {dataRevision}
       bind:visibleGroups
       bind:searchActive
       bind:searchPending
@@ -598,7 +597,6 @@
     toast.success(`${t("Config imported")}: ${imported.length}`);
   }}
 />
-
 
 <style>
   .group-list {
