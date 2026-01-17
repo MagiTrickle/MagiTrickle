@@ -41,3 +41,6 @@ export { default as LoaderCircle } from "lucide-svelte/icons/loader-circle";
 export { default as SearchSlash } from "lucide-svelte/icons/search-slash";
 export { default as ChevronLeft } from "lucide-svelte/icons/chevron-left";
 export { default as ChevronRight } from "lucide-svelte/icons/chevron-right";
+export { default as SortDesc } from "lucide-svelte/icons/arrow-down-a-z";
+export { default as SortAsc } from "lucide-svelte/icons/arrow-up-a-z";
+export { default as SortNeutral } from "lucide-svelte/icons/arrow-up-down";
