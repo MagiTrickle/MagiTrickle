@@ -3,10 +3,10 @@ import type { Rule } from "../types";
 const TYPE_PRIORITY: Record<string, number> = {
   subnet: 10, // IPv4 subnets
   subnet6: 11, // IPv6 subnets
-  domain: 20, // Specific domains
-  wildcard: 25, // Wildcards
-  namespace: 30, // Namespaces
-  regex: 40, // Regex
+  wildcard: 20,
+  domain: 30,
+  namespace: 31,
+  regex: 40, // Regex usually at the end
 };
 
 function ipToNum(ip: string): number {
@@ -53,10 +53,14 @@ export function sortRules(rules: Rule[]): Rule[] {
       return cidrB.mask - cidrA.mask;
     }
 
-    if (a.type === "domain" || a.type === "wildcard") {
+    if (["domain", "wildcard", "namespace"].includes(a.type)) {
       const revA = getReverseDomain(a.rule);
       const revB = getReverseDomain(b.rule);
-      return revA.localeCompare(revB);
+
+      const cmp = revA.localeCompare(revB);
+      if (cmp !== 0) return cmp;
+
+      return a.type.localeCompare(b.type);
     }
 
     return a.rule.localeCompare(b.rule);
