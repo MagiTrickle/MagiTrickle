@@ -1,8 +1,7 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
-  import { InfiniteLoader, LoaderState } from "svelte-infinite";
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy } from "svelte";
 
   import { type Group, type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
@@ -29,7 +28,6 @@
     group: Group;
     group_index: number;
     total_groups: number;
-    showed_limit: number;
     open: boolean;
     deleteGroup: (index: number) => void;
     addRuleToGroup: (group_index: number, rule: Rule, focus?: boolean) => void;
@@ -40,9 +38,11 @@
       to_group_index: number,
       to_rule_index: number,
     ) => void;
-    loadMore: (group_index: number) => Promise<void>;
     searchActive?: boolean;
     visibleRuleIndices?: number[] | null;
+    scrollTop?: number;
+    viewportHeight?: number;
+    scrollContainerTop?: number;
     [key: string]: any;
   };
 
@@ -50,22 +50,20 @@
     group = $bindable(),
     group_index,
     total_groups = $bindable(),
-    showed_limit = $bindable(),
     open = $bindable(),
     deleteGroup,
     addRuleToGroup,
     deleteRuleFromGroup,
     changeRuleIndex,
-    loadMore,
     searchActive = false,
     visibleRuleIndices = null,
+    scrollTop = 0,
+    viewportHeight = 0,
+    scrollContainerTop = 0,
     ...rest
   }: Props = $props();
 
   const dispatch = createEventDispatcher();
-
-  const loaderState = new LoaderState();
-  const triggerLoad = () => loadMore(group_index);
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
@@ -127,6 +125,93 @@
     displayedRulesCount = Array.isArray(filteredRuleIndices)
       ? filteredRuleIndices.length
       : group.rules.length;
+  });
+
+  const RULE_OVERSCAN = 6 as const;
+  const RULE_ESTIMATED_HEIGHT = 36;
+
+  const clamp = (value: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, value));
+
+  let rulesEl: HTMLDivElement | null = null;
+  let ruleRowHeight = $state<number>(RULE_ESTIMATED_HEIGHT);
+  let renderStart = $state(0);
+  let renderEnd = $state(0);
+  let ruleMeasureRaf = 0;
+
+  function updateRuleWindow() {
+    if (!open || !rulesEl || displayedRulesCount === 0) {
+      renderStart = 0;
+      renderEnd = 0;
+      return;
+    }
+
+    const rect = rulesEl.getBoundingClientRect();
+    const absoluteTop = rect.top - scrollContainerTop + scrollTop;
+    const viewTop = scrollTop - absoluteTop;
+    const effectiveViewport =
+      viewportHeight || (typeof window !== "undefined" ? window.innerHeight : 0);
+    const viewBottom = viewTop + effectiveViewport;
+
+    const start = Math.floor(viewTop / ruleRowHeight) - RULE_OVERSCAN;
+    const end = Math.ceil(viewBottom / ruleRowHeight) + RULE_OVERSCAN;
+    renderStart = clamp(start, 0, displayedRulesCount);
+    renderEnd = clamp(end, renderStart, displayedRulesCount);
+  }
+
+  function measureRuleRow() {
+    if (!rulesEl) return;
+    const row = rulesEl.querySelector<HTMLElement>(".rule");
+    if (!row) return;
+    const height = Math.ceil(row.getBoundingClientRect().height);
+    if (height > 0 && height !== ruleRowHeight) {
+      ruleRowHeight = height;
+    }
+  }
+
+  function scheduleRuleMeasure() {
+    if (ruleMeasureRaf) return;
+    if (typeof window === "undefined") {
+      measureRuleRow();
+      return;
+    }
+    ruleMeasureRaf = window.requestAnimationFrame(() => {
+      ruleMeasureRaf = 0;
+      measureRuleRow();
+    });
+  }
+
+  $effect(() => {
+    scrollTop;
+    viewportHeight;
+    scrollContainerTop;
+    ruleRowHeight;
+    displayedRulesCount;
+    open;
+    rulesEl;
+    updateRuleWindow();
+  });
+
+  $effect(() => {
+    renderStart;
+    renderEnd;
+    displayedRulesCount;
+    open;
+    client_width;
+    rulesEl;
+    scheduleRuleMeasure();
+  });
+
+  let rulesTopSpacer = $derived(Math.max(0, renderStart * ruleRowHeight));
+  let rulesBottomSpacer = $derived(
+    Math.max(0, (displayedRulesCount - renderEnd) * ruleRowHeight),
+  );
+
+  onDestroy(() => {
+    if (typeof window !== "undefined" && ruleMeasureRaf) {
+      window.cancelAnimationFrame(ruleMeasureRaf);
+      ruleMeasureRaf = 0;
+    }
   });
 </script>
 
@@ -272,24 +357,27 @@
             <div class="group-rules-header-column">{t("Enabled")}</div>
           </div>
         {/if}
-        <div class="group-rules">
-          {#if Array.isArray(filteredRuleIndices)}
-            {#each filteredRuleIndices as rule_index, visible_index (group.rules[rule_index].id)}
-              <RuleRow
-                key={group.rules[rule_index].id}
-                bind:rule={group.rules[rule_index]}
-                {rule_index}
-                {group_index}
-                rule_id={group.rules[rule_index].id}
-                group_id={group.id}
-                onChangeIndex={changeRuleIndex}
-                onDelete={deleteRuleFromGroup}
-                style={visible_index % 2 ? "" : "background-color: var(--bg-light)"}
-              />
-            {/each}
-          {:else}
-            <InfiniteLoader {loaderState} {triggerLoad} loopDetectionTimeout={10}>
-              {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
+        <div class="group-rules" bind:this={rulesEl}>
+          {#if displayedRulesCount > 0}
+            <div class="rules-spacer" style={`height: ${rulesTopSpacer}px`}></div>
+            {#if Array.isArray(filteredRuleIndices)}
+              {#each filteredRuleIndices.slice(renderStart, renderEnd) as rule_index, localIndex (group.rules[rule_index].id)}
+                {@const visible_index = renderStart + localIndex}
+                <RuleRow
+                  key={group.rules[rule_index].id}
+                  bind:rule={group.rules[rule_index]}
+                  {rule_index}
+                  {group_index}
+                  rule_id={group.rules[rule_index].id}
+                  group_id={group.id}
+                  onChangeIndex={changeRuleIndex}
+                  onDelete={deleteRuleFromGroup}
+                  style={visible_index % 2 ? "" : "background-color: var(--bg-light)"}
+                />
+              {/each}
+            {:else}
+              {#each group.rules.slice(renderStart, renderEnd) as rule, localIndex (rule.id)}
+                {@const rule_index = renderStart + localIndex}
                 <RuleRow
                   key={rule.id}
                   bind:rule={group.rules[rule_index]}
@@ -302,7 +390,8 @@
                   style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
                 />
               {/each}
-            </InfiniteLoader>
+            {/if}
+            <div class="rules-spacer" style={`height: ${rulesBottomSpacer}px`}></div>
           {/if}
         </div>
       </div>
@@ -441,6 +530,11 @@
     }
   }
 
+  .rules-spacer {
+    width: 100%;
+    pointer-events: none;
+  }
+
   :global {
     [data-collapsible-trigger] {
       & {
@@ -460,9 +554,6 @@
         color: var(--text);
         border: 1px solid var(--bg-light-extra);
       }
-    }
-    .infinite-intersection-target {
-      padding-block: 0 !important;
     }
   }
 

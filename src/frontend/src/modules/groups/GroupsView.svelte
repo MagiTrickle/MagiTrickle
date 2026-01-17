@@ -1,40 +1,36 @@
 <script lang="ts">
   import { scale } from "svelte/transition";
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
 
   import { parseConfig, type Group, type Rule } from "../../types";
   import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
   import { fetcher } from "../../utils/fetcher";
   import { overlay, toast } from "../../utils/events";
+  import { encodeGroupShare } from "../../utils/group-share";
   import { persistedState } from "../../utils/persisted-state.svelte";
-  import { ChangeTracker } from "../../utils/change-tracker.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
-  import { Add, Import, Export, Save } from "../../components/ui/icons";
+  import { Add, Import, Export, Save, ClipboardPaste } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
   import { droppable } from "../../lib/dnd";
   import GroupPanel from "./components/GroupPanel.svelte";
   import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
+  import ImportGroupDialog from "./dialogs/ImportGroupDialog.svelte";
+  import Search from "./components/Search.svelte";
+  import { smoothReflow } from "../../lib/smooth-reflow.svelte";
+  import { createGroupsVirtualList } from "../../lib/virtualization.svelte";
 
-  function handleSaveShortcut(event: KeyboardEvent) {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-      if (canSave) {
-        event.preventDefault();
-        saveChanges();
-      }
-    }
-  }
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-  const INITIAL_RULES_LIMIT = 30 as const;
-  const INCREMENT_RULES_LIMIT = 40 as const;
-
-  let tracker = $state(new ChangeTracker<Group[]>([]));
-  let data = $derived(tracker.data);
-
-  let showed_limit: number[] = $state([]);
+  let data: Group[] = $state([]);
+  let counter = $state(0);
+  let dataRevision = $state(0);
+  let isInitialized = false;
+  let dirtyRaf = 0;
+  let validityTimeout: number | null = null;
   let valid_rules = $state(true);
-  let canSave = $derived(tracker.isDirty && valid_rules);
+  let canSave = $derived(counter > 0 && valid_rules);
   let open_state = persistedState<Record<string, boolean>>("group_open_state", {});
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
@@ -51,6 +47,14 @@
     importConfigModal = { open: false, groups: [], fileName: "" };
   }
 
+  let importGroupModal = $state(false);
+  function openImportGroupModal() {
+    importGroupModal = true;
+  }
+  function closeImportGroupModal() {
+    importGroupModal = false;
+  }
+
   function cloneGroupWithNewIds(group: Group): Group {
     return {
       ...group,
@@ -65,6 +69,15 @@
   type VisibleGroup = {
     group_index: number;
     ruleIndices: number[] | null;
+  };
+
+  type SearchControls = {
+    markGroupOrderChanged: () => void;
+    forceVisibleGroup: (groupId: string) => void;
+    forceVisibleRule: (groupId: string, ruleId: string) => void;
+    removeForcedGroup: (groupId: string) => void;
+    removeForcedRule: (groupId: string, ruleId: string) => void;
+    moveForcedRule: (sourceGroupId: string, targetGroupId: string, ruleId: string) => void;
   };
 
   type GroupDragData = {
@@ -87,64 +100,59 @@
     changeGroupIndex(from_index, to_index, insert);
   }
 
-  let searchQuery = $state("");
-  let normalizedSearch = $derived(searchQuery.trim().toLowerCase());
-  let searchActive = $derived(Boolean(normalizedSearch));
+  let searchControls = $state<SearchControls | null>(null);
   let visibleGroups: VisibleGroup[] = $state([]);
+  let searchActive = $state(false);
+  let searchPending = $state(false);
 
-  function recomputeVisibleGroups() {
-    if (!normalizedSearch) {
-      visibleGroups = data.map(
-        (_, index): VisibleGroup => ({ group_index: index, ruleIndices: null }),
-      );
-      return;
+  const groupsVirtual = createGroupsVirtualList<VisibleGroup>({
+    items: () => visibleGroups,
+    getKey: (visible, index) => data[visible.group_index]?.id ?? `group-${index}`,
+  });
+
+  function handleSaveShortcut(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      if (canSave) {
+        event.preventDefault();
+        saveChanges();
+      }
     }
-
-    visibleGroups = data
-      .map<VisibleGroup | null>((group, index) => {
-        if (!group) return null;
-        const query = normalizedSearch;
-        const groupMatch =
-          (group.name?.toLowerCase() ?? "").includes(query) ||
-          (group.interface?.toLowerCase() ?? "").includes(query);
-
-        const matchedRuleIndices = group.rules
-          .map((rule, ruleIndex) => {
-            const ruleName = rule.name?.toLowerCase() ?? "";
-            const rulePattern = rule.rule?.toLowerCase() ?? "";
-            const ruleType = rule.type?.toLowerCase() ?? "";
-            const match =
-              ruleName.includes(query) || rulePattern.includes(query) || ruleType.includes(query);
-            return match ? ruleIndex : -1;
-          })
-          .filter((idx) => idx !== -1);
-
-        if (groupMatch || matchedRuleIndices.length > 0) {
-          return {
-            group_index: index,
-            ruleIndices: groupMatch && matchedRuleIndices.length === 0 ? null : matchedRuleIndices,
-          };
-        }
-
-        return null;
-      })
-      .filter(Boolean) as VisibleGroup[];
   }
 
-  $effect(recomputeVisibleGroups);
+  function markGroupOrderChanged() {
+    searchControls?.markGroupOrderChanged();
+  }
 
-  let noVisibleGroups = $derived(searchActive && visibleGroups.length === 0);
+  function forceVisibleGroup(groupId: string) {
+    searchControls?.forceVisibleGroup(groupId);
+  }
+
+  function forceVisibleRule(groupId: string, ruleId: string) {
+    searchControls?.forceVisibleRule(groupId, ruleId);
+  }
+
+  function removeForcedGroup(groupId: string) {
+    searchControls?.removeForcedGroup(groupId);
+  }
+
+  function removeForcedRule(groupId: string, ruleId: string) {
+    searchControls?.removeForcedRule(groupId, ruleId);
+  }
+
+  function moveForcedRule(sourceGroupId: string, targetGroupId: string, ruleId: string) {
+    searchControls?.moveForcedRule(sourceGroupId, targetGroupId, ruleId);
+  }
+
+  let noVisibleGroups = $derived(searchActive && !searchPending && visibleGroups.length === 0);
 
   function saveChanges() {
-    if (!tracker.isDirty) return;
+    if (counter === 0) return;
     overlay.show(t("saving changes..."));
 
-    const rawData = $state.snapshot(data);
-
     fetcher
-      .put("/groups?save=true", { groups: rawData })
+      .put("/groups?save=true", { groups: data })
       .then(() => {
-        tracker.reset(rawData);
+        counter = 0;
         overlay.hide();
         toast.success(t("Saved"));
       })
@@ -157,9 +165,43 @@
     valid_rules = !document.querySelector(".rule input.invalid");
   }
 
+  function scheduleValidityCheck() {
+    if (typeof window === "undefined") return;
+    if (validityTimeout !== null) {
+      window.clearTimeout(validityTimeout);
+    }
+    validityTimeout = window.setTimeout(() => {
+      validityTimeout = null;
+      checkRulesValidityState();
+    }, 40);
+  }
+
+  function bumpDirty() {
+    if (counter <= 0) {
+      counter = 1;
+    } else {
+      counter += 1;
+    }
+    dataRevision += 1;
+    scheduleValidityCheck();
+  }
+
+  function markDirty() {
+    if (!isInitialized) return;
+    if (dirtyRaf) return;
+    if (typeof window === "undefined") {
+      bumpDirty();
+      return;
+    }
+    dirtyRaf = window.requestAnimationFrame(() => {
+      dirtyRaf = 0;
+      bumpDirty();
+    });
+  }
+
   function initOpenState() {
     for (const group of data) {
-      if (!open_state.current[group.id]) {
+      if (open_state.current[group.id] === undefined) {
         open_state.current[group.id] = false;
       }
     }
@@ -174,20 +216,16 @@
   }
 
   onMount(async () => {
-    const fetched =
-      (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
-    tracker = new ChangeTracker(fetched);
-
-    showed_limit = data.map((group) =>
-      group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
-    );
+    data = (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
     initOpenState();
+    counter = 0;
+    dataRevision = 0;
+    isInitialized = true;
+    setTimeout(checkRulesValidityState, 10);
     setTimeout(cleanOrphanedOpenState, 5000);
-    window.addEventListener("keydown", handleSaveShortcut);
-  });
-
-  onDestroy(() => {
-    window.removeEventListener("keydown", handleSaveShortcut);
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", handleSaveShortcut);
+    }
   });
 
   $effect(() => {
@@ -201,20 +239,28 @@
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   });
 
-  $effect(() => {
-    const value = $state.snapshot(data);
-    setTimeout(checkRulesValidityState, 10);
+  onDestroy(() => {
+    if (typeof window !== "undefined" && dirtyRaf) {
+      window.cancelAnimationFrame(dirtyRaf);
+      dirtyRaf = 0;
+    }
+    if (typeof window !== "undefined" && validityTimeout !== null) {
+      window.clearTimeout(validityTimeout);
+      validityTimeout = null;
+    }
+    if (typeof window !== "undefined") {
+      window.removeEventListener("keydown", handleSaveShortcut);
+    }
   });
 
   async function addRuleToGroup(group_index: number, rule: Rule, focus = false) {
-    data[group_index].rules.unshift(rule);
-    showed_limit[group_index]++;
-    recomputeVisibleGroups();
-
-    if (!rule.rule || !rule.name) {
-      valid_rules = false;
+    const group = data[group_index];
+    if (!group) return;
+    group.rules.unshift(rule);
+    markDirty();
+    if (searchActive) {
+      forceVisibleRule(group.id, rule.id);
     }
-
     if (!focus) return;
     await tick();
     const el = document.querySelector(`.rule[data-group-index="${group_index}"][data-index="0"]`);
@@ -222,14 +268,19 @@
       requestAnimationFrame(() => {
         el.querySelector<HTMLInputElement>("div.name input")?.focus();
         el.querySelector<HTMLInputElement>("div.pattern input")?.classList.add("invalid");
-        checkRulesValidityState();
       });
     }
   }
 
   function deleteRuleFromGroup(group_index: number, rule_index: number) {
-    data[group_index].rules.splice(rule_index, 1);
-    recomputeVisibleGroups();
+    const group = data[group_index];
+    if (!group) return;
+    const removed = group.rules[rule_index];
+    group.rules.splice(rule_index, 1);
+    if (removed) {
+      removeForcedRule(group.id, removed.id);
+    }
+    markDirty();
   }
 
   function changeRuleIndex(
@@ -240,58 +291,61 @@
     to_rule_id?: string,
     insert: "before" | "after" = "before",
   ) {
-    const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
     const sourceGroup = data[from_group_index];
     const targetGroup = data[to_group_index];
 
     if (!sourceGroup || !targetGroup) return;
 
     const isSameGroup = from_group_index === to_group_index;
-    const sourceRules = sourceGroup.rules;
-    const targetRules = targetGroup.rules;
 
-    if (!sourceRules.length) return;
+    const sourceRulesNext = [...sourceGroup.rules];
+    if (!sourceRulesNext.length) return;
 
-    const fromIndex = clamp(from_rule_index, 0, sourceRules.length - 1);
-
-    const [movedRule] = sourceRules.splice(fromIndex, 1);
+    const fromIndex = clamp(from_rule_index, 0, sourceRulesNext.length - 1);
+    const [movedRule] = sourceRulesNext.splice(fromIndex, 1);
     if (!movedRule) return;
 
-    let anchorIndex =
-      to_rule_id && to_rule_id.length > 0 ? targetRules.findIndex((r) => r.id === to_rule_id) : -1;
+    const targetRulesNext = isSameGroup ? sourceRulesNext : [...targetGroup.rules];
 
-    if (anchorIndex === -1 && targetRules.length > 0) {
-      anchorIndex = clamp(to_rule_index, 0, targetRules.length - 1);
-      if (isSameGroup && fromIndex < anchorIndex) {
-        anchorIndex--;
-      }
+    if (!isSameGroup) {
+      moveForcedRule(sourceGroup.id, targetGroup.id, movedRule.id);
+    }
+
+    let anchorIndex =
+      to_rule_id && to_rule_id.length > 0
+        ? targetRulesNext.findIndex((r) => r.id === to_rule_id)
+        : -1;
+
+    if (anchorIndex === -1 && targetRulesNext.length > 0) {
+      anchorIndex = clamp(to_rule_index, 0, targetRulesNext.length - 1);
     }
 
     let insertIndex: number;
     if (anchorIndex === -1) {
-      insertIndex = insert === "after" ? targetRules.length : 0;
+      insertIndex = insert === "after" ? targetRulesNext.length : 0;
     } else {
       insertIndex = insert === "after" ? anchorIndex + 1 : anchorIndex;
     }
 
-    insertIndex = clamp(insertIndex, 0, targetRules.length);
-    targetRules.splice(insertIndex, 0, movedRule);
-
-    if (!isSameGroup) {
-      showed_limit[from_group_index] = Math.min(showed_limit[from_group_index], sourceRules.length);
+    if (isSameGroup && insertIndex > fromIndex) {
+      insertIndex -= 1;
     }
 
-    const ensureVisibleCount = isSameGroup
-      ? Math.min(insertIndex + 1, targetRules.length)
-      : Math.min(targetRules.length, Math.max(insertIndex + 1, showed_limit[to_group_index] + 1));
+    insertIndex = clamp(insertIndex, 0, targetRulesNext.length);
 
-    if (showed_limit[to_group_index] < ensureVisibleCount) {
-      showed_limit[to_group_index] = ensureVisibleCount;
+    targetRulesNext.splice(insertIndex, 0, movedRule);
+
+    const nextData = [...data];
+
+    if (isSameGroup) {
+      nextData[from_group_index] = { ...sourceGroup, rules: targetRulesNext };
+    } else {
+      nextData[from_group_index] = { ...sourceGroup, rules: sourceRulesNext };
+      nextData[to_group_index] = { ...targetGroup, rules: targetRulesNext };
     }
 
-    showed_limit = [...showed_limit];
-    recomputeVisibleGroups();
+    data = nextData;
+    markDirty();
   }
 
   function changeGroupIndex(
@@ -304,11 +358,9 @@
     if (from_index < 0 || from_index >= data.length) return;
 
     const g = data[from_index];
-    const lim = showed_limit[from_index];
     if (!g) return;
 
     data.splice(from_index, 1);
-    showed_limit.splice(from_index, 1);
 
     let target = insert === "after" ? to_index + 1 : to_index;
 
@@ -318,15 +370,19 @@
     if (target > data.length) target = data.length;
 
     data.splice(target, 0, g);
-    showed_limit.splice(target, 0, lim);
-    recomputeVisibleGroups();
+    markGroupOrderChanged();
+    markDirty();
   }
 
   async function addGroup() {
-    data.unshift(defaultGroup());
-    showed_limit.unshift(INITIAL_RULES_LIMIT);
-    open_state.current[data[0].id] = true;
-    recomputeVisibleGroups();
+    const group = defaultGroup();
+    data.unshift(group);
+    open_state.current[group.id] = true;
+    markGroupOrderChanged();
+    markDirty();
+    if (searchActive) {
+      forceVisibleGroup(group.id);
+    }
     await addRuleToGroup(0, defaultRule(), false);
     await tick();
     const el = document.querySelector(`.group-header[data-group-index="0"]`);
@@ -335,12 +391,20 @@
 
   function deleteGroup(index: number) {
     if (!confirm(t("Delete this group?"))) return;
+    const removed = data[index];
     data.splice(index, 1);
-    showed_limit.splice(index, 1);
-    recomputeVisibleGroups();
+    if (removed) {
+      removeForcedGroup(removed.id);
+      delete open_state.current[removed.id];
+    }
+    markGroupOrderChanged();
+    markDirty();
   }
 
   function exportConfig() {
+    if (data.length === 0) {
+      toast.warning(t("Empty config exported"));
+    }
     const blob = new Blob([JSON.stringify({ groups: data })], { type: "application/json" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -386,15 +450,37 @@
     input.value = "";
   }
 
-  async function loadMore(group_index: number): Promise<void> {
+  async function copyToClipboard(text: string) {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-1000px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    if (!ok) throw new Error("Clipboard copy failed");
+  }
+
+  async function exportGroup(group_index: number) {
     const group = data[group_index];
     if (!group) return;
-    const totalRules = group.rules.length;
-    if (showed_limit[group_index] >= totalRules) return;
-    showed_limit[group_index] = Math.min(
-      showed_limit[group_index] + INCREMENT_RULES_LIMIT,
-      totalRules,
-    );
+    try {
+      const payload = encodeGroupShare(group);
+      await copyToClipboard(payload);
+      toast.success(t("Group exported"));
+    } catch (error) {
+      console.error("Error exporting group", error);
+      toast.error(t("Failed to export group"));
+    }
   }
 
   function openImportRulesModal(groupIndex: number) {
@@ -405,28 +491,27 @@
     importRulesModal = { open: false, groupIndex: null };
   }
 </script>
+<div class="groups-page" use:smoothReflow>
+  <div class="group-controls" use:smoothReflow>
+    <Search
+      groups={data}
+      dataRevision={dataRevision}
+      bind:visibleGroups
+      bind:searchActive
+      bind:searchPending
+      bind:controls={searchControls}
+    />
 
-<div class="groups-page">
-  <div class="group-controls">
-    <div class="group-controls-search">
-      <input
-        type="search"
-        placeholder={t("Search groups and rules...")}
-        class="group-search-input"
-        bind:value={searchQuery}
-      />
-    </div>
     <div class="group-controls-actions">
-      <Tooltip value={t("Save Changes")}>
-        <Button
-          onclick={saveChanges}
-          id="save-changes"
-          class={canSave ? "accent" : ""}
-          inactive={!canSave}
-        >
-          <Save size={22} />
-        </Button>
-      </Tooltip>
+      {#if canSave}
+        <div transition:scale>
+          <Tooltip value={t("Save Changes")}>
+            <Button onclick={saveChanges} id="save-changes">
+              <Save size={22} />
+            </Button>
+          </Tooltip>
+        </div>
+      {/if}
       <Tooltip value={t("Import Config")}>
         <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
         <Button onclick={() => document.getElementById("import-config")!.click()}>
@@ -436,6 +521,11 @@
       <Tooltip value={t("Export Config")}>
         <Button onclick={exportConfig}>
           <Export size={22} />
+        </Button>
+      </Tooltip>
+      <Tooltip value={t("Import Group")}>
+        <Button onclick={openImportGroupModal}>
+          <ClipboardPaste size={22} />
         </Button>
       </Tooltip>
       <Tooltip value={t("Add Group")}>
@@ -448,52 +538,60 @@
     <div class="no-groups">{t("No matches found")}</div>
   {/if}
 
-  {#each visibleGroups as visible, index (data[visible.group_index]?.id)}
-    {#if data[visible.group_index]}
-      <div class="group-wrapper">
-        {#if index === 0}
+  <div
+    class="group-list"
+    use:groupsVirtual.list
+    style={`height: ${groupsVirtual.totalHeight}px`}
+    oninput={markDirty}
+    onchange={markDirty}
+  >
+    {#each groupsVirtual.entries as entry (entry.key)}
+      {@const visible = entry.item}
+      {#if data[visible.group_index]}
+        <div class="group-wrapper" style={entry.style} use:groupsVirtual.item={{ key: entry.key }}>
+          {#if entry.index === 0}
+            <div
+              class="group-drop-slot group-drop-slot--top"
+              aria-hidden="true"
+              use:droppable={{
+                data: { group_index: visible.group_index, insert: "before" } as GroupDropSlotData,
+                scope: "group",
+                canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
+                  source.group_index !== target.group_index,
+                dropEffect: "move",
+                onDrop: handleGroupSlotDrop,
+              }}
+            ></div>
+          {/if}
+          <GroupPanel
+            bind:group={data[visible.group_index]}
+            group_index={visible.group_index}
+            bind:total_groups={data.length}
+            bind:open={open_state.current[data[visible.group_index].id]}
+            {deleteGroup}
+            {addRuleToGroup}
+            {deleteRuleFromGroup}
+            {changeRuleIndex}
+            {searchActive}
+            visibleRuleIndices={visible.ruleIndices}
+            on:importRules={() => openImportRulesModal(visible.group_index)}
+            on:exportGroup={(e) => exportGroup(e.detail.group_index)}
+          />
           <div
-            class="group-drop-slot group-drop-slot--top"
+            class="group-drop-slot group-drop-slot--bottom"
             aria-hidden="true"
             use:droppable={{
-              data: { group_index: visible.group_index, insert: "before" } as GroupDropSlotData,
+              data: { group_index: visible.group_index, insert: "after" } as GroupDropSlotData,
               scope: "group",
-              canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
-                source.group_index !== target.group_index,
+              canDrop: () => true,
               dropEffect: "move",
               onDrop: handleGroupSlotDrop,
             }}
           ></div>
-        {/if}
-        <GroupPanel
-          bind:group={data[visible.group_index]}
-          group_index={visible.group_index}
-          bind:total_groups={data.length}
-          bind:showed_limit={showed_limit[visible.group_index]}
-          bind:open={open_state.current[data[visible.group_index].id]}
-          {deleteGroup}
-          {addRuleToGroup}
-          {deleteRuleFromGroup}
-          {changeRuleIndex}
-          {loadMore}
-          {searchActive}
-          visibleRuleIndices={visible.ruleIndices}
-          on:importRules={() => openImportRulesModal(visible.group_index)}
-        />
-        <div
-          class="group-drop-slot group-drop-slot--bottom"
-          aria-hidden="true"
-          use:droppable={{
-            data: { group_index: visible.group_index, insert: "after" } as GroupDropSlotData,
-            scope: "group",
-            canDrop: () => true,
-            dropEffect: "move",
-            onDrop: handleGroupSlotDrop,
-          }}
-        ></div>
-      </div>
-    {/if}
-  {/each}
+        </div>
+      {/if}
+    {/each}
+  </div>
 </div>
 
 <ImportRulesDialog
@@ -502,15 +600,10 @@
   on:close={closeImportRulesModal}
   on:import={(e) => {
     const { group_index, rules } = e.detail;
-    data[group_index].rules.unshift(...rules);
-    if (rules.length > 500) {
-      showed_limit[group_index] = Math.max(showed_limit[group_index], 30);
-    } else {
-      showed_limit[group_index] = Math.min(
-        showed_limit[group_index] + rules.length,
-        data[group_index].rules.length,
-      );
-    }
+    const group = data[group_index];
+    if (!group) return;
+    group.rules.unshift(...rules);
+    markDirty();
   }}
 />
 
@@ -525,27 +618,40 @@
     for (let i = imported.length - 1; i >= 0; i--) {
       const group = imported[i];
       data.unshift(group);
-      showed_limit.unshift(
-        group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
-      );
       open_state.current[group.id] = true;
     }
+    markGroupOrderChanged();
+    markDirty();
     toast.success(`${t("Config imported")}: ${imported.length}`);
   }}
 />
 
+<ImportGroupDialog
+  open={importGroupModal}
+  on:close={closeImportGroupModal}
+  on:import={(e) => {
+    const group = e.detail.group;
+    data.unshift(group);
+    open_state.current[group.id] = true;
+    markGroupOrderChanged();
+    markDirty();
+    if (searchActive) {
+      forceVisibleGroup(group.id);
+    }
+  }}
+/>
+
 <style>
-  .group-wrapper {
+  .group-list {
     position: relative;
-    margin: 1rem 0;
+    min-height: 1px;
+    padding: 1rem 0;
   }
 
-  .group-wrapper:first-of-type {
-    margin-top: 1rem;
-  }
-
-  .group-wrapper:last-of-type {
-    margin-bottom: 1rem;
+  .group-wrapper {
+    position: absolute;
+    left: 0;
+    right: 0;
   }
 
   .group-drop-slot {
@@ -580,52 +686,29 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.75rem;
-    padding: 0.75rem 0.25rem;
-    margin-bottom: 0.75rem;
+    padding: 0.3rem 0rem;
+    margin-bottom: 1.5rem;
     position: sticky;
     top: 0;
     z-index: 5;
     background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
   }
 
-  .group-controls-search {
-    flex: 1 1 58px;
+  @media (max-width: 570px) {
+    .group-controls {
+      flex-wrap: wrap;
+    }
+    .group-controls-actions {
+      justify-content: flex-start;
+    }
   }
 
-  .group-search-input {
-    width: 100%;
-    padding: 0.7rem 0.85rem;
-    border-radius: 0.5rem;
-    border: 1px solid var(--bg-light-extra);
-    background-color: var(--bg-light);
-    color: var(--text);
-    font: inherit;
-    font-size: 1rem;
-    line-height: 1.3;
-    min-height: 2.7rem;
-    transition:
-      border-color 0.12s ease,
-      box-shadow 0.18s ease,
-      background-color 0.12s ease,
-      color 0.12s ease;
-  }
-
-  .group-search-input:hover {
-    background-color: color-mix(in oklab, var(--bg-light) 92%, var(--bg-light-extra) 8%);
-    border-color: color-mix(in oklab, var(--bg-light-extra) 90%, transparent);
-    color: var(--text);
-  }
-
-  .group-search-input:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent),
-      0 6px 18px -14px color-mix(in oklab, var(--accent) 35%, transparent);
-    background-color: var(--bg-light);
-    color: var(--text);
+  @media (max-width: 700px) {
+    .group-controls {
+      margin-bottom: 1rem;
+    }
   }
 
   .group-controls-actions {
