@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
-  import { InfiniteLoader, LoaderState } from "svelte-infinite";
   import { createEventDispatcher } from "svelte";
 
   import { type Group, type Rule } from "../../../types";
@@ -14,6 +13,7 @@
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
+  import { createFixedVirtualList, useScrollContext } from "../../../lib/virtualization.svelte";
   import {
     Delete,
     Add,
@@ -29,7 +29,6 @@
     group: Group;
     group_index: number;
     total_groups: number;
-    showed_limit: number;
     open: boolean;
     deleteGroup: (index: number) => void;
     addRuleToGroup: (group_index: number, rule: Rule, focus?: boolean) => void;
@@ -40,7 +39,6 @@
       to_group_index: number,
       to_rule_index: number,
     ) => void;
-    loadMore: (group_index: number) => Promise<void>;
     searchActive?: boolean;
     visibleRuleIndices?: number[] | null;
     [key: string]: any;
@@ -50,22 +48,21 @@
     group = $bindable(),
     group_index,
     total_groups = $bindable(),
-    showed_limit = $bindable(),
     open = $bindable(),
     deleteGroup,
     addRuleToGroup,
     deleteRuleFromGroup,
     changeRuleIndex,
-    loadMore,
     searchActive = false,
     visibleRuleIndices = null,
     ...rest
   }: Props = $props();
 
   const dispatch = createEventDispatcher();
-
-  const loaderState = new LoaderState();
-  const triggerLoad = () => loadMore(group_index);
+  const scroll = useScrollContext();
+  const getScrollTop = () => scroll?.scrollTop ?? 0;
+  const getViewportHeight = () => scroll?.viewportHeight ?? 0;
+  const getScrollContainerTop = () => scroll?.scrollContainerTop ?? 0;
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
@@ -127,6 +124,20 @@
     displayedRulesCount = Array.isArray(filteredRuleIndices)
       ? filteredRuleIndices.length
       : group.rules.length;
+  });
+
+  const RULE_OVERSCAN = 6 as const;
+  const RULE_ESTIMATED_HEIGHT = 36;
+
+  const rulesVirtual = createFixedVirtualList({
+    total: () => displayedRulesCount,
+    enabled: () => open,
+    overscan: RULE_OVERSCAN,
+    estimateSize: RULE_ESTIMATED_HEIGHT,
+    rowSelector: ".rule",
+    scrollTop: getScrollTop,
+    scrollContainerTop: getScrollContainerTop,
+    viewportHeight: getViewportHeight,
   });
 </script>
 
@@ -272,24 +283,27 @@
             <div class="group-rules-header-column">{t("Enabled")}</div>
           </div>
         {/if}
-        <div class="group-rules">
-          {#if Array.isArray(filteredRuleIndices)}
-            {#each filteredRuleIndices as rule_index, visible_index (group.rules[rule_index].id)}
-              <RuleRow
-                key={group.rules[rule_index].id}
-                bind:rule={group.rules[rule_index]}
-                {rule_index}
-                {group_index}
-                rule_id={group.rules[rule_index].id}
-                group_id={group.id}
-                onChangeIndex={changeRuleIndex}
-                onDelete={deleteRuleFromGroup}
-                style={visible_index % 2 ? "" : "background-color: var(--bg-light)"}
-              />
-            {/each}
-          {:else}
-            <InfiniteLoader {loaderState} {triggerLoad} loopDetectionTimeout={10}>
-              {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
+        <div class="group-rules" use:rulesVirtual.list>
+          {#if displayedRulesCount > 0}
+            <div class="rules-spacer" style={`height: ${rulesVirtual.topSpacer}px`}></div>
+            {#if Array.isArray(filteredRuleIndices)}
+              {#each filteredRuleIndices.slice(rulesVirtual.start, rulesVirtual.end) as rule_index, localIndex (group.rules[rule_index].id)}
+                {@const visible_index = rulesVirtual.start + localIndex}
+                <RuleRow
+                  key={group.rules[rule_index].id}
+                  bind:rule={group.rules[rule_index]}
+                  {rule_index}
+                  {group_index}
+                  rule_id={group.rules[rule_index].id}
+                  group_id={group.id}
+                  onChangeIndex={changeRuleIndex}
+                  onDelete={deleteRuleFromGroup}
+                  style={visible_index % 2 ? "" : "background-color: var(--bg-light)"}
+                />
+              {/each}
+            {:else}
+              {#each group.rules.slice(rulesVirtual.start, rulesVirtual.end) as rule, localIndex (rule.id)}
+                {@const rule_index = rulesVirtual.start + localIndex}
                 <RuleRow
                   key={rule.id}
                   bind:rule={group.rules[rule_index]}
@@ -302,7 +316,8 @@
                   style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
                 />
               {/each}
-            </InfiniteLoader>
+            {/if}
+            <div class="rules-spacer" style={`height: ${rulesVirtual.bottomSpacer}px`}></div>
           {/if}
         </div>
       </div>
@@ -441,6 +456,11 @@
     }
   }
 
+  .rules-spacer {
+    width: 100%;
+    pointer-events: none;
+  }
+
   :global {
     [data-collapsible-trigger] {
       & {
@@ -460,9 +480,6 @@
         color: var(--text);
         border: 1px solid var(--bg-light-extra);
       }
-    }
-    .infinite-intersection-target {
-      padding-block: 0 !important;
     }
   }
 

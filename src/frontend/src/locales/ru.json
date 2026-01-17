@@ -1,6 +1,7 @@
 {
   "Save Changes": "Сохранить изменения",
   "Export Config": "Экспортировать конфиг",
+  "Empty config exported": "Экспортирован пустой конфиг",
   "Import Config": "Импортировать конфиг",
   "Add Group": "Добавить группу",
   "Delete this group?": "Удалить эту группу?",
