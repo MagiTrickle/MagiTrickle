@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
-  import { createEventDispatcher, onDestroy } from "svelte";
+  import { createEventDispatcher } from "svelte";
 
   import { type Group, type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
@@ -13,6 +13,7 @@
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
+  import { createFixedVirtualList, useScrollContext } from "../../../lib/virtualization.svelte";
   import {
     Delete,
     Add,
@@ -40,9 +41,6 @@
     ) => void;
     searchActive?: boolean;
     visibleRuleIndices?: number[] | null;
-    scrollTop?: number;
-    viewportHeight?: number;
-    scrollContainerTop?: number;
     [key: string]: any;
   };
 
@@ -57,13 +55,14 @@
     changeRuleIndex,
     searchActive = false,
     visibleRuleIndices = null,
-    scrollTop = 0,
-    viewportHeight = 0,
-    scrollContainerTop = 0,
     ...rest
   }: Props = $props();
 
   const dispatch = createEventDispatcher();
+  const scroll = useScrollContext();
+  const getScrollTop = () => scroll?.scrollTop ?? 0;
+  const getViewportHeight = () => scroll?.viewportHeight ?? 0;
+  const getScrollContainerTop = () => scroll?.scrollContainerTop ?? 0;
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
@@ -130,88 +129,15 @@
   const RULE_OVERSCAN = 6 as const;
   const RULE_ESTIMATED_HEIGHT = 36;
 
-  const clamp = (value: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, value));
-
-  let rulesEl: HTMLDivElement | null = null;
-  let ruleRowHeight = $state<number>(RULE_ESTIMATED_HEIGHT);
-  let renderStart = $state(0);
-  let renderEnd = $state(0);
-  let ruleMeasureRaf = 0;
-
-  function updateRuleWindow() {
-    if (!open || !rulesEl || displayedRulesCount === 0) {
-      renderStart = 0;
-      renderEnd = 0;
-      return;
-    }
-
-    const rect = rulesEl.getBoundingClientRect();
-    const absoluteTop = rect.top - scrollContainerTop + scrollTop;
-    const viewTop = scrollTop - absoluteTop;
-    const effectiveViewport =
-      viewportHeight || (typeof window !== "undefined" ? window.innerHeight : 0);
-    const viewBottom = viewTop + effectiveViewport;
-
-    const start = Math.floor(viewTop / ruleRowHeight) - RULE_OVERSCAN;
-    const end = Math.ceil(viewBottom / ruleRowHeight) + RULE_OVERSCAN;
-    renderStart = clamp(start, 0, displayedRulesCount);
-    renderEnd = clamp(end, renderStart, displayedRulesCount);
-  }
-
-  function measureRuleRow() {
-    if (!rulesEl) return;
-    const row = rulesEl.querySelector<HTMLElement>(".rule");
-    if (!row) return;
-    const height = Math.ceil(row.getBoundingClientRect().height);
-    if (height > 0 && height !== ruleRowHeight) {
-      ruleRowHeight = height;
-    }
-  }
-
-  function scheduleRuleMeasure() {
-    if (ruleMeasureRaf) return;
-    if (typeof window === "undefined") {
-      measureRuleRow();
-      return;
-    }
-    ruleMeasureRaf = window.requestAnimationFrame(() => {
-      ruleMeasureRaf = 0;
-      measureRuleRow();
-    });
-  }
-
-  $effect(() => {
-    scrollTop;
-    viewportHeight;
-    scrollContainerTop;
-    ruleRowHeight;
-    displayedRulesCount;
-    open;
-    rulesEl;
-    updateRuleWindow();
-  });
-
-  $effect(() => {
-    renderStart;
-    renderEnd;
-    displayedRulesCount;
-    open;
-    client_width;
-    rulesEl;
-    scheduleRuleMeasure();
-  });
-
-  let rulesTopSpacer = $derived(Math.max(0, renderStart * ruleRowHeight));
-  let rulesBottomSpacer = $derived(
-    Math.max(0, (displayedRulesCount - renderEnd) * ruleRowHeight),
-  );
-
-  onDestroy(() => {
-    if (typeof window !== "undefined" && ruleMeasureRaf) {
-      window.cancelAnimationFrame(ruleMeasureRaf);
-      ruleMeasureRaf = 0;
-    }
+  const rulesVirtual = createFixedVirtualList({
+    total: () => displayedRulesCount,
+    enabled: () => open,
+    overscan: RULE_OVERSCAN,
+    estimateSize: RULE_ESTIMATED_HEIGHT,
+    rowSelector: ".rule",
+    scrollTop: getScrollTop,
+    scrollContainerTop: getScrollContainerTop,
+    viewportHeight: getViewportHeight,
   });
 </script>
 
@@ -357,12 +283,12 @@
             <div class="group-rules-header-column">{t("Enabled")}</div>
           </div>
         {/if}
-        <div class="group-rules" bind:this={rulesEl}>
+        <div class="group-rules" use:rulesVirtual.list>
           {#if displayedRulesCount > 0}
-            <div class="rules-spacer" style={`height: ${rulesTopSpacer}px`}></div>
+            <div class="rules-spacer" style={`height: ${rulesVirtual.topSpacer}px`}></div>
             {#if Array.isArray(filteredRuleIndices)}
-              {#each filteredRuleIndices.slice(renderStart, renderEnd) as rule_index, localIndex (group.rules[rule_index].id)}
-                {@const visible_index = renderStart + localIndex}
+              {#each filteredRuleIndices.slice(rulesVirtual.start, rulesVirtual.end) as rule_index, localIndex (group.rules[rule_index].id)}
+                {@const visible_index = rulesVirtual.start + localIndex}
                 <RuleRow
                   key={group.rules[rule_index].id}
                   bind:rule={group.rules[rule_index]}
@@ -376,8 +302,8 @@
                 />
               {/each}
             {:else}
-              {#each group.rules.slice(renderStart, renderEnd) as rule, localIndex (rule.id)}
-                {@const rule_index = renderStart + localIndex}
+              {#each group.rules.slice(rulesVirtual.start, rulesVirtual.end) as rule, localIndex (rule.id)}
+                {@const rule_index = rulesVirtual.start + localIndex}
                 <RuleRow
                   key={rule.id}
                   bind:rule={group.rules[rule_index]}
@@ -391,7 +317,7 @@
                 />
               {/each}
             {/if}
-            <div class="rules-spacer" style={`height: ${rulesBottomSpacer}px`}></div>
+            <div class="rules-spacer" style={`height: ${rulesVirtual.bottomSpacer}px`}></div>
           {/if}
         </div>
       </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy } from "svelte";
 
   import { t } from "../../../data/locale.svelte";
   import { Search } from "../../../components/ui/icons";
@@ -22,6 +22,7 @@
   type Props = {
     value?: string;
     groups: Group[];
+    dataRevision?: number;
     visibleGroups?: VisibleGroup[];
     searchActive?: boolean;
     searchPending?: boolean;
@@ -32,6 +33,7 @@
   let {
     value = $bindable(""),
     groups = [],
+    dataRevision = 0,
     visibleGroups = $bindable([]),
     searchActive = $bindable(false),
     searchPending = $bindable(false),
@@ -70,7 +72,6 @@
   let lastSearchQuery = "";
   let lastVisibleGroups: VisibleGroup[] = [];
 
-  let dataRevision = $state(0);
   let normalizedSearch = $derived(value.trim().toLowerCase());
 
   let isFocused = $state(false);
@@ -80,11 +81,6 @@
 
   $effect(() => {
     searchActive = Boolean(normalizedSearch);
-  });
-
-  $effect(() => {
-    $state.snapshot(groups);
-    dataRevision = untrack(() => dataRevision) + 1;
   });
 
   function handleContainerClick() {
