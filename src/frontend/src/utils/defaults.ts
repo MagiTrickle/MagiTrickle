@@ -1,12 +1,12 @@
 import type { Group, Rule } from "../types";
-import { INTERFACES } from "../data/interfaces.svelte";
+import { interfaces } from "../data/interfaces.svelte";
 import { randomDarkishColor } from "./colors";
 
 export function defaultGroup(): Group {
   return {
     enable: true,
     id: randomId(),
-    interface: INTERFACES.at(0) ?? "",
+    interface: interfaces.list.at(0) ?? "",
     name: "",
     color: randomDarkishColor(),
     rules: [],

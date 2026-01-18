@@ -19,7 +19,7 @@ function randomLogLine() {
   }
   function randomIP(): string {
     return `${Math.round(Math.random() * 255)}.${Math.round(Math.random() * 255)}.${Math.round(
-      Math.random() * 255
+      Math.random() * 255,
     )}.${Math.round(Math.random() * 255)}`;
   }
 
@@ -32,17 +32,43 @@ function randomLogLine() {
     message: ["error", "fatal", "panic"].includes(level)
       ? "error message"
       : `group: ${randomIndex(DATA.groups).name}, ip: ${randomIP()} > int: ${randomIndex(
-          INTERFACES.interfaces.map((item) => item.id)
+          INTERFACES.interfaces.map((item) => item.id),
         )}`,
   };
 }
 
 let sse_id = 0;
 
+const PORT = 6969;
+const STATIC_TOKEN = "magitrickle_mock_token_2026";
+
 const app = new Hono();
 
 app.use(logger());
 app.use(cors());
+
+// Auth Middleware
+app.use(`${API_BASE}/*`, async (c, next) => {
+  if (c.req.path === `${API_BASE}/auth`) {
+    await next();
+    return;
+  }
+
+  const authHeader = c.req.header("Authorization");
+  if (authHeader !== `Bearer ${STATIC_TOKEN}`) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  await next();
+});
+
+app.post(`${API_BASE}/auth`, async (c) => {
+  const body = await c.req.json();
+  if (body.login === "root" && body.password === "keenetic") {
+    return c.json({ token: STATIC_TOKEN });
+  }
+  return c.json({ error: "Invalid credentials" }, 403);
+});
 
 app.get(`${API_BASE}/groups`, (c) => c.json(DATA));
 app.put(`${API_BASE}/groups`, async (c) => {
@@ -68,9 +94,7 @@ app.get(`${API_BASE}/logs`, async (c) => {
 
 app.get("*", serveStatic({ root: "./dist" }));
 
-const PORT = 6969;
-
 Deno.serve(
   { port: PORT, onListen: () => console.log(`running mock server on port ${PORT}...`) },
-  app.fetch
+  app.fetch,
 );
