@@ -570,7 +570,7 @@
     group.rules.unshift(...rules);
     const currentLimit = showed_limit[group_index] ?? 0;
     if (rules.length > 500) {
-      showed_limit[group_index] = Math.max(currentLimit, INITIAL_RULES_LIMIT);
+      showed_limit[group_index] = Math.min(INITIAL_RULES_LIMIT, group.rules.length);
     } else {
       showed_limit[group_index] = Math.min(currentLimit + rules.length, group.rules.length);
     }
