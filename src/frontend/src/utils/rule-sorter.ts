@@ -1,5 +1,8 @@
 import type { Rule } from "../types";
 
+export type SortField = "pattern" | "name";
+export type SortDirection = "asc" | "desc";
+
 const TYPE_PRIORITY: Record<string, number> = {
   subnet: 10, // IPv4 subnets
   subnet6: 11, // IPv6 subnets
@@ -34,35 +37,51 @@ function getReverseDomain(domain: string): string {
   return domain.toLowerCase().split(".").reverse().join(".");
 }
 
-export function sortRules(rules: Rule[]): Rule[] {
-  return [...rules].sort((a, b) => {
-    const priorityA = TYPE_PRIORITY[a.type] ?? 99;
-    const priorityB = TYPE_PRIORITY[b.type] ?? 99;
+export function sortRules(
+  rules: Rule[],
+  field: SortField = "pattern",
+  direction: SortDirection = "asc",
+): Rule[] {
+  const sorted = [...rules];
 
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
+  if (field === "name") {
+    sorted.sort((a, b) => a.name.localeCompare(b.name));
+  } else {
+    sorted.sort((a, b) => {
+      const priorityA = TYPE_PRIORITY[a.type] ?? 99;
+      const priorityB = TYPE_PRIORITY[b.type] ?? 99;
 
-    if (a.type === "subnet") {
-      const cidrA = parseCidr(a.rule);
-      const cidrB = parseCidr(b.rule);
-
-      if (cidrA.ip !== cidrB.ip) {
-        return cidrA.ip - cidrB.ip;
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
       }
-      return cidrB.mask - cidrA.mask;
-    }
 
-    if (["domain", "wildcard", "namespace"].includes(a.type)) {
-      const revA = getReverseDomain(a.rule);
-      const revB = getReverseDomain(b.rule);
+      if (a.type === "subnet") {
+        const cidrA = parseCidr(a.rule);
+        const cidrB = parseCidr(b.rule);
 
-      const cmp = revA.localeCompare(revB);
-      if (cmp !== 0) return cmp;
+        if (cidrA.ip !== cidrB.ip) {
+          return cidrA.ip - cidrB.ip;
+        }
+        return cidrB.mask - cidrA.mask;
+      }
 
-      return a.type.localeCompare(b.type);
-    }
+      if (["domain", "wildcard", "namespace"].includes(a.type)) {
+        const revA = getReverseDomain(a.rule);
+        const revB = getReverseDomain(b.rule);
 
-    return a.rule.localeCompare(b.rule);
-  });
+        const cmp = revA.localeCompare(revB);
+        if (cmp !== 0) return cmp;
+
+        return a.type.localeCompare(b.type);
+      }
+
+      return a.rule.localeCompare(b.rule);
+    });
+  }
+
+  if (direction === "desc") {
+    sorted.reverse();
+  }
+
+  return sorted;
 }

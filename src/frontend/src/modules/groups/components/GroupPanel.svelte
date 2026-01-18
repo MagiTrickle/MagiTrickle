@@ -338,6 +338,8 @@
             </div>
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="group-rules-header-column clickable" onclick={() => handleSort("name")}>
               {t("Name")}
               <div class="sort-icon">
@@ -626,5 +628,20 @@
         display: none;
       }
     }
+  }
+  .clickable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.12s ease;
+  }
+  .clickable:hover {
+    color: var(--text);
+  }
+
+  .sort-icon {
+    margin-left: 0.4rem;
+    display: flex;
+    align-items: center;
+    color: var(--text-2);
   }
 </style>
