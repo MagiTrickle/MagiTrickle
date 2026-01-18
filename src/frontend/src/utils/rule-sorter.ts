@@ -38,9 +38,14 @@ type DomainSortKey = {
   tld: string;
   sub: string;
   raw: string;
+  isWildcard: boolean;
 };
 
+const SECOND_LEVEL_TLD_HINTS = new Set(["co", "com", "net", "org", "gov", "edu", "ac"]);
+
 function buildDomainSortKey(rule: string): DomainSortKey {
+  const trimmed = rule.trim();
+  const hasWildcard = /^[*?]/.test(trimmed);
   const cleaned = rule
     .trim()
     .replace(/^[*?]+\.?/, "")
@@ -54,18 +59,26 @@ function buildDomainSortKey(rule: string): DomainSortKey {
       tld: "",
       sub: "",
       raw: cleaned,
+      isWildcard: hasWildcard,
     };
   }
 
-  const tld = parts[parts.length - 1];
-  const base = parts[parts.length - 2];
-  const sub = parts.slice(0, -2).join(".");
+  const tldPartsCount =
+    parts.length >= 3 &&
+    SECOND_LEVEL_TLD_HINTS.has(parts[parts.length - 2]) &&
+    parts[parts.length - 1].length === 2
+      ? 2
+      : 1;
+  const tld = parts.slice(-tldPartsCount).join(".");
+  const base = parts[parts.length - tldPartsCount - 1];
+  const sub = parts.slice(0, -tldPartsCount - 1).join(".");
 
   return {
     base,
     tld,
     sub,
     raw: cleaned,
+    isWildcard: hasWildcard,
   };
 }
 
@@ -80,11 +93,17 @@ export function sortRules(
     sorted.sort((a, b) => a.name.localeCompare(b.name));
   } else {
     sorted.sort((a, b) => {
-      const priorityA = TYPE_PRIORITY[a.type] ?? 99;
-      const priorityB = TYPE_PRIORITY[b.type] ?? 99;
+      const domainLikeTypes = ["domain", "wildcard", "namespace"];
+      const isDomainLikeA = domainLikeTypes.includes(a.type);
+      const isDomainLikeB = domainLikeTypes.includes(b.type);
 
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
+      if (!isDomainLikeA || !isDomainLikeB) {
+        const priorityA = TYPE_PRIORITY[a.type] ?? 99;
+        const priorityB = TYPE_PRIORITY[b.type] ?? 99;
+
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
       }
 
       if (a.type === "subnet") {
@@ -97,7 +116,7 @@ export function sortRules(
         return cidrB.mask - cidrA.mask;
       }
 
-      if (["domain", "wildcard", "namespace"].includes(a.type)) {
+      if (isDomainLikeA && isDomainLikeB) {
         const keyA = buildDomainSortKey(a.rule);
         const keyB = buildDomainSortKey(b.rule);
 
@@ -110,12 +129,19 @@ export function sortRules(
         if (keyA.sub !== keyB.sub) {
           if (!keyA.sub) return -1;
           if (!keyB.sub) return 1;
+          if (keyA.isWildcard !== keyB.isWildcard) {
+            return keyA.isWildcard ? -1 : 1;
+          }
 
           const depthA = keyA.sub.split(".").length;
           const depthB = keyB.sub.split(".").length;
           if (depthA !== depthB) return depthA - depthB;
 
           return keyA.sub.localeCompare(keyB.sub);
+        }
+
+        if (keyA.isWildcard !== keyB.isWildcard) {
+          return keyA.isWildcard ? 1 : -1;
         }
 
         const rawCmp = keyA.raw.localeCompare(keyB.raw);
