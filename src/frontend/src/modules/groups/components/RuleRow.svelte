@@ -60,13 +60,13 @@
     drop_position?: "before" | "after";
   };
 
-  let dropData = $state<DnDTransferData>({
-    rule_id: "",
-    group_id: "",
-    rule_index: 0,
-    group_index: 0,
+  const dropData: DnDTransferData = {
+    rule_id,
+    group_id,
+    rule_index,
+    group_index,
     drop_position: "before",
-  });
+  };
 
   let dropEdge = $state<"before" | "after">("before");
 
