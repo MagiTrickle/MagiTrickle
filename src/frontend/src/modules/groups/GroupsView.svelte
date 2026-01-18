@@ -130,6 +130,20 @@
 
   let noVisibleGroups = $derived(searchActive && !searchPending && visibleGroups.length === 0);
 
+  let visibleRuleIndicesByGroupIndex = $derived(
+    (() => {
+      const map = new Map<number, number[] | null>();
+      for (const visible of visibleGroups) {
+        map.set(visible.group_index, visible.ruleIndices);
+      }
+      return map;
+    })(),
+  );
+
+  let firstVisibleGroupIndex = $derived(
+    searchActive ? (visibleGroups.length ? visibleGroups[0].group_index : -1) : 0,
+  );
+
   function saveChanges() {
     if (!tracker.isDirty) return;
     overlay.show(t("saving changes..."));
@@ -510,51 +524,55 @@
   {/if}
 
   <div class="group-list" oninput={markDataRevision} onchange={markDataRevision}>
-    {#each visibleGroups as visible, index (data[visible.group_index]?.id)}
-      {#if data[visible.group_index]}
-        <div class="group-wrapper">
-          {#if index === 0}
-            <div
-              class="group-drop-slot group-drop-slot--top"
-              aria-hidden="true"
-              use:droppable={{
-                data: { group_index: visible.group_index, insert: "before" } as GroupDropSlotData,
-                scope: "group",
-                canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
-                  source.group_index !== target.group_index,
-                dropEffect: "move",
-                onDrop: handleGroupSlotDrop,
-              }}
-            ></div>
-          {/if}
-          <GroupPanel
-            bind:group={data[visible.group_index]}
-            group_index={visible.group_index}
-            bind:total_groups={data.length}
-            bind:showed_limit={showed_limit[visible.group_index]}
-            bind:open={open_state.current[data[visible.group_index].id]}
-            {deleteGroup}
-            {addRuleToGroup}
-            {deleteRuleFromGroup}
-            {changeRuleIndex}
-            {loadMore}
-            {searchActive}
-            visibleRuleIndices={visible.ruleIndices}
-            on:importRules={() => openImportRulesModal(visible.group_index)}
-          />
+    {#each data as group, group_index (group.id)}
+      {@const isVisible = !searchActive || visibleRuleIndicesByGroupIndex.has(group_index)}
+      {@const visibleRuleIndices =
+        searchActive ? (visibleRuleIndicesByGroupIndex.get(group_index) ?? null) : null}
+
+      <div class="group-wrapper" class:hidden={!isVisible}>
+        {#if group_index === firstVisibleGroupIndex}
           <div
-            class="group-drop-slot group-drop-slot--bottom"
+            class="group-drop-slot group-drop-slot--top"
             aria-hidden="true"
             use:droppable={{
-              data: { group_index: visible.group_index, insert: "after" } as GroupDropSlotData,
+              data: { group_index, insert: "before" } as GroupDropSlotData,
               scope: "group",
-              canDrop: () => true,
+              canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
+                source.group_index !== target.group_index,
               dropEffect: "move",
               onDrop: handleGroupSlotDrop,
             }}
           ></div>
-        </div>
-      {/if}
+        {/if}
+
+        <GroupPanel
+          bind:group={data[group_index]}
+          {group_index}
+          bind:total_groups={data.length}
+          bind:showed_limit={showed_limit[group_index]}
+          bind:open={open_state.current[group.id]}
+          {deleteGroup}
+          {addRuleToGroup}
+          {deleteRuleFromGroup}
+          {changeRuleIndex}
+          {loadMore}
+          {searchActive}
+          {visibleRuleIndices}
+          on:importRules={() => openImportRulesModal(group_index)}
+        />
+
+        <div
+          class="group-drop-slot group-drop-slot--bottom"
+          aria-hidden="true"
+          use:droppable={{
+            data: { group_index, insert: "after" } as GroupDropSlotData,
+            scope: "group",
+            canDrop: () => true,
+            dropEffect: "move",
+            onDrop: handleGroupSlotDrop,
+          }}
+        ></div>
+      </div>
     {/each}
   </div>
 </div>
@@ -608,6 +626,10 @@
   .group-wrapper {
     position: relative;
     margin: 1rem 0;
+  }
+
+  .group-wrapper.hidden {
+    display: none;
   }
 
   .group-wrapper:first-of-type {
