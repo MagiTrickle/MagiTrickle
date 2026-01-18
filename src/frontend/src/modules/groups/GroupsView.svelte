@@ -7,6 +7,7 @@
   import { fetcher } from "../../utils/fetcher";
   import { overlay, toast } from "../../utils/events";
   import { persistedState } from "../../utils/persisted-state.svelte";
+  import { ChangeTracker } from "../../utils/change-tracker.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
   import { Add, Import, Export, Save } from "../../components/ui/icons";
@@ -17,18 +18,17 @@
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
   import Search from "./components/Search.svelte";
   import { smoothReflow } from "../../lib/smooth-reflow.svelte";
-  import { createGroupsVirtualList } from "../../lib/virtualization.svelte";
 
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+  const INITIAL_RULES_LIMIT = 30 as const;
+  const INCREMENT_RULES_LIMIT = 40 as const;
 
-  let data: Group[] = $state([]);
-  let counter = $state(0);
+  let tracker = $state(new ChangeTracker<Group[]>([]));
+  let data = $derived(tracker.data);
+  let showed_limit: number[] = $state([]);
   let dataRevision = $state(0);
-  let isInitialized = false;
-  let dirtyRaf = 0;
-  let validityTimeout: number | null = null;
   let valid_rules = $state(true);
-  let canSave = $derived(counter > 0 && valid_rules);
+  let canSave = $derived(tracker.isDirty && valid_rules);
   let open_state = persistedState<Record<string, boolean>>("group_open_state", {});
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
@@ -95,11 +95,6 @@
   let searchActive = $state(false);
   let searchPending = $state(false);
 
-  const groupsVirtual = createGroupsVirtualList<VisibleGroup>({
-    items: () => visibleGroups,
-    getKey: (visible, index) => data[visible.group_index]?.id ?? `group-${index}`,
-  });
-
   function handleSaveShortcut(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
       if (canSave) {
@@ -136,13 +131,15 @@
   let noVisibleGroups = $derived(searchActive && !searchPending && visibleGroups.length === 0);
 
   function saveChanges() {
-    if (counter === 0) return;
+    if (!tracker.isDirty) return;
     overlay.show(t("saving changes..."));
 
+    const rawData = $state.snapshot(data);
+
     fetcher
-      .put("/groups?save=true", { groups: data })
+      .put("/groups?save=true", { groups: rawData })
       .then(() => {
-        counter = 0;
+        tracker.reset(rawData);
         overlay.hide();
         toast.success(t("Saved"));
       })
@@ -155,38 +152,12 @@
     valid_rules = !document.querySelector(".rule input.invalid");
   }
 
-  function scheduleValidityCheck() {
-    if (typeof window === "undefined") return;
-    if (validityTimeout !== null) {
-      window.clearTimeout(validityTimeout);
-    }
-    validityTimeout = window.setTimeout(() => {
-      validityTimeout = null;
-      checkRulesValidityState();
-    }, 40);
-  }
-
-  function bumpDirty() {
-    if (counter <= 0) {
-      counter = 1;
-    } else {
-      counter += 1;
-    }
+  function bumpDataRevision() {
     dataRevision += 1;
-    scheduleValidityCheck();
   }
 
-  function markDirty() {
-    if (!isInitialized) return;
-    if (dirtyRaf) return;
-    if (typeof window === "undefined") {
-      bumpDirty();
-      return;
-    }
-    dirtyRaf = window.requestAnimationFrame(() => {
-      dirtyRaf = 0;
-      bumpDirty();
-    });
+  function markDataRevision() {
+    bumpDataRevision();
   }
 
   function initOpenState() {
@@ -206,11 +177,14 @@
   }
 
   onMount(async () => {
-    data = (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
+    const fetched =
+      (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
+    tracker = new ChangeTracker(fetched);
+    showed_limit = fetched.map((group) =>
+      group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
+    );
     initOpenState();
-    counter = 0;
     dataRevision = 0;
-    isInitialized = true;
     setTimeout(checkRulesValidityState, 10);
     setTimeout(cleanOrphanedOpenState, 5000);
     if (typeof window !== "undefined") {
@@ -230,24 +204,25 @@
   });
 
   onDestroy(() => {
-    if (typeof window !== "undefined" && dirtyRaf) {
-      window.cancelAnimationFrame(dirtyRaf);
-      dirtyRaf = 0;
-    }
-    if (typeof window !== "undefined" && validityTimeout !== null) {
-      window.clearTimeout(validityTimeout);
-      validityTimeout = null;
-    }
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", handleSaveShortcut);
     }
+  });
+
+  $effect(() => {
+    $state.snapshot(data);
+    setTimeout(checkRulesValidityState, 10);
   });
 
   async function addRuleToGroup(group_index: number, rule: Rule, focus = false) {
     const group = data[group_index];
     if (!group) return;
     group.rules.unshift(rule);
-    markDirty();
+    showed_limit[group_index] = (showed_limit[group_index] ?? 0) + 1;
+    markDataRevision();
+    if (!rule.rule || !rule.name) {
+      valid_rules = false;
+    }
     if (searchActive) {
       forceVisibleRule(group.id, rule.id);
     }
@@ -258,6 +233,7 @@
       requestAnimationFrame(() => {
         el.querySelector<HTMLInputElement>("div.name input")?.focus();
         el.querySelector<HTMLInputElement>("div.pattern input")?.classList.add("invalid");
+        checkRulesValidityState();
       });
     }
   }
@@ -270,7 +246,10 @@
     if (removed) {
       removeForcedRule(group.id, removed.id);
     }
-    markDirty();
+    if (showed_limit[group_index] !== undefined) {
+      showed_limit[group_index] = Math.min(showed_limit[group_index], group.rules.length);
+    }
+    markDataRevision();
   }
 
   function changeRuleIndex(
@@ -288,14 +267,14 @@
 
     const isSameGroup = from_group_index === to_group_index;
 
-    const sourceRulesNext = [...sourceGroup.rules];
-    if (!sourceRulesNext.length) return;
+    const sourceRules = sourceGroup.rules;
+    const targetRules = targetGroup.rules;
 
-    const fromIndex = clamp(from_rule_index, 0, sourceRulesNext.length - 1);
-    const [movedRule] = sourceRulesNext.splice(fromIndex, 1);
+    if (!sourceRules.length) return;
+
+    const fromIndex = clamp(from_rule_index, 0, sourceRules.length - 1);
+    const [movedRule] = sourceRules.splice(fromIndex, 1);
     if (!movedRule) return;
-
-    const targetRulesNext = isSameGroup ? sourceRulesNext : [...targetGroup.rules];
 
     if (!isSameGroup) {
       moveForcedRule(sourceGroup.id, targetGroup.id, movedRule.id);
@@ -303,39 +282,42 @@
 
     let anchorIndex =
       to_rule_id && to_rule_id.length > 0
-        ? targetRulesNext.findIndex((r) => r.id === to_rule_id)
+        ? targetRules.findIndex((r) => r.id === to_rule_id)
         : -1;
 
-    if (anchorIndex === -1 && targetRulesNext.length > 0) {
-      anchorIndex = clamp(to_rule_index, 0, targetRulesNext.length - 1);
+    if (anchorIndex === -1 && targetRules.length > 0) {
+      anchorIndex = clamp(to_rule_index, 0, targetRules.length - 1);
+      if (isSameGroup && fromIndex < anchorIndex) {
+        anchorIndex -= 1;
+      }
     }
 
     let insertIndex: number;
     if (anchorIndex === -1) {
-      insertIndex = insert === "after" ? targetRulesNext.length : 0;
+      insertIndex = insert === "after" ? targetRules.length : 0;
     } else {
       insertIndex = insert === "after" ? anchorIndex + 1 : anchorIndex;
     }
 
-    if (isSameGroup && insertIndex > fromIndex) {
-      insertIndex -= 1;
+    insertIndex = clamp(insertIndex, 0, targetRules.length);
+    targetRules.splice(insertIndex, 0, movedRule);
+
+    const nextShowedLimit = [...showed_limit];
+    if (!isSameGroup) {
+      const fromLimit = nextShowedLimit[from_group_index] ?? sourceRules.length;
+      nextShowedLimit[from_group_index] = Math.min(fromLimit, sourceRules.length);
+    }
+    const targetRulesCount = targetRules.length;
+    const targetLimit = nextShowedLimit[to_group_index] ?? targetRulesCount;
+    const ensureVisibleCount = isSameGroup
+      ? Math.min(insertIndex + 1, targetRulesCount)
+      : Math.min(targetRulesCount, Math.max(insertIndex + 1, targetLimit + 1));
+    if (targetLimit < ensureVisibleCount) {
+      nextShowedLimit[to_group_index] = ensureVisibleCount;
     }
 
-    insertIndex = clamp(insertIndex, 0, targetRulesNext.length);
-
-    targetRulesNext.splice(insertIndex, 0, movedRule);
-
-    const nextData = [...data];
-
-    if (isSameGroup) {
-      nextData[from_group_index] = { ...sourceGroup, rules: targetRulesNext };
-    } else {
-      nextData[from_group_index] = { ...sourceGroup, rules: sourceRulesNext };
-      nextData[to_group_index] = { ...targetGroup, rules: targetRulesNext };
-    }
-
-    data = nextData;
-    markDirty();
+    showed_limit = nextShowedLimit;
+    markDataRevision();
   }
 
   function changeGroupIndex(
@@ -349,8 +331,10 @@
 
     const g = data[from_index];
     if (!g) return;
+    const lim = showed_limit[from_index] ?? Math.min(g.rules.length, INITIAL_RULES_LIMIT);
 
     data.splice(from_index, 1);
+    showed_limit.splice(from_index, 1);
 
     let target = insert === "after" ? to_index + 1 : to_index;
 
@@ -360,16 +344,19 @@
     if (target > data.length) target = data.length;
 
     data.splice(target, 0, g);
+    showed_limit.splice(target, 0, lim ?? 0);
+    showed_limit = [...showed_limit];
     markGroupOrderChanged();
-    markDirty();
+    markDataRevision();
   }
 
   async function addGroup() {
     const group = defaultGroup();
     data.unshift(group);
+    showed_limit.unshift(INITIAL_RULES_LIMIT);
     open_state.current[group.id] = true;
     markGroupOrderChanged();
-    markDirty();
+    markDataRevision();
     if (searchActive) {
       forceVisibleGroup(group.id);
     }
@@ -383,12 +370,14 @@
     if (!confirm(t("Delete this group?"))) return;
     const removed = data[index];
     data.splice(index, 1);
+    showed_limit.splice(index, 1);
     if (removed) {
       removeForcedGroup(removed.id);
       delete open_state.current[removed.id];
     }
+    showed_limit = [...showed_limit];
     markGroupOrderChanged();
-    markDirty();
+    markDataRevision();
   }
 
   function exportConfig() {
@@ -438,6 +427,15 @@
     };
     reader.readAsText(file);
     input.value = "";
+  }
+
+  async function loadMore(group_index: number): Promise<void> {
+    const group = data[group_index];
+    if (!group) return;
+    const totalRules = group.rules.length;
+    const currentLimit = showed_limit[group_index] ?? 0;
+    if (currentLimit >= totalRules) return;
+    showed_limit[group_index] = Math.min(currentLimit + INCREMENT_RULES_LIMIT, totalRules);
   }
 
   async function copyToClipboard(text: string) {
@@ -511,18 +509,11 @@
     <div class="no-groups">{t("No matches found")}</div>
   {/if}
 
-  <div
-    class="group-list"
-    use:groupsVirtual.list
-    style={`height: ${groupsVirtual.totalHeight}px`}
-    oninput={markDirty}
-    onchange={markDirty}
-  >
-    {#each groupsVirtual.entries as entry (entry.key)}
-      {@const visible = entry.item}
+  <div class="group-list" oninput={markDataRevision} onchange={markDataRevision}>
+    {#each visibleGroups as visible, index (data[visible.group_index]?.id)}
       {#if data[visible.group_index]}
-        <div class="group-wrapper" style={entry.style} use:groupsVirtual.item={{ key: entry.key }}>
-          {#if entry.index === 0}
+        <div class="group-wrapper">
+          {#if index === 0}
             <div
               class="group-drop-slot group-drop-slot--top"
               aria-hidden="true"
@@ -540,11 +531,13 @@
             bind:group={data[visible.group_index]}
             group_index={visible.group_index}
             bind:total_groups={data.length}
+            bind:showed_limit={showed_limit[visible.group_index]}
             bind:open={open_state.current[data[visible.group_index].id]}
             {deleteGroup}
             {addRuleToGroup}
             {deleteRuleFromGroup}
             {changeRuleIndex}
+            {loadMore}
             {searchActive}
             visibleRuleIndices={visible.ruleIndices}
             on:importRules={() => openImportRulesModal(visible.group_index)}
@@ -575,7 +568,13 @@
     const group = data[group_index];
     if (!group) return;
     group.rules.unshift(...rules);
-    markDirty();
+    const currentLimit = showed_limit[group_index] ?? 0;
+    if (rules.length > 500) {
+      showed_limit[group_index] = Math.max(currentLimit, INITIAL_RULES_LIMIT);
+    } else {
+      showed_limit[group_index] = Math.min(currentLimit + rules.length, group.rules.length);
+    }
+    markDataRevision();
   }}
 />
 
@@ -590,25 +589,33 @@
     for (let i = imported.length - 1; i >= 0; i--) {
       const group = imported[i];
       data.unshift(group);
+      showed_limit.unshift(
+        group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
+      );
       open_state.current[group.id] = true;
     }
     markGroupOrderChanged();
-    markDirty();
+    markDataRevision();
     toast.success(`${t("Config imported")}: ${imported.length}`);
   }}
 />
 
 <style>
   .group-list {
-    position: relative;
     min-height: 1px;
-    padding: 1rem 0;
   }
 
   .group-wrapper {
-    position: absolute;
-    left: 0;
-    right: 0;
+    position: relative;
+    margin: 1rem 0;
+  }
+
+  .group-wrapper:first-of-type {
+    margin-top: 1rem;
+  }
+
+  .group-wrapper:last-of-type {
+    margin-bottom: 1rem;
   }
 
   .group-drop-slot {
