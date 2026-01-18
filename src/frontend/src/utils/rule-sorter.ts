@@ -33,8 +33,40 @@ function parseCidr(value: string) {
   };
 }
 
-function getReverseDomain(domain: string): string {
-  return domain.toLowerCase().split(".").reverse().join(".");
+type DomainSortKey = {
+  base: string;
+  tld: string;
+  sub: string;
+  raw: string;
+};
+
+function buildDomainSortKey(rule: string): DomainSortKey {
+  const cleaned = rule
+    .trim()
+    .replace(/^[*?]+\.?/, "")
+    .replace(/\.+$/, "")
+    .toLowerCase();
+  const parts = cleaned.split(".").filter(Boolean);
+
+  if (parts.length < 2) {
+    return {
+      base: cleaned,
+      tld: "",
+      sub: "",
+      raw: cleaned,
+    };
+  }
+
+  const tld = parts[parts.length - 1];
+  const base = parts[parts.length - 2];
+  const sub = parts.slice(0, -2).join(".");
+
+  return {
+    base,
+    tld,
+    sub,
+    raw: cleaned,
+  };
 }
 
 export function sortRules(
@@ -66,11 +98,28 @@ export function sortRules(
       }
 
       if (["domain", "wildcard", "namespace"].includes(a.type)) {
-        const revA = getReverseDomain(a.rule);
-        const revB = getReverseDomain(b.rule);
+        const keyA = buildDomainSortKey(a.rule);
+        const keyB = buildDomainSortKey(b.rule);
 
-        const cmp = revA.localeCompare(revB);
-        if (cmp !== 0) return cmp;
+        const baseCmp = keyA.base.localeCompare(keyB.base);
+        if (baseCmp !== 0) return baseCmp;
+
+        const tldCmp = keyA.tld.localeCompare(keyB.tld);
+        if (tldCmp !== 0) return tldCmp;
+
+        if (keyA.sub !== keyB.sub) {
+          if (!keyA.sub) return -1;
+          if (!keyB.sub) return 1;
+
+          const depthA = keyA.sub.split(".").length;
+          const depthB = keyB.sub.split(".").length;
+          if (depthA !== depthB) return depthA - depthB;
+
+          return keyA.sub.localeCompare(keyB.sub);
+        }
+
+        const rawCmp = keyA.raw.localeCompare(keyB.raw);
+        if (rawCmp !== 0) return rawCmp;
 
         return a.type.localeCompare(b.type);
       }
