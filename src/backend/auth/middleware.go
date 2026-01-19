@@ -14,15 +14,8 @@ const authHeaderPrefix = "Bearer "
 func Middleware(app app.Main) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !app.Config().HTTPWeb.Auth.Enabled {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if r.Method == http.MethodPost && (r.URL.Path == "/auth" || r.URL.Path == "/api/v1/auth") {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if r.Method == http.MethodOptions {
+			if !app.Config().HTTPWeb.Auth.Enabled ||
+				r.URL.Path == "/api/v1/auth" {
 				next.ServeHTTP(w, r)
 				return
 			}

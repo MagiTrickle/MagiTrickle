@@ -1,21 +1,25 @@
-//go:build !entware && !openwrt
-
 package auth
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
+	"magitrickle/constant"
 	"os"
 	"strings"
 )
 
-const shadowPath = "/etc/shadow"
-
 func loadPasswordHash(login string) (string, error) {
-	file, err := os.Open(shadowPath)
+	filePath := constant.ShadowFile
+	if _, err := os.Stat(constant.ShadowFile); err != nil {
+		if os.IsNotExist(err) {
+			filePath = constant.PasswdFile
+		}
+	}
+
+	file, err := os.Open(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open shadow: %w", err)
+		return "", fmt.Errorf("failed to open %s: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -39,7 +43,7 @@ func loadPasswordHash(login string) (string, error) {
 		return hash, nil
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to read shadow: %w", err)
+		return "", fmt.Errorf("failed to read %s: %w", filePath, err)
 	}
 	return "", errors.New("user not found")
 }

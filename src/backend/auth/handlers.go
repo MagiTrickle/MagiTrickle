@@ -16,21 +16,23 @@ type LoginResponse struct {
 	Token string `json:"token"`
 }
 
+type StatusResponse struct {
+	Enabled bool `json:"enabled"`
+}
+
+func StatusHandler(app app.Main) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		utils.WriteJson(w, http.StatusOK, StatusResponse{Enabled: app.Config().HTTPWeb.Auth.Enabled})
+	}
+}
+
 func LoginHandler(app app.Main) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !app.Config().HTTPWeb.Auth.Enabled {
 			utils.WriteError(w, http.StatusNotFound, "Auth disabled")
 			return
 		}
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+		
 		req, err := utils.ReadJson[LoginRequest](r)
 		if err != nil {
 			utils.WriteError(w, http.StatusBadRequest, err.Error())

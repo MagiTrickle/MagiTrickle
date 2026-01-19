@@ -3,7 +3,7 @@ app:
   httpWeb:
     enabled: true
     auth:
-      enabled: false
+      enabled: true
     host:
       address: "[::]"
       port: 8080
