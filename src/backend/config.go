@@ -76,6 +76,12 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			}
 		}
 
+		if cfg.App.HTTPWeb != nil && cfg.App.HTTPWeb.Auth != nil {
+			if cfg.App.HTTPWeb.Auth.Enabled != nil {
+				a.config.HTTPWeb.Auth.Enabled = *cfg.App.HTTPWeb.Auth.Enabled
+			}
+		}
+
 		if cfg.App.DNSProxy != nil {
 			if cfg.App.DNSProxy.Upstream != nil {
 				if cfg.App.DNSProxy.Upstream.Address != nil {
@@ -212,10 +218,13 @@ func (a *App) ExportConfig() config.Config {
 	}
 
 	return config.Config{
-		ConfigVersion: "0.1.2",
+		ConfigVersion: "0.1.3",
 		App: &config.App{
 			HTTPWeb: &config.HTTPWeb{
 				Enabled: &a.config.HTTPWeb.Enabled,
+				Auth: &config.Auth{
+					Enabled: &a.config.HTTPWeb.Auth.Enabled,
+				},
 				Host: &config.HTTPWebServer{
 					Address: &a.config.HTTPWeb.Host.Address,
 					Port:    &a.config.HTTPWeb.Host.Port,

@@ -11,8 +11,13 @@ type App struct {
 
 type HTTPWeb struct {
 	Enabled *bool          `yaml:"enabled"`
+	Auth    *Auth          `yaml:"auth"`
 	Host    *HTTPWebServer `yaml:"host"`
 	Skin    *string        `yaml:"skin"`
+}
+
+type Auth struct {
+	Enabled *bool `yaml:"enabled"`
 }
 
 type HTTPWebServer struct {
