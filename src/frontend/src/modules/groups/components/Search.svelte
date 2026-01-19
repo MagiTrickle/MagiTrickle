@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from "../../../data/locale.svelte";
   import { Search } from "../../../components/ui/icons";
-  import type { Group, Rule } from "../../../types";
+  import type { Group } from "../../../types";
 
   type VisibleGroup = {
     group_index: number;
@@ -39,13 +39,26 @@
     ...rest
   }: Props = $props();
 
-  const SEARCH_DEBOUNCE_MS = 30 as const;
+  const SEARCH_DEBOUNCE_MS = 150 as const;
 
   const forcedGroupIds = new Set<string>();
   const forcedRuleIdsByGroup = new Map<string, Set<string>>();
   let forcedSearchKey = "";
 
   let normalizedSearch = $derived(value.trim().toLowerCase());
+
+  let searchIndex = $derived.by(() => {
+    dataRevision;
+    return groups.map((g) => ({
+      id: g.id,
+      nameLower: (g.name || "").toLowerCase(),
+      rules: g.rules.map((r) => ({
+        id: r.id,
+        searchBlob: `${r.name || ""} ${r.rule || ""}`.toLowerCase(),
+      })),
+    }));
+  });
+
   let isFocused = $state(false);
   let inputRef: HTMLInputElement;
   let isActive = $derived(isFocused || value.length > 0);
@@ -67,9 +80,7 @@
     }
   }
 
-  function markGroupOrderChanged() {
-    // No-op in simple search but kept for interface compatibility if needed
-  }
+  function markGroupOrderChanged() {}
 
   function forceVisibleGroup(groupId: string) {
     if (!normalizedSearch) return;
@@ -125,30 +136,26 @@
     }
 
     const nextVisible: VisibleGroup[] = [];
+    const len = searchIndex.length;
 
-    for (let i = 0; i < groups.length; i++) {
-      const group = groups[i];
-      if (!group) continue;
+    for (let i = 0; i < len; i++) {
+      const indexedGroup = searchIndex[i];
+      const isForcedGroup = forcedGroupIds.has(indexedGroup.id);
 
-      const groupName = (group.name || "").toLowerCase();
-      const groupMatch = groupName.includes(query);
-      const isForcedGroup = forcedGroupIds.has(group.id);
-
-      if (groupMatch || isForcedGroup) {
+      if (isForcedGroup || indexedGroup.nameLower.includes(query)) {
         nextVisible.push({ group_index: i, ruleIndices: null });
         continue;
       }
 
       const matchedRuleIndices: number[] = [];
-      const forcedRules = forcedRuleIdsByGroup.get(group.id);
+      const forcedRules = forcedRuleIdsByGroup.get(indexedGroup.id);
+      const rules = indexedGroup.rules;
+      const rulesLen = rules.length;
 
-      for (let ruleIndex = 0; ruleIndex < group.rules.length; ruleIndex++) {
-        const rule = group.rules[ruleIndex];
-        const isForcedRule = forcedRules?.has(rule.id);
-        const ruleBlob = `${rule.name || ""} ${rule.rule || ""}`.toLowerCase();
-
-        if (isForcedRule || ruleBlob.includes(query)) {
-          matchedRuleIndices.push(ruleIndex);
+      for (let r = 0; r < rulesLen; r++) {
+        const indexedRule = rules[r];
+        if (forcedRules?.has(indexedRule.id) || indexedRule.searchBlob.includes(query)) {
+          matchedRuleIndices.push(r);
         }
       }
 
@@ -164,8 +171,7 @@
   let debounceTimer: number;
   $effect(() => {
     normalizedSearch;
-    dataRevision;
-    groups.length;
+    searchIndex;
 
     clearTimeout(debounceTimer);
     searchPending = true;
