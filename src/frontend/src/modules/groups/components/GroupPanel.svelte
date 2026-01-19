@@ -2,7 +2,6 @@
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
-  import { InfiniteLoader, LoaderState } from "svelte-infinite";
 
   import { type Group, type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
@@ -29,7 +28,6 @@
     group: Group;
     group_index: number;
     total_groups: number;
-    showed_limit: number;
     open: boolean;
     deleteGroup: (index: number) => void;
     addRuleToGroup: (group_index: number, rule: Rule, focus?: boolean) => void;
@@ -40,9 +38,9 @@
       to_group_index: number,
       to_rule_index: number,
     ) => void;
-    loadMore: (group_index: number) => Promise<void>;
     searchActive?: boolean;
     visibleRuleIndices?: number[] | null;
+    onFinished?: () => void;
     [key: string]: any;
   };
 
@@ -50,24 +48,27 @@
     group = $bindable(),
     group_index,
     total_groups = $bindable(),
-    showed_limit = $bindable(),
     open = $bindable(),
     deleteGroup,
     addRuleToGroup,
     deleteRuleFromGroup,
     changeRuleIndex,
-    loadMore,
     searchActive = false,
     visibleRuleIndices = null,
+    onFinished,
     ...rest
   }: Props = $props();
 
   const dispatch = createEventDispatcher();
-  const loaderState = new LoaderState();
-  const triggerLoad = () => loadMore(group_index);
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
+
+  let effectiveOpen = $derived(open);
+
+  function toggleOpen() {
+    open = !open;
+  }
 
   type GroupDnD = {
     group_id: string;
@@ -119,21 +120,61 @@
     return badge;
   }
 
-  let filteredRuleIndices: number[] | null = $state(null);
+  let filteredRuleIndicesSet = $derived(
+    Array.isArray(visibleRuleIndices) ? new Set(visibleRuleIndices) : null,
+  );
   let displayedRulesCount = $state(0);
 
   $effect(() => {
-    if (searchActive && Array.isArray(visibleRuleIndices)) {
-      filteredRuleIndices = visibleRuleIndices.length ? visibleRuleIndices : [];
-    } else {
-      filteredRuleIndices = null;
-    }
-
-    displayedRulesCount = Array.isArray(filteredRuleIndices)
-      ? filteredRuleIndices.length
+    displayedRulesCount = Array.isArray(visibleRuleIndices)
+      ? visibleRuleIndices.length
       : group.rules.length;
   });
 
+  let renderLimit = $state(20);
+  let renderTimeout: number | null = null;
+
+  function scheduleNext() {
+    if (typeof window === "undefined") return;
+    if (renderTimeout) return;
+    if (renderLimit >= group.rules.length) return;
+
+    renderTimeout = window.setTimeout(() => {
+      renderTimeout = null;
+      if (searchActive) {
+        renderLimit = group.rules.length;
+        return;
+      }
+      renderLimit = Math.min(renderLimit + 15, group.rules.length);
+      scheduleNext();
+    }, 60);
+  }
+
+  $effect(() => {
+    if (searchActive) {
+      renderLimit = group.rules.length;
+      if (renderTimeout) {
+        clearTimeout(renderTimeout);
+        renderTimeout = null;
+      }
+    } else {
+      scheduleNext();
+    }
+  });
+
+  $effect(() => {
+    group.rules.length;
+    scheduleNext();
+  });
+
+  let reportedFinished = false;
+  $effect(() => {
+    if (searchActive) return;
+    if (!reportedFinished && renderLimit >= group.rules.length) {
+      reportedFinished = true;
+      onFinished?.();
+    }
+  });
 </script>
 
 <svelte:window bind:innerWidth={client_width} />
@@ -162,7 +203,7 @@
       ),
   }}
 >
-  <Collapsible.Root bind:open>
+  <Collapsible.Root open={effectiveOpen} onOpenChange={toggleOpen}>
     <div
       class="group-header"
       data-group-index={group_index}
@@ -253,9 +294,9 @@
           </DropdownMenu>
         {/if}
 
-        <Tooltip value={t(open ? "Collapse Group" : "Expand Group")}>
+        <Tooltip value={t(effectiveOpen ? "Collapse Group" : "Expand Group")}>
           <Collapsible.Trigger>
-            {#if open}
+            {#if effectiveOpen}
               <GroupCollapse size={20} />
             {:else}
               <GroupExpand size={20} />
@@ -266,8 +307,8 @@
     </div>
 
     <Collapsible.Content>
-      <div transition:slide>
-        {#if displayedRulesCount > 0}
+      <div transition:slide={searchActive ? { duration: 0 } : {}}>
+        {#if group.rules.length > 0}
           <div class="group-rules-header">
             <div class="group-rules-header-column total">
               #{displayedRulesCount}
@@ -279,38 +320,26 @@
           </div>
         {/if}
         <div class="group-rules">
-          {#if displayedRulesCount > 0}
-            {#if Array.isArray(filteredRuleIndices)}
-              {#each filteredRuleIndices as rule_index, visible_index (group.rules[rule_index].id)}
+          {#if group.rules.length > 0}
+            {#each group.rules.slice(0, renderLimit) as rule, rule_index (rule.id)}
+              {@const isVisible =
+                !searchActive ||
+                filteredRuleIndicesSet === null ||
+                filteredRuleIndicesSet.has(rule_index)}
+              <div style={isVisible ? "" : "display: none"}>
                 <RuleRow
-                  key={group.rules[rule_index].id}
+                  key={rule.id}
                   bind:rule={group.rules[rule_index]}
                   {rule_index}
                   {group_index}
-                  rule_id={group.rules[rule_index].id}
+                  rule_id={rule.id}
                   group_id={group.id}
                   onChangeIndex={changeRuleIndex}
                   onDelete={deleteRuleFromGroup}
-                  style={visible_index % 2 ? "" : "background-color: var(--bg-light)"}
+                  style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
                 />
-              {/each}
-            {:else}
-              <InfiniteLoader {loaderState} {triggerLoad} loopDetectionTimeout={10}>
-                {#each group.rules.slice(0, showed_limit) as rule, rule_index (rule.id)}
-                  <RuleRow
-                    key={rule.id}
-                    bind:rule={group.rules[rule_index]}
-                    {rule_index}
-                    {group_index}
-                    rule_id={rule.id}
-                    group_id={group.id}
-                    onChangeIndex={changeRuleIndex}
-                    onDelete={deleteRuleFromGroup}
-                    style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
-                  />
-                {/each}
-              </InfiniteLoader>
-            {/if}
+              </div>
+            {/each}
           {/if}
         </div>
       </div>
@@ -471,10 +500,6 @@
         color: var(--text);
         border: 1px solid var(--bg-light-extra);
       }
-    }
-
-    .infinite-intersection-target {
-      padding-block: 0 !important;
     }
   }
 

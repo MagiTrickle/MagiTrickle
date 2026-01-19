@@ -20,12 +20,15 @@
   import { smoothReflow } from "../../lib/smooth-reflow.svelte";
 
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-  const INITIAL_RULES_LIMIT = 30 as const;
-  const INCREMENT_RULES_LIMIT = 40 as const;
+
+  type Props = {
+    onRenderComplete?: () => void;
+  };
+
+  let { onRenderComplete }: Props = $props();
 
   let tracker = $state(new ChangeTracker<Group[]>([]));
   let data = $derived(tracker.data);
-  let showed_limit: number[] = $state([]);
   let dataRevision = $state(0);
   let valid_rules = $state(true);
   let canSave = $derived(tracker.isDirty && valid_rules);
@@ -130,15 +133,7 @@
 
   let noVisibleGroups = $derived(searchActive && !searchPending && visibleGroups.length === 0);
 
-  let visibleRuleIndicesByGroupIndex = $derived(
-    (() => {
-      const map = new Map<number, number[] | null>();
-      for (const visible of visibleGroups) {
-        map.set(visible.group_index, visible.ruleIndices);
-      }
-      return map;
-    })(),
-  );
+  let visibilityMap = $derived(new Map(visibleGroups.map((v) => [v.group_index, v.ruleIndices])));
 
   let firstVisibleGroupIndex = $derived(
     searchActive ? (visibleGroups.length ? visibleGroups[0].group_index : -1) : 0,
@@ -191,12 +186,10 @@
   }
 
   onMount(async () => {
+    finishedGroupsCount = 0;
     const fetched =
       (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
     tracker = new ChangeTracker(fetched);
-    showed_limit = fetched.map((group) =>
-      group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
-    );
     initOpenState();
     dataRevision = 0;
     setTimeout(checkRulesValidityState, 10);
@@ -232,7 +225,6 @@
     const group = data[group_index];
     if (!group) return;
     group.rules.unshift(rule);
-    showed_limit[group_index] = (showed_limit[group_index] ?? 0) + 1;
     markDataRevision();
     if (!rule.rule || !rule.name) {
       valid_rules = false;
@@ -259,9 +251,6 @@
     group.rules.splice(rule_index, 1);
     if (removed) {
       removeForcedRule(group.id, removed.id);
-    }
-    if (showed_limit[group_index] !== undefined) {
-      showed_limit[group_index] = Math.min(showed_limit[group_index], group.rules.length);
     }
     markDataRevision();
   }
@@ -295,9 +284,7 @@
     }
 
     let anchorIndex =
-      to_rule_id && to_rule_id.length > 0
-        ? targetRules.findIndex((r) => r.id === to_rule_id)
-        : -1;
+      to_rule_id && to_rule_id.length > 0 ? targetRules.findIndex((r) => r.id === to_rule_id) : -1;
 
     if (anchorIndex === -1 && targetRules.length > 0) {
       anchorIndex = clamp(to_rule_index, 0, targetRules.length - 1);
@@ -316,21 +303,6 @@
     insertIndex = clamp(insertIndex, 0, targetRules.length);
     targetRules.splice(insertIndex, 0, movedRule);
 
-    const nextShowedLimit = [...showed_limit];
-    if (!isSameGroup) {
-      const fromLimit = nextShowedLimit[from_group_index] ?? sourceRules.length;
-      nextShowedLimit[from_group_index] = Math.min(fromLimit, sourceRules.length);
-    }
-    const targetRulesCount = targetRules.length;
-    const targetLimit = nextShowedLimit[to_group_index] ?? targetRulesCount;
-    const ensureVisibleCount = isSameGroup
-      ? Math.min(insertIndex + 1, targetRulesCount)
-      : Math.min(targetRulesCount, Math.max(insertIndex + 1, targetLimit + 1));
-    if (targetLimit < ensureVisibleCount) {
-      nextShowedLimit[to_group_index] = ensureVisibleCount;
-    }
-
-    showed_limit = nextShowedLimit;
     markDataRevision();
   }
 
@@ -345,10 +317,8 @@
 
     const g = data[from_index];
     if (!g) return;
-    const lim = showed_limit[from_index] ?? Math.min(g.rules.length, INITIAL_RULES_LIMIT);
 
     data.splice(from_index, 1);
-    showed_limit.splice(from_index, 1);
 
     let target = insert === "after" ? to_index + 1 : to_index;
 
@@ -358,8 +328,6 @@
     if (target > data.length) target = data.length;
 
     data.splice(target, 0, g);
-    showed_limit.splice(target, 0, lim ?? 0);
-    showed_limit = [...showed_limit];
     markGroupOrderChanged();
     markDataRevision();
   }
@@ -367,7 +335,6 @@
   async function addGroup() {
     const group = defaultGroup();
     data.unshift(group);
-    showed_limit.unshift(INITIAL_RULES_LIMIT);
     open_state.current[group.id] = true;
     markGroupOrderChanged();
     markDataRevision();
@@ -384,12 +351,10 @@
     if (!confirm(t("Delete this group?"))) return;
     const removed = data[index];
     data.splice(index, 1);
-    showed_limit.splice(index, 1);
     if (removed) {
       removeForcedGroup(removed.id);
       delete open_state.current[removed.id];
     }
-    showed_limit = [...showed_limit];
     markGroupOrderChanged();
     markDataRevision();
   }
@@ -443,15 +408,6 @@
     input.value = "";
   }
 
-  async function loadMore(group_index: number): Promise<void> {
-    const group = data[group_index];
-    if (!group) return;
-    const totalRules = group.rules.length;
-    const currentLimit = showed_limit[group_index] ?? 0;
-    if (currentLimit >= totalRules) return;
-    showed_limit[group_index] = Math.min(currentLimit + INCREMENT_RULES_LIMIT, totalRules);
-  }
-
   async function copyToClipboard(text: string) {
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -479,6 +435,55 @@
   function closeImportRulesModal() {
     importRulesModal = { open: false, groupIndex: null };
   }
+
+  let finishedGroupsCount = $state(0);
+  function handleGroupFinished() {
+    finishedGroupsCount++;
+  }
+
+  let isAllRendered = $derived(data.length > 0 && finishedGroupsCount >= data.length);
+
+  $effect(() => {
+    if (isAllRendered) {
+      onRenderComplete?.();
+    }
+  });
+
+  let renderGroupsLimit = $state(1);
+  let renderGroupsTimeout: number | null = null;
+
+  function scheduleGroupsNext() {
+    if (typeof window === "undefined") return;
+    if (renderGroupsTimeout) return;
+    if (renderGroupsLimit >= data.length) return;
+
+    renderGroupsTimeout = window.setTimeout(() => {
+      renderGroupsTimeout = null;
+      if (searchActive) {
+        renderGroupsLimit = data.length;
+        return;
+      }
+      renderGroupsLimit = Math.min(renderGroupsLimit + 2, data.length);
+      scheduleGroupsNext();
+    }, 15);
+  }
+
+  $effect(() => {
+    if (searchActive) {
+      renderGroupsLimit = data.length;
+      if (renderGroupsTimeout) {
+        clearTimeout(renderGroupsTimeout);
+        renderGroupsTimeout = null;
+      }
+    } else {
+      scheduleGroupsNext();
+    }
+  });
+
+  $effect(() => {
+    data.length;
+    scheduleGroupsNext();
+  });
 </script>
 
 <div class="groups-page" use:smoothReflow>
@@ -523,13 +528,27 @@
     <div class="no-groups">{t("No matches found")}</div>
   {/if}
 
-  <div class="group-list" oninput={markDataRevision} onchange={markDataRevision}>
-    {#each data as group, group_index (group.id)}
-      {@const isVisible = !searchActive || visibleRuleIndicesByGroupIndex.has(group_index)}
-      {@const visibleRuleIndices =
-        searchActive ? (visibleRuleIndicesByGroupIndex.get(group_index) ?? null) : null}
+  {#if !isAllRendered}
+    <div class="initial-loader">
+      <div class="loader-content">
+        <div class="spinner"></div>
+        <span>{t("Loading groups...")}</span>
+      </div>
+    </div>
+  {/if}
 
-      <div class="group-wrapper" class:hidden={!isVisible}>
+  <div
+    class="group-list"
+    class:visible={isAllRendered}
+    style={isAllRendered ? "" : "display: none;"}
+    oninput={markDataRevision}
+    onchange={markDataRevision}
+  >
+    {#each data.slice(0, renderGroupsLimit) as group, group_index (group.id)}
+      {@const ruleIndices = visibilityMap.get(group_index)}
+      {@const isVisible = !searchActive || visibilityMap.has(group_index)}
+
+      <div class="group-wrapper" style={isVisible ? "" : "display: none"}>
         {#if group_index === firstVisibleGroupIndex}
           <div
             class="group-drop-slot group-drop-slot--top"
@@ -549,15 +568,14 @@
           bind:group={data[group_index]}
           {group_index}
           bind:total_groups={data.length}
-          bind:showed_limit={showed_limit[group_index]}
           bind:open={open_state.current[group.id]}
           {deleteGroup}
           {addRuleToGroup}
           {deleteRuleFromGroup}
           {changeRuleIndex}
-          {loadMore}
           {searchActive}
-          {visibleRuleIndices}
+          visibleRuleIndices={ruleIndices}
+          onFinished={handleGroupFinished}
           on:importRules={() => openImportRulesModal(group_index)}
         />
 
@@ -586,12 +604,6 @@
     const group = data[group_index];
     if (!group) return;
     group.rules.unshift(...rules);
-    const currentLimit = showed_limit[group_index] ?? 0;
-    if (rules.length > 500) {
-      showed_limit[group_index] = Math.min(INITIAL_RULES_LIMIT, group.rules.length);
-    } else {
-      showed_limit[group_index] = Math.min(currentLimit + rules.length, group.rules.length);
-    }
     markDataRevision();
   }}
 />
@@ -607,9 +619,6 @@
     for (let i = imported.length - 1; i >= 0; i--) {
       const group = imported[i];
       data.unshift(group);
-      showed_limit.unshift(
-        group.rules.length > INITIAL_RULES_LIMIT ? INITIAL_RULES_LIMIT : group.rules.length,
-      );
       open_state.current[group.id] = true;
     }
     markGroupOrderChanged();
@@ -621,15 +630,69 @@
 <style>
   .group-list {
     min-height: 1px;
+    opacity: 0;
+    transition: opacity 0.4s ease-in-out;
+  }
+
+  .group-list.visible {
+    opacity: 1;
+  }
+
+  .initial-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+    width: 100%;
+    color: var(--text-2);
+    font-size: 1.2rem;
+    animation: fade-in 0.3s ease-out;
+  }
+
+  .loader-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid color-mix(in oklab, var(--accent) 20%, transparent);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   .group-wrapper {
     position: relative;
     margin: 1rem 0;
+    animation: group-appear 0.15s ease-out forwards;
   }
 
-  .group-wrapper.hidden {
-    display: none;
+  @keyframes group-appear {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   .group-wrapper:first-of-type {

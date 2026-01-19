@@ -13,6 +13,7 @@
 
   let active_tab = $state("groups");
   let menuCheckbox: HTMLInputElement | undefined = $state();
+  let isRenderComplete = $state(false);
 
   let innerWidth = $state(0);
   let resizing = $state(false);
@@ -39,7 +40,7 @@
 <Overlay />
 <ScrollToTop />
 {#if [11, 0, 1].includes(new Date().getMonth())}
-  <SnowField />
+  <SnowField visible={isRenderComplete} />
 {/if}
 
 <main>
@@ -73,7 +74,7 @@
 
     <article>
       <Tabs.Content value="groups">
-        <GroupsView />
+        <GroupsView onRenderComplete={() => (isRenderComplete = true)} />
       </Tabs.Content>
       <!-- <Tabs.Content value="settings">...</Tabs.Content> -->
     </article>
