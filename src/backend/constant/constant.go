@@ -14,6 +14,9 @@ var DefaultAppConfig = models.AppConfig{
 	},
 	HTTPWeb: models.AppConfigHTTPWeb{
 		Enabled: true,
+		Auth: models.AppConfigAuth{
+			Enabled: false,
+		},
 		Host: models.AppConfigHTTPWebServer{
 			Address: "[::]",
 			Port:    8080,

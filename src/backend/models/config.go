@@ -11,8 +11,13 @@ type AppConfig struct {
 
 type AppConfigHTTPWeb struct {
 	Enabled bool
+	Auth    AppConfigAuth
 	Host    AppConfigHTTPWebServer
 	Skin    string
+}
+
+type AppConfigAuth struct {
+	Enabled bool
 }
 
 type AppConfigHTTPWebServer struct {

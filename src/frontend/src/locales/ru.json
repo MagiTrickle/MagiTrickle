@@ -45,5 +45,13 @@
   "saving changes...": "сохранение изменений...",
   "Saved": "Сохранено",
   "Imported rules: ": "Импортировано правил: ",
-  "Request failed": "Не удалось выполнить запрос"
+  "Request failed": "Не удалось выполнить запрос",
+  "Drag Rule": "Перетащить правило",
+  "Drag Group": "Перетащить группу",
+  "Login failed": "Ошибка входа",
+  "Login": "Логин",
+  "Password": "Пароль",
+  "Loading...": "Загрузка...",
+  "Sign In": "Войти",
+  "entware credentials": "креденшелы entware"
 }

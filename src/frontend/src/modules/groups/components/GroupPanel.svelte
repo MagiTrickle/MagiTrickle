@@ -6,7 +6,7 @@
 
   import { type Group, type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
-  import { INTERFACES } from "../../../data/interfaces.svelte";
+  import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
   import { droppable, draggable } from "../../../lib/dnd";
   import Button from "../../../components/ui/Button.svelte";
@@ -77,7 +77,12 @@
     count: number;
   };
 
-  function createGroupDragPreview(headerEl: HTMLElement, name: string, color: string, count: number) {
+  function createGroupDragPreview(
+    headerEl: HTMLElement,
+    name: string,
+    color: string,
+    count: number,
+  ) {
     const badge = document.createElement("div");
     badge.style.cssText =
       "position:fixed;top:-1000px;left:-1000px;pointer-events:none;z-index:2147483647;transform:translateZ(0);font:600 13px/1.2 var(--font, -apple-system, system-ui, Segoe UI, Roboto, sans-serif);color:var(--text,#e5e7eb);";
@@ -94,7 +99,8 @@
 
     const title = document.createElement("span");
     title.textContent = name || "group";
-    title.style.cssText = "max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    title.style.cssText =
+      "max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
     inner.appendChild(title);
 
     const cnt = document.createElement("span");
@@ -142,7 +148,7 @@
       group_index,
       name: group.name,
       color: group.color,
-      count: group.rules.length
+      count: group.rules.length,
     } as GroupDnD,
     scope: "group",
     handle: ".group-grip",
@@ -152,7 +158,7 @@
         (node.querySelector(".group-header") ?? node) as HTMLElement,
         group.name,
         group.color || "",
-        group.rules.length
+        group.rules.length,
       ),
   }}
 >
@@ -185,7 +191,7 @@
 
       <div class="group-actions">
         <Select
-          options={INTERFACES.map((item) => ({ value: item, label: item }))}
+          options={interfaces.list.map((item) => ({ value: item, label: item }))}
           bind:selected={group.interface}
         />
 
@@ -221,22 +227,22 @@
               <Dots size={20} />
             {/snippet}
             {#snippet item1()}
-            <Button
-            general
-            onclick={() => {
-              addRuleToGroup(group_index, defaultRule(), true);
-              open = true;
-            }}
+              <Button
+                general
+                onclick={() => {
+                  addRuleToGroup(group_index, defaultRule(), true);
+                  open = true;
+                }}
               >
-              <div class="dd-icon"><Add size={20} /></div>
-              <div class="dd-label">{t("Add Rule")}</div>
-            </Button>
+                <div class="dd-icon"><Add size={20} /></div>
+                <div class="dd-label">{t("Add Rule")}</div>
+              </Button>
             {/snippet}
             {#snippet item2()}
-            <Button general onclick={() => dispatch("importRules")}>
-              <div class="dd-icon"><ImportList size={20} /></div>
-              <div class="dd-label">{t("Import Rule List")}</div>
-            </Button>
+              <Button general onclick={() => dispatch("importRules")}>
+                <div class="dd-icon"><ImportList size={20} /></div>
+                <div class="dd-label">{t("Import Rule List")}</div>
+              </Button>
             {/snippet}
             {#snippet item3()}
               <Button general onclick={() => deleteGroup(group_index)}>
@@ -318,7 +324,10 @@
       background-color: var(--bg-medium);
       border-radius: 0.5rem;
       border: 1px solid var(--bg-light-extra);
-      transition: transform .12s ease, opacity .12s ease, box-shadow .12s ease;
+      transition:
+        transform 0.12s ease,
+        opacity 0.12s ease,
+        box-shadow 0.12s ease;
     }
   }
 
@@ -342,7 +351,7 @@
   .group-left {
     display: flex;
     align-items: center;
-    gap: .4rem;
+    gap: 0.4rem;
   }
 
   .group-color {
@@ -391,7 +400,7 @@
       border-bottom: 1px solid transparent;
       position: relative;
       top: 0.1rem;
-      margin-left: .4rem;
+      margin-left: 0.4rem;
     }
 
     &:focus-visible {

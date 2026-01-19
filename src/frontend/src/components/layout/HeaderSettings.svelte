@@ -1,7 +1,9 @@
 <script lang="ts">
   import Button from "../ui/Button.svelte";
-  import { Locale, Gitlab, Bug } from "../ui/icons";
+  import { Locale, Gitlab, Bug, LogOut } from "../ui/icons";
   import { t, locale, locales } from "../../data/locale.svelte";
+  import { token, authState } from "../../data/auth.svelte";
+
   const version = import.meta.env.VITE_PKG_VERSION || "0.4.1~git20260113023430.4107ba7";
   const isDev = import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true";
 
@@ -11,6 +13,10 @@
     locale.current = keys[(idx + 1) % keys.length];
   };
   const flag = (key: string) => (key === "en" ? "🇺🇸" : key === "ru" ? "🇷🇺" : key);
+
+  function logout() {
+    token.reset();
+  }
 </script>
 
 <div class="container">
@@ -39,6 +45,14 @@
       </div>
     </Button>
   </div>
+
+  {#if authState.enabled}
+    <div class="logout">
+      <Button small onclick={logout}>
+        <LogOut size={20} />
+      </Button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -57,25 +71,43 @@
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 1.2rem;
+    gap: 0.8rem;
+    min-width: 0;
+    flex: 1;
   }
 
-  .locale,
-  .links,
   .version {
     display: flex;
     flex-direction: row;
     align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .locale,
+  .links,
+  .logout {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
   }
 
   .links,
-  .locale {
+  .locale,
+  .logout {
     gap: 1rem;
   }
 
   @media (max-width: 700px) {
-    .version {
-      max-width: 160px;
+    .links,
+    .locale,
+    .logout {
+      gap: 0.5rem;
+    }
+
+    .container {
+      gap: 0.5rem;
     }
   }
 
@@ -105,10 +137,12 @@
     }
   }
 
+  .logout,
   .locale {
     background: var(--bg-light);
     border-radius: 0.5rem;
   }
+
   .locale-content {
     display: inline-flex;
     align-items: center;

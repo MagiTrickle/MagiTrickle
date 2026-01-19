@@ -8,4 +8,6 @@ const (
 	AppStateDir  = "/var/lib/magitrickle"
 	PIDPath      = "/var/run/magitrickle.pid"
 	SockPath     = "/var/run/magitrickle.sock"
+	PasswdFile   = "/etc/passwd"
+	ShadowFile   = "/etc/shadow"
 )

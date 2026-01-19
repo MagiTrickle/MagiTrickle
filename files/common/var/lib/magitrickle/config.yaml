@@ -1,7 +1,9 @@
-configVersion: 0.1.2
+configVersion: 0.1.3
 app:
   httpWeb:
     enabled: true
+    auth:
+      enabled: true
     host:
       address: "[::]"
       port: 8080

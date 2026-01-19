@@ -6,6 +6,7 @@ import (
 
 	"magitrickle/api/utils"
 	"magitrickle/app"
+	"magitrickle/auth"
 	"magitrickle/utils/intID"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,9 @@ import (
 func NewRouter(a app.Main) chi.Router {
 	h := NewHandler(a)
 	r := chi.NewRouter()
+	r.Use(auth.Middleware(a))
+	r.Get("/auth", auth.StatusHandler(a))
+	r.Post("/auth", auth.LoginHandler(a))
 	r.Route("/groups", func(r chi.Router) {
 		r.Get("/", h.GetGroups)
 		r.Put("/", h.PutGroups)
