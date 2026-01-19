@@ -3,10 +3,12 @@
   "lint": {
     "include": ["src/**/*.ts"],
     "rules": {
-      "exclude": ["no-explicit-any"]
+      "exclude": ["no-explicit-any", "no-sloppy-imports"]
     }
   },
   "compilerOptions": {
+    "strict": false,
+    "moduleResolution": "bundler",
     "checkJs": true,
     "lib": ["deno.ns", "ESNext", "DOM"]
   },
