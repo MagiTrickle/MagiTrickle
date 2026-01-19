@@ -19,7 +19,10 @@
     loading = true;
     error = false;
     try {
-      const res = await fetcher.post<{ token: string }>("/auth", { login, password });
+      const res = await fetcher.post<{ token?: string; error?: string }>("/auth", {
+        login,
+        password,
+      });
       if (res.token) {
         token.current = res.token;
       }

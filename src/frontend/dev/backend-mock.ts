@@ -41,6 +41,7 @@ let sse_id = 0;
 
 const PORT = 6969;
 const STATIC_TOKEN = "magitrickle_mock_token_2026";
+const AUTH_ENABLED = true;
 
 const app = new Hono();
 
@@ -49,17 +50,21 @@ app.use(cors());
 
 // Auth Middleware
 app.use(`${API_BASE}/*`, async (c, next) => {
-  if (c.req.path === `${API_BASE}/auth`) {
+  if (c.req.path === `${API_BASE}/auth` || !AUTH_ENABLED) {
     await next();
     return;
   }
 
   const authHeader = c.req.header("Authorization");
-  if (authHeader !== `Bearer ${STATIC_TOKEN}`) {
+  if (authHeader !== `Bearer ${STATIC_TOKEN}` && authHeader !== `Bearer disabled`) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
   await next();
+});
+
+app.get(`${API_BASE}/auth`, async (c) => {
+  return c.json({ auth_enabled: AUTH_ENABLED }, 200);
 });
 
 app.post(`${API_BASE}/auth`, async (c) => {

@@ -2,7 +2,7 @@
   import Button from "../ui/Button.svelte";
   import { Locale, Gitlab, Bug, LogOut } from "../ui/icons";
   import { t, locale, locales } from "../../data/locale.svelte";
-  import { token } from "../../data/auth.svelte";
+  import { token, authState } from "../../data/auth.svelte";
 
   const version = import.meta.env.VITE_PKG_VERSION || "0.4.1~git20260113023430.4107ba7";
   const isDev = import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true";
@@ -46,11 +46,13 @@
     </Button>
   </div>
 
-  <div class="logout">
-    <Button small onclick={logout}>
-      <LogOut size={20} />
-    </Button>
-  </div>
+  {#if authState.enabled}
+    <div class="logout">
+      <Button small onclick={logout}>
+        <LogOut size={20} />
+      </Button>
+    </div>
+  {/if}
 </div>
 
 <style>
