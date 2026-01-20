@@ -13,6 +13,7 @@
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
+  import Pagination from "../../../components/Pagination.svelte";
   import {
     Delete,
     Add,
@@ -60,6 +61,9 @@
   }: Props = $props();
 
   const dispatch = createEventDispatcher();
+
+  const PAGE_SIZE = 50;
+  let currentPage = $state(1);
 
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
@@ -120,60 +124,53 @@
     return badge;
   }
 
-  let filteredRuleIndicesSet = $derived(
-    Array.isArray(visibleRuleIndices) ? new Set(visibleRuleIndices) : null,
-  );
-  let displayedRulesCount = $state(0);
-
-  $effect(() => {
-    displayedRulesCount = Array.isArray(visibleRuleIndices)
+  let totalRulesCount = $derived(
+    searchActive && Array.isArray(visibleRuleIndices)
       ? visibleRuleIndices.length
-      : group.rules.length;
-  });
+      : group.rules.length,
+  );
 
-  let renderLimit = $state(20);
-  let renderTimeout: number | null = null;
-
-  function scheduleNext() {
-    if (typeof window === "undefined") return;
-    if (renderTimeout) return;
-    if (renderLimit >= group.rules.length) return;
-
-    renderTimeout = window.setTimeout(() => {
-      renderTimeout = null;
-      if (searchActive) {
-        renderLimit = group.rules.length;
-        return;
-      }
-      renderLimit = Math.min(renderLimit + 15, group.rules.length);
-      scheduleNext();
-    }, 60);
-  }
+  let usePagination = $derived(totalRulesCount > PAGE_SIZE);
 
   $effect(() => {
-    if (searchActive) {
-      renderLimit = group.rules.length;
-      if (renderTimeout) {
-        clearTimeout(renderTimeout);
-        renderTimeout = null;
-      }
+    if (searchActive && visibleRuleIndices) {
+      currentPage = 1;
+    }
+  });
+
+  $effect(() => {
+    const maxPage = Math.ceil(totalRulesCount / PAGE_SIZE);
+    if (currentPage > maxPage && maxPage > 0) {
+      currentPage = 1;
+    }
+  });
+
+  let displayedRules = $derived.by(() => {
+    let rulesToRender: { rule: Rule; originalIndex: number }[] = [];
+
+    let sourceIndices: number[] = [];
+    if (searchActive && Array.isArray(visibleRuleIndices)) {
+      sourceIndices = visibleRuleIndices;
     } else {
-      scheduleNext();
+      sourceIndices = new Array(group.rules.length);
+      for (let i = 0; i < group.rules.length; i++) sourceIndices[i] = i;
     }
-  });
 
-  $effect(() => {
-    group.rules.length;
-    scheduleNext();
-  });
+    let startIndex = 0;
+    let endIndex = sourceIndices.length;
 
-  let reportedFinished = false;
-  $effect(() => {
-    if (searchActive) return;
-    if (!reportedFinished && renderLimit >= group.rules.length) {
-      reportedFinished = true;
-      onFinished?.();
+    if (usePagination) {
+      startIndex = (currentPage - 1) * PAGE_SIZE;
+      endIndex = Math.min(startIndex + PAGE_SIZE, sourceIndices.length);
     }
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const idx = sourceIndices[i];
+      if (group.rules[idx]) {
+        rulesToRender.push({ rule: group.rules[idx], originalIndex: idx });
+      }
+    }
+    return rulesToRender;
   });
 </script>
 
@@ -308,10 +305,10 @@
 
     <Collapsible.Content>
       <div transition:slide={searchActive ? { duration: 0 } : {}}>
-        {#if group.rules.length > 0}
+        {#if totalRulesCount > 0}
           <div class="group-rules-header">
             <div class="group-rules-header-column total">
-              #{displayedRulesCount}
+              #{totalRulesCount}
             </div>
             <div class="group-rules-header-column">{t("Name")}</div>
             <div class="group-rules-header-column">{t("Type")}</div>
@@ -320,28 +317,25 @@
           </div>
         {/if}
         <div class="group-rules">
-          {#if group.rules.length > 0}
-            {#each group.rules.slice(0, renderLimit) as rule, rule_index (rule.id)}
-              {@const isVisible =
-                !searchActive ||
-                filteredRuleIndicesSet === null ||
-                filteredRuleIndicesSet.has(rule_index)}
-              <div style={isVisible ? "" : "display: none"}>
-                <RuleRow
-                  key={rule.id}
-                  bind:rule={group.rules[rule_index]}
-                  {rule_index}
-                  {group_index}
-                  rule_id={rule.id}
-                  group_id={group.id}
-                  onChangeIndex={changeRuleIndex}
-                  onDelete={deleteRuleFromGroup}
-                  style={rule_index % 2 ? "" : "background-color: var(--bg-light)"}
-                />
-              </div>
+          {#if totalRulesCount > 0}
+            {#each displayedRules as { rule, originalIndex }, i (rule.id)}
+              <RuleRow
+                key={rule.id}
+                bind:rule={group.rules[originalIndex]}
+                rule_index={originalIndex}
+                {group_index}
+                rule_id={rule.id}
+                group_id={group.id}
+                onChangeIndex={changeRuleIndex}
+                onDelete={deleteRuleFromGroup}
+                style={i % 2 ? "" : "background-color: var(--bg-light)"}
+              />
             {/each}
           {/if}
         </div>
+        {#if usePagination}
+          <Pagination totalItems={totalRulesCount} pageSize={PAGE_SIZE} bind:currentPage />
+        {/if}
       </div>
     </Collapsible.Content>
   </Collapsible.Root>
@@ -402,7 +396,6 @@
     }
   }
 
-  /* Ручка групп */
   .group-grip {
     display: inline-flex;
     align-items: center;
