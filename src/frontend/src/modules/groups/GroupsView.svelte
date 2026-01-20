@@ -583,6 +583,7 @@
           visibleRuleIndices={ruleIndices}
           onFinished={handleGroupFinished}
           on:importRules={() => openImportRulesModal(group_index)}
+          data-no-smooth-reflow
         />
 
         <div
