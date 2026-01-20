@@ -64,7 +64,7 @@ app.use(`${API_BASE}/*`, async (c, next) => {
 });
 
 app.get(`${API_BASE}/auth`, async (c) => {
-  return c.json({ auth_enabled: AUTH_ENABLED }, 200);
+  return c.json({ enabled: AUTH_ENABLED }, 200);
 });
 
 app.post(`${API_BASE}/auth`, async (c) => {
