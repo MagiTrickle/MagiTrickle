@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Tabs } from "bits-ui";
   import { t } from "../../data/locale.svelte";
-  import { X, Menu, LayoutList } from "../ui/icons";
+  import { Menu, LayoutList } from "../ui/icons";
   import GroupsView from "../../modules/groups/GroupsView.svelte";
   // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
   // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
@@ -12,29 +12,12 @@
   import HeaderSettings from "./HeaderSettings.svelte";
 
   let active_tab = $state("groups");
-  let menuCheckbox: HTMLInputElement | undefined = $state();
+  let isMenuOpen = $state(false);
   let isRenderComplete = $state(false);
 
-  let innerWidth = $state(0);
-  let resizing = $state(false);
-  let resizeTimer: number;
-
-  $effect(() => {
-    if (innerWidth) {
-      resizing = true;
-      clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => {
-        resizing = false;
-      }, 200);
-    }
-  });
-
-  const closeMenu = () => {
-    if (menuCheckbox) menuCheckbox.checked = false;
-  };
+  const toggleMenu = () => (isMenuOpen = !isMenuOpen);
+  const closeMenu = () => (isMenuOpen = false);
 </script>
-
-<svelte:window bind:innerWidth />
 
 <Toast />
 <Overlay />
@@ -47,22 +30,30 @@
   <Tabs.Root bind:value={active_tab}>
     <nav>
       <div class="nav-left">
-        <input type="checkbox" id="mobile-menu-toggle" bind:this={menuCheckbox} />
+        <button
+          type="button"
+          class="mobile-dropdown-btn"
+          aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={isMenuOpen}
+          onclick={toggleMenu}
+        >
+          <span class="menu-morph" class:open={isMenuOpen} aria-hidden="true">
+            <Menu size={24} />
+          </span>
+        </button>
 
-        <label for="mobile-menu-toggle" class="mobile-dropdown-btn">
-          <div class="icon-open"><Menu size={28} /></div>
-          <div class="icon-close"><X size={28} /></div>
-        </label>
-
-        <div class="tabs-container" class:resizing>
+        <!-- Tabs container -->
+        <div class="tabs-panel" class:open={isMenuOpen}>
           <Tabs.List>
             <Tabs.Trigger value="groups" onclick={closeMenu}>
               <span class="tab-icon"><LayoutList size={24} /></span>
               {t("Groups")}
             </Tabs.Trigger>
 
-            <!-- <Tabs.Trigger value="settings" onclick={closeMenu}>Settings</Tabs.Trigger>
-            <Tabs.Trigger value="logs" onclick={closeMenu}>Logs</Tabs.Trigger> -->
+            <!--
+            <Tabs.Trigger value="settings" onclick={closeMenu}>Settings</Tabs.Trigger>
+            <Tabs.Trigger value="logs" onclick={closeMenu}>Logs</Tabs.Trigger>
+            -->
           </Tabs.List>
         </div>
       </div>
@@ -103,7 +94,6 @@
 
   nav {
     display: flex;
-    flex-direction: row;
     align-items: center;
     justify-content: space-between;
     width: 100%;
@@ -117,12 +107,17 @@
     align-items: center;
   }
 
-  #mobile-menu-toggle {
-    display: none;
+  .header-settings {
+    overflow: hidden;
   }
+
 
   .mobile-dropdown-btn {
     display: none;
+  }
+
+  .tabs-panel {
+    display: block;
   }
 
   :global([data-tabs-list]) {
@@ -145,13 +140,11 @@
     gap: 0.5rem;
     cursor: pointer;
     white-space: nowrap;
-    transition:
-      color 0.2s,
-      border-color 0.2s;
+    transition: color 0.2s, border-color 0.2s;
   }
 
   .tab-icon {
-    display: flex; /* Делает размер контейнера равным размеру SVG */
+    display: flex;
     transform: translateY(-2px);
   }
 
@@ -168,73 +161,56 @@
     padding-top: 1rem;
   }
 
-  .header-settings {
-    overflow: hidden;
-  }
 
   @media (max-width: 700px) {
     .mobile-dropdown-btn {
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       padding: 0.5rem;
+      border: 0;
+      background: transparent;
       color: var(--text);
       cursor: pointer;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .icon-close,
-    .icon-open {
-      display: flex;
-    }
-
-    .icon-close {
-      display: none;
-    }
-
-    .icon-open {
-      display: flex;
-    }
-
-    #mobile-menu-toggle:checked + .mobile-dropdown-btn .icon-open {
-      display: none;
-    }
-
-    #mobile-menu-toggle:checked + .mobile-dropdown-btn .icon-close {
-      display: flex;
-      color: var(--text);
-    }
-
-    .tabs-container {
+    .tabs-panel {
       position: absolute;
       top: 100%;
       left: 0;
       right: 0;
-      height: auto;
       background: var(--bg-dark);
       border-top: 1px solid var(--border-light);
       border-bottom: 1px solid var(--border-light);
-      padding: 1rem 0.7rem 1rem 0.7rem;
+      padding: 1rem 0.7rem;
       display: flex;
       flex-direction: column;
+      z-index: 99;
       opacity: 0;
       visibility: hidden;
-      transform: translateY(-10px);
-      transition:
-        opacity 0.2s ease,
-        transform 0.2s ease,
-        visibility 0.2s;
-      z-index: 99;
+      pointer-events: none;
+      transition: none;
     }
 
-    #mobile-menu-toggle:checked ~ .tabs-container {
+    .tabs-panel.open {
       opacity: 1;
       visibility: visible;
+      pointer-events: auto;
       transform: translateY(0);
+      transition:
+        opacity 160ms ease,
+        transform 160ms ease,
+        visibility 0s linear 0s;
     }
 
-    .tabs-container.resizing {
-      transition: none !important;
+    @supports selector(:has(*)) {
+      @starting-style {
+        .tabs-panel.open {
+          transform: translateY(-10px);
+        }
+      }
     }
 
     :global([data-tabs-list]) {
@@ -250,20 +226,64 @@
       padding: 0;
       width: 100%;
       justify-content: flex-start;
-      color: var(--text-2);
-      display: flex;
-      align-items: center;
-      line-height: 1;
       gap: 0.8rem;
+      line-height: 1;
     }
+  }
 
-    :global([data-tabs-trigger]:hover) {
-      color: var(--text);
-    }
 
-    :global([data-tabs-trigger][data-state="active"]) {
-      color: var(--blue-light-extra);
-      background-color: transparent;
+  .menu-morph {
+    --icon: 24px;
+    --dur-move: 170ms;
+    --dur-fade: 110ms;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --offset: calc(var(--icon) * 7 / 24);
+    --xscale: 1.08;
+
+    width: var(--icon);
+    height: var(--icon);
+    display: inline-block;
+  }
+
+  .menu-morph :global(svg) {
+    width: var(--icon);
+    height: var(--icon);
+    display: block;
+  }
+
+  .menu-morph :global(path) {
+    vector-effect: non-scaling-stroke;
+    transform-box: fill-box;
+    transform-origin: center;
+    will-change: transform, opacity;
+
+    transition-property: transform, opacity;
+    transition-duration: var(--dur-move), var(--dur-fade);
+    transition-timing-function: var(--ease), ease-out;
+  }
+
+  .menu-morph:not(.open) :global(path:nth-child(2)) {
+    transition-delay: 60ms, 0ms;
+  }
+
+  .menu-morph.open :global(path:nth-child(1)) {
+    transform: translateY(var(--offset)) rotate(45deg) scale(var(--xscale));
+  }
+
+  .menu-morph.open :global(path:nth-child(3)) {
+    transform: translateY(calc(var(--offset) * -1)) rotate(-45deg) scale(var(--xscale));
+  }
+
+  .menu-morph.open :global(path:nth-child(2)) {
+    opacity: 0;
+    transform: scaleX(0);
+    transition-delay: 0ms, 0ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .menu-morph :global(path),
+    .tabs-panel.open {
+      transition: none !important;
     }
   }
 </style>
