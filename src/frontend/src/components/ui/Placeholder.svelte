@@ -79,11 +79,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 14px 12px;
   }
 
   .card {
-    width: min(320px, 100%);
+    width: min(320px, calc(100vw - 0.3rem));
     display: flex;
     align-items: flex-start;
     gap: 12px;

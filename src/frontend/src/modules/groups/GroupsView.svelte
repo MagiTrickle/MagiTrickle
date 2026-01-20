@@ -6,7 +6,6 @@
   import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
   import { fetcher } from "../../utils/fetcher";
   import { overlay, toast } from "../../utils/events";
-  import { persistedState } from "../../utils/persisted-state.svelte";
   import { ChangeTracker } from "../../utils/change-tracker.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
@@ -34,7 +33,7 @@
   let dataRevision = $state(0);
   let valid_rules = $state(true);
   let canSave = $derived(tracker.isDirty && valid_rules);
-  let open_state = persistedState<Record<string, boolean>>("group_open_state", {});
+  let open_state = $state<Record<string, boolean>>({});
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
     open: false,
@@ -171,21 +170,6 @@
     bumpDataRevision();
   }
 
-  function initOpenState() {
-    for (const group of data) {
-      if (open_state.current[group.id] === undefined) {
-        open_state.current[group.id] = false;
-      }
-    }
-  }
-
-  function cleanOrphanedOpenState() {
-    for (const key of Object.keys(open_state.current)) {
-      if (!data.some((group) => group.id === key)) {
-        delete open_state.current[key];
-      }
-    }
-  }
 
   onMount(async () => {
     finishedGroupsCount = 0;
@@ -193,11 +177,10 @@
     try {
       const fetched =
         (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
-      tracker = new ChangeTracker(fetched);
-      initOpenState();
-      dataRevision = 0;
-      setTimeout(checkRulesValidityState, 10);
-      setTimeout(cleanOrphanedOpenState, 5000);
+    tracker = new ChangeTracker(fetched);
+    dataRevision = 0;
+    setTimeout(checkRulesValidityState, 10);
+
     } catch (error) {
       fetchError = true;
       console.error("Failed to load groups:", error);
@@ -345,7 +328,7 @@
   async function addGroup() {
     const group = defaultGroup();
     data.unshift(group);
-    open_state.current[group.id] = true;
+    open_state[group.id] = true;
     markGroupOrderChanged();
     markDataRevision();
     if (searchActive) {
@@ -363,7 +346,7 @@
     data.splice(index, 1);
     if (removed) {
       removeForcedGroup(removed.id);
-      delete open_state.current[removed.id];
+      delete open_state[removed.id];
     }
     markGroupOrderChanged();
     markDataRevision();
@@ -591,7 +574,7 @@
           bind:group={data[group_index]}
           {group_index}
           bind:total_groups={data.length}
-          bind:open={open_state.current[group.id]}
+          bind:open={open_state[group.id]}
           {deleteGroup}
           {addRuleToGroup}
           {deleteRuleFromGroup}
@@ -642,7 +625,7 @@
     for (let i = imported.length - 1; i >= 0; i--) {
       const group = imported[i];
       data.unshift(group);
-      open_state.current[group.id] = true;
+      open_state[group.id] = true;
     }
     markGroupOrderChanged();
     markDataRevision();
