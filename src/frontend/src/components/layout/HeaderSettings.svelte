@@ -4,7 +4,7 @@
   import { t, locale, locales } from "../../data/locale.svelte";
   import { token, authState } from "../../data/auth.svelte";
 
-  const version = import.meta.env.VITE_PKG_VERSION || "0.4.1~git20260113023430.4107ba7";
+  const version = import.meta.env.VITE_PKG_VERSION || "0.0.0";
   const isDev = import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true";
 
   const rotateLocale = () => {

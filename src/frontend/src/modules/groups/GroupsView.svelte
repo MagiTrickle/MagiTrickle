@@ -755,40 +755,6 @@
     }
   }
 
-  .group-search-input {
-    width: 100%;
-    padding: 0.7rem 0.85rem;
-    border-radius: 0.5rem;
-    border: 1px solid var(--bg-light-extra);
-    background-color: var(--bg-light);
-    color: var(--text);
-    font: inherit;
-    font-size: 1rem;
-    line-height: 1.3;
-    min-height: 2.7rem;
-    transition:
-      border-color 0.12s ease,
-      box-shadow 0.18s ease,
-      background-color 0.12s ease,
-      color 0.12s ease;
-  }
-
-  .group-search-input:hover {
-    background-color: color-mix(in oklab, var(--bg-light) 92%, var(--bg-light-extra) 8%);
-    border-color: color-mix(in oklab, var(--bg-light-extra) 90%, transparent);
-    color: var(--text);
-  }
-
-  .group-search-input:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent),
-      0 6px 18px -14px color-mix(in oklab, var(--accent) 35%, transparent);
-    background-color: var(--bg-light);
-    color: var(--text);
-  }
-
   @media (max-width: 700px) {
     .group-controls {
       margin-bottom: 1rem;

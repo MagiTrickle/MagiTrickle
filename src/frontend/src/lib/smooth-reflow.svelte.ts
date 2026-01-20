@@ -12,7 +12,11 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
 
   const savePositions = () => {
     const children = Array.from(node.children) as HTMLElement[];
-    positions = new Map(children.map((child) => [child, getPosition(child)]));
+    positions = new Map(
+      children
+        .filter((child) => child.getClientRects().length > 0)
+        .map((child) => [child, getPosition(child)]),
+    );
   };
 
   const observer = new ResizeObserver(() => {
@@ -25,6 +29,7 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
 
     children.forEach((child) => {
       if (child.hasAttribute("data-no-smooth-reflow")) return;
+      if (child.getClientRects().length === 0) return;
 
       const startPos = positions.get(child);
       const currentPos = getPosition(child);
