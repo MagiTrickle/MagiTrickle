@@ -82,10 +82,23 @@
       pointer-events: none;
     }
 
-    &.inactive::before {
-      animation: none;
-      background-image: none;
+    &.accent.inactive {
+      border: 1px solid var(--bg-light-extra) !important;
+      background: var(--bg-light) !important;
+      color: var(--text-2);
+    }
+
+    &.accent.inactive::before {
+      opacity: 0;
       background-color: var(--bg-light-extra);
+    }
+
+    &.accent.inactive::after {
+      background: var(--bg-light);
+    }
+
+    &.accent:not(.inactive)::before {
+      animation-play-state: running;
     }
 
     &.general {
@@ -124,6 +137,7 @@
       background-color: var(--bg-light-extra);
       background-image: conic-gradient(transparent 180deg, var(--accent) 360deg);
       animation: border-spin 3s linear infinite;
+      animation-play-state: paused;
       transition:
         background-color 0.3s ease,
         opacity 0.3s ease;

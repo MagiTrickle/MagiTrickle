@@ -519,7 +519,7 @@
         <Button
           onclick={saveChanges}
           id="save-changes"
-          class={canSave ? "accent" : ""}
+          class="accent"
           inactive={!canSave}
         >
           <Save size={22} />
