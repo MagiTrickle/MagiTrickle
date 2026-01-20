@@ -9,7 +9,9 @@
   import { persistedState } from "../../utils/persisted-state.svelte";
   import { ChangeTracker } from "../../utils/change-tracker.svelte";
   import Button from "../../components/ui/Button.svelte";
+  import Placeholder from "../../components/ui/Placeholder.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
+
   import { Add, Import, Export, Save } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
   import { droppable } from "../../lib/dnd";
@@ -187,13 +189,21 @@
 
   onMount(async () => {
     finishedGroupsCount = 0;
-    const fetched =
-      (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
-    tracker = new ChangeTracker(fetched);
-    initOpenState();
-    dataRevision = 0;
-    setTimeout(checkRulesValidityState, 10);
-    setTimeout(cleanOrphanedOpenState, 5000);
+    fetchError = false;
+    try {
+      const fetched =
+        (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
+      tracker = new ChangeTracker(fetched);
+      initOpenState();
+      dataRevision = 0;
+      setTimeout(checkRulesValidityState, 10);
+      setTimeout(cleanOrphanedOpenState, 5000);
+    } catch (error) {
+      fetchError = true;
+      console.error("Failed to load groups:", error);
+    } finally {
+      dataLoaded = true;
+    }
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", handleSaveShortcut);
     }
@@ -437,11 +447,16 @@
   }
 
   let finishedGroupsCount = $state(0);
+  let fetchError = $state(false);
+  let dataLoaded = $state(false);
   function handleGroupFinished() {
     finishedGroupsCount++;
   }
 
-  let isAllRendered = $derived(data.length > 0 && finishedGroupsCount >= data.length);
+  let isAllRendered = $derived(dataLoaded && (data.length === 0 || finishedGroupsCount >= data.length));
+  let isEmptyData = $derived(
+    dataLoaded && !fetchError && !searchActive && !searchPending && data.length === 0,
+  );
 
   $effect(() => {
     if (isAllRendered) {
@@ -525,17 +540,26 @@
     </div>
   </div>
 
-  {#if noVisibleGroups}
-    <div class="no-groups">{t("No matches found")}</div>
-  {/if}
-
-  {#if !isAllRendered}
-    <div class="initial-loader">
-      <div class="loader-content">
-        <div class="spinner"></div>
-        <span>{t("Loading groups...")}</span>
-      </div>
-    </div>
+  {#if fetchError}
+  <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
+    {t("Failed to load groups")}
+  </Placeholder>
+  {:else if !isAllRendered}
+    <Placeholder variant="loading" minHeight="auto">
+      {t("Loading groups...")}
+    </Placeholder>
+  {:else if searchPending}
+    <Placeholder variant="loading" minHeight="auto">
+      {t("Searching...")}
+    </Placeholder>
+  {:else if noVisibleGroups}
+    <Placeholder variant="empty" minHeight="auto">
+      {t("No matches found")}
+    </Placeholder>
+  {:else if isEmptyData}
+    <Placeholder variant="empty" minHeight="auto" subtitle={t("Create a new group to get started")}>
+      {t("No groups yet")}
+    </Placeholder>
   {/if}
 
   <div
@@ -639,48 +663,6 @@
     opacity: 1;
   }
 
-  .initial-loader {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 300px;
-    width: 100%;
-    color: var(--text-2);
-    font-size: 1.2rem;
-    animation: fade-in 0.3s ease-out;
-  }
-
-  .loader-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid color-mix(in oklab, var(--accent) 20%, transparent);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
   .group-wrapper {
     position: relative;
     margin: 1rem 0;
@@ -739,7 +721,7 @@
     flex-wrap: nowrap;
     gap: 0.75rem;
     padding: 0.3rem 0rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     position: sticky;
     top: 0;
     z-index: 5;
@@ -767,10 +749,4 @@
     gap: 0.5rem;
   }
 
-  .no-groups {
-    width: 100%;
-    text-align: center;
-    padding: 2rem 0;
-    color: color-mix(in oklab, var(--text) 75%, transparent);
-  }
 </style>

@@ -14,7 +14,7 @@
   "Deselect all": "Снять выделение",
   "Cancel": "Отмена",
   "Search groups and rules...": "Поиск по группам и правилам...",
-  "No matches found": "Совпадений не найдено",
+  "No matches found": "Ничего не найдено",
   "Type": "Тип",
   "Pattern": "Паттерн",
   "Enabled": "Включён",
@@ -54,5 +54,8 @@
   "Loading...": "Загрузка...",
   "Sign In": "Войти",
   "entware credentials": "креденшелы entware",
-  "Loading groups...": "Загрузка групп..."
+  "Loading groups...": "Загрузка групп...",
+  "Searching...": "Поиск...",
+  "No groups yet": "Групп пока нет",
+  "Create a new group to get started": "Для начала создайте новую группу"
 }
