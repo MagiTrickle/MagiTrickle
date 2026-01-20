@@ -22,7 +22,11 @@
     Dots,
     ImportList,
     Grip,
+    SortDesc,
+    SortAsc,
+    SortNeutral,
   } from "../../../components/ui/icons";
+  import { sortRules, type SortField, type SortDirection } from "../../../utils/rule-sorter";
   import RuleRow from "./RuleRow.svelte";
 
   type Props = {
@@ -181,6 +185,47 @@
       onFinished?.();
     }
   });
+
+  let sortField = $state<SortField | null>(null);
+  let sortDirection = $state<SortDirection>("asc");
+  let initialOrderIds = $state<string[] | null>(null);
+
+  function handleSort(field: SortField) {
+    if (!initialOrderIds) {
+      initialOrderIds = group.rules.map((rule) => rule.id);
+    }
+
+    if (sortField === field && sortDirection === "desc") {
+      sortField = null;
+      sortDirection = "asc";
+
+      if (initialOrderIds) {
+        const ruleMap = new Map(group.rules.map((rule) => [rule.id, rule]));
+        const orderedRules = initialOrderIds
+          .map((id) => ruleMap.get(id))
+          .filter((rule): rule is Rule => Boolean(rule));
+        group.rules.splice(0, group.rules.length, ...orderedRules);
+      }
+      return;
+    }
+
+    if (sortField === field) {
+      sortDirection = "desc";
+    } else {
+      sortField = field;
+      sortDirection = "asc";
+    }
+
+    const sorted = sortRules(group.rules, field, sortDirection);
+    group.rules.splice(0, group.rules.length, ...sorted);
+  }
+
+  $effect(() => {
+    group.rules.length;
+    if (sortField === null) {
+      initialOrderIds = null;
+    }
+  });
 </script>
 
 <svelte:window bind:innerWidth={client_width} />
@@ -319,9 +364,37 @@
             <div class="group-rules-header-column total">
               #{totalRulesCount}
             </div>
-            <div class="group-rules-header-column">{t("Name")}</div>
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="group-rules-header-column clickable" onclick={() => handleSort("name")}>
+              {t("Name")}
+              <div class="sort-icon">
+                {#if sortField === "name" && sortDirection === "desc"}
+                  <SortAsc size={16} />
+                {:else if sortField === "name"}
+                  <SortDesc size={16} />
+                {:else}
+                  <SortNeutral size={16} />
+                {/if}
+              </div>
+            </div>
             <div class="group-rules-header-column">{t("Type")}</div>
-            <div class="group-rules-header-column">{t("Pattern")}</div>
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="group-rules-header-column clickable" onclick={() => handleSort("pattern")}>
+              {t("Pattern")}
+              <div class="sort-icon">
+                {#if sortField === "pattern" && sortDirection === "desc"}
+                  <SortAsc size={16} />
+                {:else if sortField === "pattern"}
+                  <SortDesc size={16} />
+                {:else}
+                  <SortNeutral size={16} />
+                {/if}
+              </div>
+            </div>
             <div class="group-rules-header-column">{t("Enabled")}</div>
           </div>
         {/if}
@@ -429,6 +502,8 @@
       font-family: var(--font);
       color: var(--text);
       border-bottom: 1px solid transparent;
+      position: relative;
+      top: 0.1rem;
       margin-left: 0.4rem;
     }
 
@@ -479,6 +554,23 @@
       position: relative;
       top: -1px;
     }
+  }
+
+  .clickable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.12s ease;
+  }
+
+  .clickable:hover {
+    color: var(--text);
+  }
+
+  .sort-icon {
+    margin-left: 0.4rem;
+    display: flex;
+    align-items: center;
+    color: var(--text-2);
   }
 
   :global {
@@ -564,5 +656,20 @@
         display: none;
       }
     }
+  }
+  .clickable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.12s ease;
+  }
+  .clickable:hover {
+    color: var(--text);
+  }
+
+  .sort-icon {
+    margin-left: 0.4rem;
+    display: flex;
+    align-items: center;
+    color: var(--text-2);
   }
 </style>
