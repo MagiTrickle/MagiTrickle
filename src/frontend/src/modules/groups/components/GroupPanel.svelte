@@ -427,8 +427,6 @@
       font-family: var(--font);
       color: var(--text);
       border-bottom: 1px solid transparent;
-      position: relative;
-      top: 0.1rem;
       margin-left: 0.4rem;
     }
 

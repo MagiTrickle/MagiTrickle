@@ -78,11 +78,9 @@
       justify-content: center;
     }
 
-    .dd-label {
-      position: relative;
-      top: 2px;
-      margin-right: auto;
-    }
+  .dd-label {
+    margin-right: auto;
+  }
 
     .dd-check {
       display: flex;

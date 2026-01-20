@@ -145,7 +145,6 @@
 
   .tab-icon {
     display: flex;
-    transform: translateY(-2px);
   }
 
   :global([data-tabs-trigger][data-state="active"]) {
