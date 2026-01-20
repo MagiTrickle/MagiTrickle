@@ -38,20 +38,22 @@
       </div>
     </Select.Trigger>
 
-    <Select.Content align="start">
-      {#each options as option}
-        <Select.Item value={option.value} label={option.label}>
-          {#snippet children({ selected })}
-            <div class="option">
-              <div class="option-label">{option.label}</div>
-              <div class="option-check">
-                {#if selected}<Check size={16} />{/if}
+    <Select.Portal>
+      <Select.Content align="start" sideOffset={4}>
+        {#each options as option}
+          <Select.Item value={option.value} label={option.label}>
+            {#snippet children({ selected })}
+              <div class="option">
+                <div class="option-label">{option.label}</div>
+                <div class="option-check">
+                  {#if selected}<Check size={16} />{/if}
+                </div>
               </div>
-            </div>
-          {/snippet}
-        </Select.Item>
-      {/each}
-    </Select.Content>
+            {/snippet}
+          </Select.Item>
+        {/each}
+      </Select.Content>
+    </Select.Portal>
   </Select.Root>
 </div>
 
@@ -64,7 +66,6 @@
 
   :global([data-select-root]) {
     width: max-content;
-    z-index: 100;
   }
 
   :global([data-select-trigger]) {
