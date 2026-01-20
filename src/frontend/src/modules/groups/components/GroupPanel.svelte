@@ -188,16 +188,44 @@
 
   let sortField = $state<SortField | null>(null);
   let sortDirection = $state<SortDirection>("asc");
+  let initialOrderIds = $state<string[] | null>(null);
 
   function handleSort(field: SortField) {
+    if (!initialOrderIds) {
+      initialOrderIds = group.rules.map((rule) => rule.id);
+    }
+
+    if (sortField === field && sortDirection === "desc") {
+      sortField = null;
+      sortDirection = "asc";
+
+      if (initialOrderIds) {
+        const ruleMap = new Map(group.rules.map((rule) => [rule.id, rule]));
+        const orderedRules = initialOrderIds
+          .map((id) => ruleMap.get(id))
+          .filter((rule): rule is Rule => Boolean(rule));
+        group.rules.splice(0, group.rules.length, ...orderedRules);
+      }
+      return;
+    }
+
     if (sortField === field) {
-      sortDirection = sortDirection === "asc" ? "desc" : "asc";
+      sortDirection = "desc";
     } else {
       sortField = field;
       sortDirection = "asc";
     }
-    group.rules = sortRules(group.rules, sortField ?? field, sortDirection);
+
+    const sorted = sortRules(group.rules, field, sortDirection);
+    group.rules.splice(0, group.rules.length, ...sorted);
   }
+
+  $effect(() => {
+    group.rules.length;
+    if (sortField === null) {
+      initialOrderIds = null;
+    }
+  });
 </script>
 
 <svelte:window bind:innerWidth={client_width} />
