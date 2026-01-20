@@ -17,13 +17,15 @@
 
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>{@render trigger()}</DropdownMenu.Trigger>
-  <DropdownMenu.Content alignOffset={0} align="end">
-    {#each items as item, index}
-      <DropdownMenu.Item>
-        {@render item()}
-      </DropdownMenu.Item>
-    {/each}
-  </DropdownMenu.Content>
+  <DropdownMenu.Portal>
+    <DropdownMenu.Content alignOffset={0} align="end">
+      {#each items as item, index}
+        <DropdownMenu.Item>
+          {@render item()}
+        </DropdownMenu.Item>
+      {/each}
+    </DropdownMenu.Content>
+  </DropdownMenu.Portal>
 </DropdownMenu.Root>
 
 <style>

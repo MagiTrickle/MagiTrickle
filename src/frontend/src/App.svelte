@@ -9,8 +9,8 @@
 
   onMount(async () => {
     try {
-      const res = await fetcher.get<{ auth_enabled: boolean }>("/auth");
-      authState.enabled = res.auth_enabled;
+      const { enabled } = await fetcher.get<{ enabled: boolean }>("/auth");
+      authState.enabled = enabled;
     } catch (e) {
       console.error("Failed to check auth status", e);
     } finally {
