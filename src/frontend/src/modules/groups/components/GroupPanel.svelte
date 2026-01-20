@@ -172,6 +172,15 @@
     }
     return rulesToRender;
   });
+
+  let reportedFinished = false;
+  $effect(() => {
+    if (searchActive) return;
+    if (!reportedFinished && (totalRulesCount === 0 || displayedRules.length > 0)) {
+      reportedFinished = true;
+      onFinished?.();
+    }
+  });
 </script>
 
 <svelte:window bind:innerWidth={client_width} />
