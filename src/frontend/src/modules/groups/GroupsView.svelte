@@ -453,7 +453,9 @@
     finishedGroupsCount++;
   }
 
-  let isAllRendered = $derived(dataLoaded && (data.length === 0 || finishedGroupsCount >= data.length));
+  let isAllRendered = $derived(
+    dataLoaded && (data.length === 0 || finishedGroupsCount >= data.length || searchActive),
+  );
   let isEmptyData = $derived(
     dataLoaded && !fetchError && !searchActive && !searchPending && data.length === 0,
   );
@@ -547,10 +549,6 @@
   {:else if !isAllRendered}
     <Placeholder variant="loading" minHeight="auto">
       {t("Loading groups...")}
-    </Placeholder>
-  {:else if searchPending}
-    <Placeholder variant="loading" minHeight="auto">
-      {t("Searching...")}
     </Placeholder>
   {:else if noVisibleGroups}
     <Placeholder variant="empty" minHeight="auto">

@@ -44,14 +44,14 @@
     <div class="icon" aria-hidden="true">
       {#if resolvedVariant === "loading"}
         <span class="spin">
-          <LoaderCircle size={22} />
+          <LoaderCircle size={30} />
         </span>
       {:else if resolvedVariant === "error"}
-        <TriangleAlert size={18} />
+        <TriangleAlert size={30} />
       {:else if resolvedVariant === "empty"}
-        <SearchSlash size={18} />
+        <SearchSlash size={30} />
       {:else}
-        <CircleInfo size={18} />
+        <CircleInfo size={30} />
       {/if}
     </div>
 
@@ -83,7 +83,7 @@
   }
 
   .card {
-    width: min(520px, 100%);
+    width: min(320px, 100%);
     display: flex;
     align-items: flex-start;
     gap: 12px;
@@ -109,30 +109,27 @@
   }
 
   .icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
 
     display: grid;
     place-items: center;
 
-    background: var(--bg-light);
+    background: transparent;
     color: var(--accent);
     flex: 0 0 auto;
   }
 
   .card[data-variant="error"] .icon {
-    background: color-mix(in oklab, var(--red) 16%, transparent);
     color: var(--red);
   }
 
   .card[data-variant="empty"] .icon {
-    background: var(--bg-light);
     color: var(--text-2);
   }
 
   .card[data-variant="loading"] .icon {
-    background: var(--bg-light);
     color: var(--blue-light-extra);
   }
 
@@ -147,7 +144,7 @@
   .title {
     color: var(--text);
     font-size: 0.98rem;
-    font-weight: 600;
+    font-weight: 400;
     line-height: 1.25;
   }
 
