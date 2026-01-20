@@ -12,6 +12,12 @@
     swing: number;
   };
 
+  type Props = {
+    visible?: boolean;
+  };
+
+  let { visible = true }: Props = $props();
+
   const layerConfig = {
     densityScale: 0.7,
     minCount: 20,
@@ -386,7 +392,7 @@
 <canvas
   bind:this={canvas}
   class="snow-field"
-  style={`--snow-z:${layerConfig.zIndex}; --snow-opacity:${layerConfig.opacity};`}
+  style={`--snow-z:${layerConfig.zIndex}; --snow-opacity:${layerConfig.opacity}; opacity: ${visible ? 'var(--snow-opacity)' : '0'};`}
   aria-hidden="true"
 ></canvas>
 
@@ -398,12 +404,12 @@
     height: 100%;
     pointer-events: none;
     z-index: var(--snow-z, 10);
-    opacity: var(--snow-opacity, 0.85);
+    transition: opacity 2s ease-in-out;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .snow-field {
-      opacity: calc(var(--snow-opacity, 0.85) * 0.7);
+      opacity: calc(var(--snow-opacity, 0.85) * 0.7) !important;
     }
   }
 </style>

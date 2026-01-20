@@ -257,10 +257,8 @@
     font-size: 1rem;
     font-family: var(--font);
     color: var(--text);
-    top: 0.1rem;
     border-bottom: 1px solid transparent;
     width: 100%;
-    position: relative;
   }
   .table-input:focus-visible {
     outline: none;
@@ -290,7 +288,6 @@
     cursor: grab;
     color: var(--text-2);
     position: relative;
-    top: -0.05rem;
     left: 0.1rem;
     -webkit-user-drag: none;
     user-select: none;

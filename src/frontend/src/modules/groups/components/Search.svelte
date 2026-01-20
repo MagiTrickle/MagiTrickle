@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
-
   import { t } from "../../../data/locale.svelte";
   import { Search } from "../../../components/ui/icons";
-  import type { Group, Rule } from "../../../types";
+  import type { Group } from "../../../types";
 
   type VisibleGroup = {
     group_index: number;
@@ -41,42 +39,28 @@
     ...rest
   }: Props = $props();
 
-  const SEARCH_DEBOUNCE_MS = 60 as const;
-  const SEARCH_YIELD_MS = 8 as const;
-  const RULE_YIELD_BATCH = 80 as const;
+  const SEARCH_DEBOUNCE_MS = 150 as const;
 
-  type GroupSearchCache = {
-    name: string;
-    blob: string;
-    lowerBlob: string;
-  };
-
-  type RuleSearchCache = {
-    name: string;
-    pattern: string;
-    blob: string;
-    lowerBlob: string;
-  };
-
-  const groupSearchCache = new WeakMap<Group, GroupSearchCache>();
-  const ruleSearchCache = new WeakMap<Rule, RuleSearchCache>();
   const forcedGroupIds = new Set<string>();
   const forcedRuleIdsByGroup = new Map<string, Set<string>>();
-
   let forcedSearchKey = "";
-  let groupOrderRevision = $state(0);
-  let lastGroupOrderRevision = 0;
-  let lastSearchRevision = 0;
-  let searchRunId = 0;
-  let searchDebounceId: number | null = null;
-  let lastSearchQuery = "";
-  let lastVisibleGroups: VisibleGroup[] = [];
 
   let normalizedSearch = $derived(value.trim().toLowerCase());
 
+  let searchIndex = $derived.by(() => {
+    dataRevision;
+    return groups.map((g) => ({
+      id: g.id,
+      nameLower: (g.name || "").toLowerCase(),
+      rules: g.rules.map((r) => ({
+        id: r.id,
+        searchBlob: `${r.name || ""} ${r.rule || ""}`.toLowerCase(),
+      })),
+    }));
+  });
+
   let isFocused = $state(false);
   let inputRef: HTMLInputElement;
-
   let isActive = $derived(isFocused || value.length > 0);
 
   $effect(() => {
@@ -85,42 +69,6 @@
 
   function handleContainerClick() {
     inputRef?.focus();
-  }
-
-  function getGroupSearchCache(group: Group): GroupSearchCache {
-    const name = group.name ?? "";
-    const cached = groupSearchCache.get(group);
-    if (cached && cached.name === name) {
-      return cached;
-    }
-
-    const blob = name;
-    const next = {
-      name,
-      blob,
-      lowerBlob: blob.toLowerCase(),
-    };
-    groupSearchCache.set(group, next);
-    return next;
-  }
-
-  function getRuleSearchCache(rule: Rule): RuleSearchCache {
-    const name = rule.name ?? "";
-    const pattern = rule.rule ?? "";
-    const cached = ruleSearchCache.get(rule);
-    if (cached && cached.name === name && cached.pattern === pattern) {
-      return cached;
-    }
-
-    const blob = `${name}\n${pattern}`;
-    const next = {
-      name,
-      pattern,
-      blob,
-      lowerBlob: blob.toLowerCase(),
-    };
-    ruleSearchCache.set(rule, next);
-    return next;
   }
 
   function resetForcedVisibility(searchKey: string) {
@@ -132,9 +80,7 @@
     }
   }
 
-  function markGroupOrderChanged() {
-    groupOrderRevision += 1;
-  }
+  function markGroupOrderChanged() {}
 
   function forceVisibleGroup(groupId: string) {
     if (!normalizedSearch) return;
@@ -179,145 +125,57 @@
     targetForced.add(ruleId);
   }
 
-  async function runSearch(runId: number, query: string) {
-    const now =
-      typeof performance !== "undefined" && typeof performance.now === "function"
-        ? () => performance.now()
-        : () => Date.now();
-    let lastYield = now();
-    const canYield = typeof window !== "undefined";
-    const shouldYield = () => canYield && now() - lastYield > SEARCH_YIELD_MS;
-    const yieldControl = async () => {
-      if (!shouldYield()) return true;
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      if (runId !== searchRunId) return false;
-      lastYield = now();
-      return true;
-    };
-
+  function performSearch() {
+    const query = normalizedSearch;
     resetForcedVisibility(query);
 
     if (!query) {
-      const allVisible: VisibleGroup[] = [];
-      for (let index = 0; index < groups.length; index++) {
-        if (groups[index]) {
-          allVisible.push({ group_index: index, ruleIndices: null });
-        }
-      }
-      visibleGroups = allVisible;
-      lastSearchQuery = "";
-      lastVisibleGroups = allVisible;
-      lastGroupOrderRevision = groupOrderRevision;
-      lastSearchRevision = dataRevision;
+      visibleGroups = groups.map((_, index) => ({ group_index: index, ruleIndices: null }));
       searchPending = false;
       return;
     }
 
-    const hasForced = forcedGroupIds.size > 0 || forcedRuleIdsByGroup.size > 0;
-    const orderChanged = groupOrderRevision !== lastGroupOrderRevision;
-    const dataChanged = dataRevision !== lastSearchRevision;
-    const canUsePrevious =
-      !orderChanged &&
-      !dataChanged &&
-      !hasForced &&
-      lastSearchQuery.length > 0 &&
-      query.startsWith(lastSearchQuery);
-
     const nextVisible: VisibleGroup[] = [];
-    const groupsToScan = canUsePrevious ? lastVisibleGroups : null;
-    const totalGroups = groupsToScan ? groupsToScan.length : groups.length;
+    const len = searchIndex.length;
 
-    for (let i = 0; i < totalGroups; i++) {
-      if (runId !== searchRunId) return;
-      const group_index = groupsToScan ? groupsToScan[i].group_index : i;
-      const group = groups[group_index];
-      if (!group) continue;
+    for (let i = 0; i < len; i++) {
+      const indexedGroup = searchIndex[i];
+      const isForcedGroup = forcedGroupIds.has(indexedGroup.id);
 
-      const groupCache = getGroupSearchCache(group);
-      const groupMatch = groupCache.lowerBlob.includes(query);
-      const isForcedGroup = forcedGroupIds.has(group.id);
-
-      if (groupMatch || isForcedGroup) {
-        nextVisible.push({ group_index, ruleIndices: null });
-        if (!(await yieldControl())) return;
+      if (isForcedGroup || indexedGroup.nameLower.includes(query)) {
+        nextVisible.push({ group_index: i, ruleIndices: null });
         continue;
       }
 
-      const forcedRules = forcedRuleIdsByGroup.get(group.id);
-      let matchedRuleIndices: number[] | null = null;
-      const rules = group.rules;
+      const matchedRuleIndices: number[] = [];
+      const forcedRules = forcedRuleIdsByGroup.get(indexedGroup.id);
+      const rules = indexedGroup.rules;
+      const rulesLen = rules.length;
 
-      for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
-        const rule = rules[ruleIndex];
-        const isForced = forcedRules ? forcedRules.has(rule.id) : false;
-        let ruleMatch = false;
-        if (!isForced) {
-          const ruleCache = getRuleSearchCache(rule);
-          ruleMatch = ruleCache.lowerBlob.includes(query);
-        }
-
-        if (ruleMatch || isForced) {
-          if (!matchedRuleIndices) matchedRuleIndices = [];
-          matchedRuleIndices.push(ruleIndex);
-        }
-
-        if (ruleIndex % RULE_YIELD_BATCH === 0) {
-          if (!(await yieldControl())) return;
+      for (let r = 0; r < rulesLen; r++) {
+        const indexedRule = rules[r];
+        if (forcedRules?.has(indexedRule.id) || indexedRule.searchBlob.includes(query)) {
+          matchedRuleIndices.push(r);
         }
       }
 
-      if (matchedRuleIndices) {
-        nextVisible.push({ group_index, ruleIndices: matchedRuleIndices });
+      if (matchedRuleIndices.length > 0) {
+        nextVisible.push({ group_index: i, ruleIndices: matchedRuleIndices });
       }
-
-      if (!(await yieldControl())) return;
     }
 
-    if (runId !== searchRunId) return;
     visibleGroups = nextVisible;
-    lastSearchQuery = query;
-    lastVisibleGroups = nextVisible;
-    lastGroupOrderRevision = groupOrderRevision;
-    lastSearchRevision = dataRevision;
     searchPending = false;
   }
 
-  function scheduleSearch() {
-    if (searchDebounceId !== null) {
-      clearTimeout(searchDebounceId);
-      searchDebounceId = null;
-    }
-
-    searchRunId += 1;
-    const runId = searchRunId;
-    const query = normalizedSearch;
-
-    if (!query) {
-      searchPending = false;
-      void runSearch(runId, query);
-      return;
-    }
-
-    searchPending = true;
-    if (typeof window === "undefined") {
-      void runSearch(runId, query);
-      return;
-    }
-    searchDebounceId = window.setTimeout(() => {
-      searchDebounceId = null;
-      void runSearch(runId, query);
-    }, SEARCH_DEBOUNCE_MS);
-  }
-
+  let debounceTimer: number;
   $effect(() => {
-    const query = normalizedSearch;
-    groupOrderRevision;
-    if (query) {
-      dataRevision;
-    } else {
-      groups.length;
-    }
-    scheduleSearch();
+    normalizedSearch;
+    searchIndex;
+
+    clearTimeout(debounceTimer);
+    searchPending = true;
+    debounceTimer = window.setTimeout(performSearch, SEARCH_DEBOUNCE_MS);
   });
 
   const controlsImpl: SearchControls = {
@@ -331,14 +189,6 @@
 
   $effect(() => {
     controls = controlsImpl;
-  });
-
-  onDestroy(() => {
-    if (typeof window === "undefined") return;
-    if (searchDebounceId !== null) {
-      window.clearTimeout(searchDebounceId);
-      searchDebounceId = null;
-    }
   });
 </script>
 
