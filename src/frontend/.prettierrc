@@ -1,7 +1,29 @@
 {
-  "plugins": ["prettier-plugin-svelte"],
-  "overrides": [{ "files": "*.svelte", "options": { "parser": "svelte" } }],
   "printWidth": 100,
   "tabWidth": 2,
-  "semi": true
+  "semi": true,
+  "plugins": ["@ianvs/prettier-plugin-sort-imports", "prettier-plugin-svelte"],
+  "overrides": [
+    {
+      "files": "*.svelte",
+      "options": {
+        "parser": "svelte"
+      }
+    }
+  ],
+  "importOrderParserPlugins": ["typescript", "jsx", "decorators-legacy"],
+  "importOrderTypeScriptVersion": "5.0.0",
+  "importOrder": [
+    "<BUILTIN_MODULES>",
+    "<THIRD_PARTY_MODULES>",
+    "",
+    "\\.svelte$",
+    "",
+    "^\\$lib",
+    "^\\$app",
+    "",
+    "^[../]",
+    "",
+    "^[./]"
+  ]
 }

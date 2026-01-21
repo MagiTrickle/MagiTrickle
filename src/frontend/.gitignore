@@ -21,4 +21,4 @@ dist-ssr
 *.sln
 *.sw?
 
-dev/groups.json
+dev/groups*.json

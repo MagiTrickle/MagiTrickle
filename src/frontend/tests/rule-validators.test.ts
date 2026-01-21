@@ -1,4 +1,5 @@
 import { strictEqual } from "node:assert";
+
 import {
   isValidDomain,
   isValidNamespace,

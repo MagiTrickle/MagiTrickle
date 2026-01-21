@@ -1,33 +1,34 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
-  import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import { slide } from "svelte/transition";
 
-  import { type Group, type Rule } from "../../../types";
-  import { defaultRule } from "../../../utils/defaults";
-  import { interfaces } from "../../../data/interfaces.svelte";
-  import { t } from "../../../data/locale.svelte";
-  import { droppable, draggable } from "../../../lib/dnd";
+  import Pagination from "../../../components/Pagination.svelte";
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
-  import Pagination from "../../../components/Pagination.svelte";
+  import { interfaces } from "../../../data/interfaces.svelte";
+  import { t } from "../../../data/locale.svelte";
+  import RuleRow from "./RuleRow.svelte";
+
   import {
-    Delete,
     Add,
-    GroupExpand,
-    GroupCollapse,
+    Delete,
     Dots,
-    ImportList,
     Grip,
-    SortDesc,
+    GroupCollapse,
+    GroupExpand,
+    ImportList,
     SortAsc,
+    SortDesc,
     SortNeutral,
   } from "../../../components/ui/icons";
-  import { sortRules, type SortField, type SortDirection } from "../../../utils/rule-sorter";
-  import RuleRow from "./RuleRow.svelte";
+  import { draggable, droppable } from "../../../lib/dnd";
+  import { type Group, type Rule } from "../../../types";
+  import { defaultRule } from "../../../utils/defaults";
+  import { sortRules, type SortDirection, type SortField } from "../../../utils/rule-sorter";
 
   type Props = {
     group: Group;

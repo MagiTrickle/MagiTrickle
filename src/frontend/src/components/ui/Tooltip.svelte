@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import type { Snippet } from "svelte";
+  import { onMount, type Snippet } from "svelte";
 
   type Props = {
     value: string;

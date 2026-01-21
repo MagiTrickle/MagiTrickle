@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { t } from "../data/locale.svelte";
-  import { fetcher } from "../utils/fetcher";
   import { token } from "../data/auth.svelte";
+  import { t } from "../data/locale.svelte";
   import Button from "./ui/Button.svelte";
+
   import { toast } from "../utils/events";
-  import { User, Password, Info } from "./ui/icons";
+  import { fetcher } from "../utils/fetcher";
+  import { Info, Password, User } from "./ui/icons";
 
   let login = $state("");
   let password = $state("");

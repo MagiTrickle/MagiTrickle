@@ -230,7 +230,6 @@
         flakes.push(createFlake());
       }
     }
-
   }
 
   function updateWind(dt: number) {
@@ -392,7 +391,7 @@
 <canvas
   bind:this={canvas}
   class="snow-field"
-  style={`--snow-z:${layerConfig.zIndex}; --snow-opacity:${layerConfig.opacity}; opacity: ${visible ? 'var(--snow-opacity)' : '0'};`}
+  style={`--snow-z:${layerConfig.zIndex}; --snow-opacity:${layerConfig.opacity}; opacity: ${visible ? "var(--snow-opacity)" : "0"};`}
   aria-hidden="true"
 ></canvas>
 

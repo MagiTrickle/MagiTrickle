@@ -1,17 +1,18 @@
-import { randomId } from "./utils/defaults";
 import {
-  parse,
+  array,
   boolean,
   fallback,
-  pipe,
-  string,
+  length,
   object,
   optional,
-  array,
+  parse,
+  pipe,
   regex,
-  length,
+  string,
   type InferOutput,
 } from "valibot";
+
+import { randomId } from "./utils/defaults";
 
 declare global {
   interface WindowEventMap {

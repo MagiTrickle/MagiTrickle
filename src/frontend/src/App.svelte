@@ -1,11 +1,14 @@
 <script lang="ts">
   import "./app.css";
-  import AppLayout from "./components/layout/AppLayout.svelte";
-  import AuthPage from "./components/AuthPage.svelte";
-  import { token, authState } from "./data/auth.svelte";
-  import { fetchInterfaces } from "./data/interfaces.svelte";
-  import { fetcher } from "./utils/fetcher";
+
   import { onMount } from "svelte";
+
+  import AuthPage from "./components/AuthPage.svelte";
+  import AppLayout from "./components/layout/AppLayout.svelte";
+  import { authState, token } from "./data/auth.svelte";
+  import { fetchInterfaces } from "./data/interfaces.svelte";
+
+  import { fetcher } from "./utils/fetcher";
 
   onMount(async () => {
     try {

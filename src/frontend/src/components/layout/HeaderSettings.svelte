@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { authState, token } from "../../data/auth.svelte";
+  import { locale, locales, t } from "../../data/locale.svelte";
   import Button from "../ui/Button.svelte";
-  import { Locale, Gitlab, Bug, LogOut } from "../ui/icons";
-  import { t, locale, locales } from "../../data/locale.svelte";
-  import { token, authState } from "../../data/auth.svelte";
+
+  import { Bug, Gitlab, Locale, LogOut } from "../ui/icons";
 
   const version = import.meta.env.VITE_PKG_VERSION || "0.0.0";
   const isDev = import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true";

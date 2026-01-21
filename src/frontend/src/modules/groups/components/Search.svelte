@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "../../../data/locale.svelte";
+
   import { Search } from "../../../components/ui/icons";
   import type { Group } from "../../../types";
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+
   import { CircleInfo, LoaderCircle, SearchSlash, TriangleAlert } from "./icons";
 
   type Variant = "neutral" | "empty" | "loading" | "error";
@@ -38,7 +39,7 @@
     data-variant={resolvedVariant}
     data-compact={compact ? "true" : "false"}
     data-no-subtitle={subtitle ? "false" : "true"}
-    role={role}
+    {role}
     aria-live={ariaLive}
   >
     <div class="icon" aria-hidden="true">

@@ -1,7 +1,8 @@
 <script lang="ts">
-  import Button from "./ui/Button.svelte";
-  import { ChevronLeft, ChevronRight } from "./ui/icons";
   import { t } from "../data/locale.svelte";
+  import Button from "./ui/Button.svelte";
+
+  import { ChevronLeft, ChevronRight } from "./ui/icons";
 
   type Props = {
     totalItems: number;
