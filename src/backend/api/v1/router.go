@@ -16,7 +16,6 @@ import (
 func NewRouter(a app.Main) chi.Router {
 	h := NewHandler(a)
 	r := chi.NewRouter()
-	r.Use(auth.Middleware(a))
 	r.Get("/auth", auth.StatusHandler(a))
 	r.Post("/auth", auth.LoginHandler(a))
 	r.Route("/groups", func(r chi.Router) {

@@ -12,6 +12,7 @@ import (
 	"magitrickle/api/utils"
 	"magitrickle/api/v1"
 	"magitrickle/app"
+	"magitrickle/auth"
 	"magitrickle/constant"
 
 	"github.com/go-chi/chi/v5"
@@ -39,6 +40,15 @@ func SetupHTTP(a app.Main, errChan chan error) (*http.Server, error) {
 	// Создаем основной роутер и монтируем API-роутер, а также статику
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !a.Config().HTTPWeb.Auth.Enabled || r.URL.Path == "/api/v1/auth" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			auth.Middleware(a)(next).ServeHTTP(w, r)
+		})
+	})
 	r.Mount("/api/v1", v1.NewRouter(a))
 	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 		originalFilePath := path.Clean(r.URL.Path)
