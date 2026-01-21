@@ -1,24 +1,24 @@
 <script lang="ts">
+  import { onDestroy, onMount, tick } from "svelte";
   import { scale } from "svelte/transition";
-  import { onMount, onDestroy, tick } from "svelte";
 
-  import { parseConfig, type Group, type Rule } from "../../types";
-  import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
-  import { fetcher } from "../../utils/fetcher";
-  import { overlay, toast } from "../../utils/events";
-  import { ChangeTracker } from "../../utils/change-tracker.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
-
-  import { Add, Import, Export, Save } from "../../components/ui/icons";
   import { t } from "../../data/locale.svelte";
-  import { droppable } from "../../lib/dnd";
-  import GroupPanel from "./components/GroupPanel.svelte";
-  import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
-  import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
-  import Search from "./components/Search.svelte";
   import { smoothReflow } from "../../lib/smooth-reflow.svelte";
+  import { ChangeTracker } from "../../utils/change-tracker.svelte";
+  import GroupPanel from "./components/GroupPanel.svelte";
+  import Search from "./components/Search.svelte";
+  import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
+  import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
+
+  import { Add, Export, Import, Save } from "../../components/ui/icons";
+  import { droppable } from "../../lib/dnd";
+  import { parseConfig, type Group, type Rule } from "../../types";
+  import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
+  import { overlay, toast } from "../../utils/events";
+  import { fetcher } from "../../utils/fetcher";
 
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -170,17 +170,15 @@
     bumpDataRevision();
   }
 
-
   onMount(async () => {
     finishedGroupsCount = 0;
     fetchError = false;
     try {
       const fetched =
         (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
-    tracker = new ChangeTracker(fetched);
-    dataRevision = 0;
-    setTimeout(checkRulesValidityState, 10);
-
+      tracker = new ChangeTracker(fetched);
+      dataRevision = 0;
+      setTimeout(checkRulesValidityState, 10);
     } catch (error) {
       fetchError = true;
       console.error("Failed to load groups:", error);
@@ -499,12 +497,7 @@
 
     <div class="group-controls-actions">
       <Tooltip value={t("Save Changes")}>
-        <Button
-          onclick={saveChanges}
-          id="save-changes"
-          class="accent"
-          inactive={!canSave}
-        >
+        <Button onclick={saveChanges} id="save-changes" class="accent" inactive={!canSave}>
           <Save size={22} />
         </Button>
       </Tooltip>
@@ -526,9 +519,9 @@
   </div>
 
   {#if fetchError}
-  <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
-    {t("Failed to load groups")}
-  </Placeholder>
+    <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
+      {t("Failed to load groups")}
+    </Placeholder>
   {:else if !isAllRendered}
     <Placeholder variant="loading" minHeight="auto">
       {t("Loading groups...")}
@@ -730,5 +723,4 @@
     align-items: center;
     gap: 0.5rem;
   }
-
 </style>

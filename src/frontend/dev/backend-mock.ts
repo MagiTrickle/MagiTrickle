@@ -1,8 +1,9 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { logger } from "hono/logger";
-import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+
 import type { Interfaces } from "../src/types.ts";
 
 const API_BASE = "/api/v1";

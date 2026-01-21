@@ -1,7 +1,8 @@
-import { describe, it } from "node:test";
 import assert from "node:assert";
-import { sortRules } from "../../src/utils/rule-sorter.ts";
+import { describe, it } from "node:test";
+
 import type { Rule } from "../../src/types.ts";
+import { sortRules } from "../../src/utils/rule-sorter.ts";
 
 // Helper to create a minimal rule
 const createRule = (overrides: Partial<Rule>): Rule => ({

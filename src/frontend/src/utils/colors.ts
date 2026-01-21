@@ -4,16 +4,17 @@ const hexToRgb = (hex: string) => {
   const m = hex.replace("#", "").match(/^([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (!m) throw new Error("Bad hex");
   let s = m[1];
-  if (s.length === 3) s = s.split("").map((c) => c + c).join("");
+  if (s.length === 3)
+    s = s
+      .split("")
+      .map((c) => c + c)
+      .join("");
   const n = parseInt(s, 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 };
 
 const rgbToHex = ({ r, g, b }: { r: number; g: number; b: number }) =>
-  "#" +
-  [r, g, b]
-    .map((v) => v.toString(16).padStart(2, "0"))
-    .join("");
+  "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
 
 const rgbToHsl = ({ r, g, b }: { r: number; g: number; b: number }) => {
   r /= 255;
@@ -74,7 +75,7 @@ export type DarkishParams = {
 };
 
 export function randomDarkishColor({
-  bases = ['#aabbcc', '#bbaacc', '#ccaabb', '#ddaabb', '#eeaabb'],
+  bases = ["#aabbcc", "#bbaacc", "#ccaabb", "#ddaabb", "#eeaabb"],
   hueOffset = 4,
   hueJitter = 8,
   sat = [0, 75],

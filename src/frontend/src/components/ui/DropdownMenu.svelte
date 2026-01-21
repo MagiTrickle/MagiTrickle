@@ -80,9 +80,9 @@
       justify-content: center;
     }
 
-  .dd-label {
-    margin-right: auto;
-  }
+    .dd-label {
+      margin-right: auto;
+    }
 
     .dd-check {
       display: flex;

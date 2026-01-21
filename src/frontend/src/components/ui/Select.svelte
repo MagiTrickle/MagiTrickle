@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Select } from "bits-ui";
+
   import { Check, SelectOpen } from "./icons";
 
   type Option = { value: string; label: string };

@@ -3,9 +3,10 @@
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
-  import { Delete, Grip } from "../../../components/ui/icons";
   import { t } from "../../../data/locale.svelte";
-  import { droppable, draggable, dnd_state } from "../../../lib/dnd";
+
+  import { Delete, Grip } from "../../../components/ui/icons";
+  import { dnd_state, draggable, droppable } from "../../../lib/dnd";
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
 

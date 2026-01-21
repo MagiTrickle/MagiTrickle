@@ -1,7 +1,8 @@
-import { test, expect } from "@playwright/test";
-import { GroupsPage } from "./pages/GroupsPage";
-import path from "path";
 import fs from "fs";
+import path from "path";
+import { expect, test } from "@playwright/test";
+
+import { GroupsPage } from "./pages/GroupsPage";
 
 test.describe("Import/Export", () => {
   let groupsPage: GroupsPage;

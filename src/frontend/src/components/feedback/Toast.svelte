@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { flip } from "svelte/animate";
   import { cubicInOut } from "svelte/easing";
+
   import { CircleCheck, CircleInfo, CircleX } from "../ui/icons";
 
   type ToastType = "info" | "success" | "error" | "warning";
@@ -118,9 +119,9 @@
   {#each toasts as toast, index (toast.id)}
     <div class="toast-slot" animate:flip={{ duration: 240, easing: cubicInOut }}>
       <div
-      class="toast"
-      data-last={index === toasts.length - 1}
-      style={`--toast-accent: ${toastAccent(toast.type)};`}
+        class="toast"
+        data-last={index === toasts.length - 1}
+        style={`--toast-accent: ${toastAccent(toast.type)};`}
         in:toastEnter
         out:toastLeave
       >

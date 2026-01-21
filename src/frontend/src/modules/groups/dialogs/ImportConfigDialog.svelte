@@ -1,10 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import GenericDialog from "../../../components/ui/GenericDialog.svelte";
+
   import Button from "../../../components/ui/Button.svelte";
   import Checkbox from "../../../components/ui/Checkbox.svelte";
-  import type { Group } from "../../../types";
+  import GenericDialog from "../../../components/ui/GenericDialog.svelte";
   import { t } from "../../../data/locale.svelte";
+
+  import type { Group } from "../../../types";
 
   export let open = false;
   export let groups: Group[] = [];
