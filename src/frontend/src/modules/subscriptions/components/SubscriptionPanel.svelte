@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
-  import { createEventDispatcher } from "svelte";
   import { slide } from "svelte/transition";
 
   import Pagination from "../../../components/Pagination.svelte";
@@ -22,13 +21,9 @@
     History,
     Link,
     Refresh,
-    SortAsc,
-    SortDesc,
-    SortNeutral,
   } from "../../../components/ui/icons";
-  import { draggable, droppable } from "../../../lib/dnd";
+  import { draggable } from "../../../lib/dnd";
   import { type Subscription, type SubscriptionRule } from "../../../types";
-  import { sortRules, type SortDirection, type SortField } from "../../../utils/rule-sorter";
 
   type Props = {
     subscription: Subscription;
@@ -36,15 +31,6 @@
     open: boolean;
     deleteSubscription: (index: number) => void;
     syncSubscription: (index: number) => void;
-    deleteRuleFromSubscription: (subscription_index: number, rule_index: number) => void;
-    changeRuleIndex: (
-      from_sub_index: number,
-      from_rule_index: number,
-      to_sub_index: number,
-      to_rule_index: number,
-      to_rule_id: string,
-      insert?: "before" | "after",
-    ) => void;
     searchActive?: boolean;
     visibleRuleIndices?: number[] | null;
     onFinished?: () => void;
@@ -57,15 +43,11 @@
     open = $bindable(),
     deleteSubscription,
     syncSubscription,
-    deleteRuleFromSubscription,
-    changeRuleIndex,
     searchActive = false,
     visibleRuleIndices = null,
     onFinished,
     ...rest
   }: Props = $props();
-
-  const dispatch = createEventDispatcher();
 
   const PAGE_SIZE = 50;
   let currentPage = $state(1);
@@ -137,47 +119,6 @@
     }
   });
 
-  let sortField = $state<SortField | null>(null);
-  let sortDirection = $state<SortDirection>("asc");
-  let initialOrderIds = $state<string[] | null>(null);
-
-  function handleSort(field: SortField) {
-    if (!initialOrderIds) {
-      initialOrderIds = subscription.rules.map((rule) => rule.id);
-    }
-
-    if (sortField === field && sortDirection === "desc") {
-      sortField = null;
-      sortDirection = "asc";
-
-      if (initialOrderIds) {
-        const ruleMap = new Map(subscription.rules.map((rule) => [rule.id, rule]));
-        const orderedRules = initialOrderIds
-          .map((id) => ruleMap.get(id))
-          .filter((rule): rule is SubscriptionRule => Boolean(rule));
-        subscription.rules.splice(0, subscription.rules.length, ...orderedRules);
-      }
-      return;
-    }
-
-    if (sortField === field) {
-      sortDirection = "desc";
-    } else {
-      sortField = field;
-      sortDirection = "asc";
-    }
-
-    const sorted = sortRules(subscription.rules as any, field, sortDirection);
-    subscription.rules.splice(0, subscription.rules.length, ...sorted);
-  }
-
-  $effect(() => {
-    subscription.rules.length;
-    if (sortField === null) {
-      initialOrderIds = null;
-    }
-  });
-
   function formatTime(timestamp: number | undefined | null) {
     if (!timestamp) return t("Never updated");
     return new Date(timestamp).toLocaleString();
@@ -222,23 +163,6 @@
     document.body.appendChild(badge);
     return badge;
   }
-
-  type DnDTransferData = {
-    rule_id: string;
-    subscription_index: number;
-    rule_index: number;
-  };
-
-  function handleRuleDrop(source: DnDTransferData, target: any) {
-    changeRuleIndex(
-      source.subscription_index,
-      source.rule_index,
-      subscription_index,
-      0,
-      "",
-      "before",
-    );
-  }
 </script>
 
 <svelte:window bind:innerWidth={client_width} />
@@ -247,6 +171,7 @@
   class="subscription-panel"
   role="listitem"
   data-uuid={subscription.id}
+  {...rest}
   use:draggable={{
     data: {
       group_id: subscription.id,
@@ -266,15 +191,7 @@
   }}
 >
   <Collapsible.Root open={effectiveOpen} onOpenChange={toggleOpen}>
-    <div
-      class="subscription-header"
-      use:droppable={{
-        data: { rule_id: "", rule_index: 0, subscription_index: subscription_index },
-        scope: "subscription-rule",
-        canDrop: () => true,
-        onDrop: (src) => handleRuleDrop(src as DnDTransferData, {}),
-      }}
-    >
+    <div class="subscription-header">
       <div class="subscription-left">
         <div class="subscription-grip" title={t("Drag Subscription")}>
           <Grip />
@@ -361,22 +278,8 @@
               #{totalRulesCount}
             </div>
             <div class="subscription-rules-header-column">{t("Type")}</div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="subscription-rules-header-column clickable"
-              onclick={() => handleSort("pattern")}
-            >
+            <div class="subscription-rules-header-column">
               {t("Pattern")}
-              <div class="sort-icon">
-                {#if sortField === "pattern" && sortDirection === "desc"}
-                  <SortAsc size={16} />
-                {:else if sortField === "pattern"}
-                  <SortDesc size={16} />
-                {:else}
-                  <SortNeutral size={16} />
-                {/if}
-              </div>
             </div>
             <div class="subscription-rules-header-column">{t("Enabled")}</div>
           </div>
@@ -389,8 +292,6 @@
                 bind:rule={subscription.rules[originalIndex]}
                 rule_index={originalIndex}
                 {subscription_index}
-                onDelete={deleteRuleFromSubscription}
-                onChangeIndex={changeRuleIndex}
                 style={i % 2 ? "" : "background-color: var(--bg-light)"}
               />
             {/each}
@@ -423,11 +324,6 @@
     border-radius: 0.5rem;
     background-color: var(--bg-light);
     position: relative;
-
-    &:global(.dragover) {
-      outline: 1px solid var(--accent);
-      box-shadow: inset 0 0 5px 0 var(--accent);
-    }
   }
 
   .subscription-left {
@@ -528,13 +424,12 @@
 
   .subscription-rules-header {
     display: grid;
-    grid-template-columns: 0rem 1.5fr 5.5fr 1fr;
-    justify-content: center;
+    grid-template-columns: 1.5rem 1.5fr 5.5fr 0.6fr;
+    gap: 0.5rem;
     align-items: center;
     font-size: 0.9rem;
     color: var(--text-2);
-    padding-top: 0.6rem;
-    padding-bottom: 0.2rem;
+    padding: 0.6rem 0 0.2rem 0;
     border-bottom: 1px solid var(--bg-light-extra);
   }
 
@@ -542,28 +437,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 0;
 
     &.total {
       justify-content: start;
-      margin-left: 0.5rem;
+      padding-left: 0.6rem;
     }
-  }
-
-  .clickable {
-    cursor: pointer;
-    user-select: none;
-    transition: color 0.12s ease;
-
-    &:hover {
-      color: var(--text);
-    }
-  }
-
-  .sort-icon {
-    margin-left: 0.4rem;
-    display: flex;
-    align-items: center;
-    color: var(--text-2);
   }
 
   :global {
@@ -651,6 +530,8 @@
 
     .subscription-rules-header {
       height: 1px;
+      padding: 0;
+      border: none;
       & .subscription-rules-header-column {
         display: none;
       }
