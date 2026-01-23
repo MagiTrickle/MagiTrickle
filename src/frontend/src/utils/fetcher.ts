@@ -1,5 +1,6 @@
-import { t } from "../data/locale.svelte";
 import { token } from "../data/auth.svelte";
+import { t } from "../data/locale.svelte";
+
 import { toast } from "./events";
 
 // @ts-ignore: vite specific

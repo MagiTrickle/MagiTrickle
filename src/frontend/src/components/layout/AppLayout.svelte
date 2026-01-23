@@ -1,15 +1,17 @@
 <script lang="ts">
   import { Tabs } from "bits-ui";
+
   import { t } from "../../data/locale.svelte";
-  import { Menu, LayoutList } from "../ui/icons";
   import GroupsView from "../../modules/groups/GroupsView.svelte";
   // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
   // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
   import Overlay from "../feedback/Overlay.svelte";
+  import ScrollToTop from "../feedback/ScrollToTop.svelte";
   import SnowField from "../feedback/SnowField.svelte";
   import Toast from "../feedback/Toast.svelte";
-  import ScrollToTop from "../feedback/ScrollToTop.svelte";
   import HeaderSettings from "./HeaderSettings.svelte";
+
+  import { LayoutList, Menu } from "../ui/icons";
 
   let active_tab = $state("groups");
   let isMenuOpen = $state(false);
@@ -111,7 +113,6 @@
     overflow: hidden;
   }
 
-
   .mobile-dropdown-btn {
     display: none;
   }
@@ -140,7 +141,9 @@
     gap: 0.5rem;
     cursor: pointer;
     white-space: nowrap;
-    transition: color 0.2s, border-color 0.2s;
+    transition:
+      color 0.2s,
+      border-color 0.2s;
   }
 
   .tab-icon {
@@ -159,7 +162,6 @@
   :global([data-tabs-content]) {
     padding-top: 1rem;
   }
-
 
   @media (max-width: 700px) {
     .mobile-dropdown-btn {
@@ -229,7 +231,6 @@
       line-height: 1;
     }
   }
-
 
   .menu-morph {
     --icon: 24px;

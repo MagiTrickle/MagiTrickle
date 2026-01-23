@@ -1,22 +1,23 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import GenericDialog from "../../../components/ui/GenericDialog.svelte";
+
   import Button from "../../../components/ui/Button.svelte";
+  import GenericDialog from "../../../components/ui/GenericDialog.svelte";
   import Select from "../../../components/ui/Select.svelte";
-  import { RULE_TYPES } from "../../../types";
+  import { t } from "../../../data/locale.svelte";
+
+  import { RULE_TYPES, type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
+  import { toast } from "../../../utils/events";
   import {
+    isValidDomain,
+    isValidNamespace,
+    isValidRegex,
     isValidSubnet,
     isValidSubnet6,
-    isValidNamespace,
-    isValidDomain,
     isValidWildcard,
-    isValidRegex,
     VALIDATOP_MAP,
   } from "../../../utils/rule-validators";
-  import type { Rule } from "../../../types";
-  import { toast } from "../../../utils/events";
-  import { t } from "../../../data/locale.svelte";
 
   export let open = false;
   export let group_index: number | null = null;
@@ -41,7 +42,7 @@
 
     if (isValidSubnet6(p)) return "subnet6";
     if (isValidSubnet(p)) return "subnet";
-    if (p.split('.').length >= 3 && isValidDomain(p)) return "domain";
+    if (p.split(".").length >= 3 && isValidDomain(p)) return "domain";
     if (isValidNamespace(p)) return "namespace";
     if (isValidRegex(p)) return "regex";
     if (isValidWildcard(p)) return "wildcard";

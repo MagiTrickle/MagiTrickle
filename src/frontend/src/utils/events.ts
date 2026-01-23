@@ -3,7 +3,7 @@
 export const toast = {
   success: (message: string) =>
     window.dispatchEvent(
-      new CustomEvent("toast", { detail: { content: message, type: "success" } })
+      new CustomEvent("toast", { detail: { content: message, type: "success" } }),
     ),
   error: (message: string) =>
     window.dispatchEvent(new CustomEvent("toast", { detail: { content: message, type: "error" } })),
@@ -11,14 +11,14 @@ export const toast = {
     window.dispatchEvent(new CustomEvent("toast", { detail: { content: message, type: "info" } })),
   warning: (message: string) =>
     window.dispatchEvent(
-      new CustomEvent("toast", { detail: { content: message, type: "warning" } })
+      new CustomEvent("toast", { detail: { content: message, type: "warning" } }),
     ),
 };
 
 export const overlay = {
   show: (message: string) =>
     window.dispatchEvent(
-      new CustomEvent("overlay", { detail: { content: message, type: "show" } })
+      new CustomEvent("overlay", { detail: { content: message, type: "show" } }),
     ),
   hide: () => window.dispatchEvent(new CustomEvent("overlay", { detail: { type: "hide" } })),
 };

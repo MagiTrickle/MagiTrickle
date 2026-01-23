@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
 import { AuthPage } from "./pages/AuthPage";
 
 test.describe("Authentication", () => {

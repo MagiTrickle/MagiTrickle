@@ -1,5 +1,6 @@
-import { describe, it } from "node:test";
 import { strictEqual } from "node:assert";
+import { describe, it } from "node:test";
+
 import {
   isValidDomain,
   isValidNamespace,

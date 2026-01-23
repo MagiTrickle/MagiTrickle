@@ -1,5 +1,6 @@
-import type { Group, Rule } from "../types";
 import { interfaces } from "../data/interfaces.svelte";
+
+import type { Group, Rule } from "../types";
 import { randomDarkishColor } from "./colors";
 
 export function defaultGroup(): Group {
