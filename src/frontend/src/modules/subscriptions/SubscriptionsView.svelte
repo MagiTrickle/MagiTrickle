@@ -234,57 +234,6 @@
     bumpDataRevision();
   }
 
-  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-  function changeRuleIndex(
-    from_sub_index: number,
-    from_rule_index: number,
-    to_sub_index: number,
-    to_rule_index: number,
-    to_rule_id?: string,
-    insert: "before" | "after" = "before",
-  ) {
-    const sourceSub = data[from_sub_index];
-    const targetSub = data[to_sub_index];
-
-    if (!sourceSub || !targetSub) return;
-
-    const isSameSub = from_sub_index === to_sub_index;
-    const sourceRules = sourceSub.rules;
-    const targetRules = targetSub.rules;
-
-    if (!sourceRules.length) return;
-
-    const fromIndex = clamp(from_rule_index, 0, sourceRules.length - 1);
-    const [movedRule] = sourceRules.splice(fromIndex, 1);
-    if (!movedRule) return;
-
-    if (!isSameSub) {
-      searchControls?.moveForcedRule(sourceSub.id, targetSub.id, movedRule.id);
-    }
-
-    let anchorIndex =
-      to_rule_id && to_rule_id.length > 0 ? targetRules.findIndex((r) => r.id === to_rule_id) : -1;
-
-    if (anchorIndex === -1 && targetRules.length > 0) {
-      anchorIndex = clamp(to_rule_index, 0, targetRules.length - 1);
-      if (isSameSub && fromIndex < anchorIndex) {
-        anchorIndex -= 1;
-      }
-    }
-
-    let insertIndex: number;
-    if (anchorIndex === -1) {
-      insertIndex = insert === "after" ? targetRules.length : 0;
-    } else {
-      insertIndex = insert === "after" ? anchorIndex + 1 : anchorIndex;
-    }
-
-    insertIndex = clamp(insertIndex, 0, targetRules.length);
-    targetRules.splice(insertIndex, 0, movedRule);
-    bumpDataRevision();
-  }
-
   // DnD Logic
   type SubscriptionDragData = {
     group_id: string;
@@ -401,7 +350,6 @@
           {deleteSubscription}
           {syncSubscription}
           {deleteRuleFromSubscription}
-          {changeRuleIndex}
           {searchActive}
           visibleRuleIndices={ruleIndices}
           onFinished={handleSubscriptionFinished}
