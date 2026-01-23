@@ -13,6 +13,20 @@ const INTERFACES: Interfaces = {
 };
 
 const DATA = JSON.parse(Deno.readTextFileSync("./dev/groups.json"));
+const SUBSCRIPTIONS = [
+  {
+    id: "a1b2c3d4",
+    name: "Bad Bad Services",
+    interface: "blackhole",
+    enable: true,
+    url: "https://services.should.be.blocked.com",
+    last_update: Date.now(),
+    rules: [
+      { enable: true, id: "11223344", rule: "google.com", type: "domain" },
+      { enable: true, id: "55667788", rule: "facebook.com", type: "domain" },
+    ],
+  },
+];
 
 function randomLogLine() {
   function randomIndex(array: any[]) {
@@ -78,13 +92,40 @@ app.post(`${API_BASE}/auth`, async (c) => {
 
 app.get(`${API_BASE}/groups`, (c) => c.json(DATA));
 app.put(`${API_BASE}/groups`, async (c) => {
-  console.log("recieved", (await c.req.json())?.groups?.length, "groups");
+  console.debug("recieved", (await c.req.json())?.groups?.length, "groups");
   await new Promise((resolve) => setTimeout(resolve, 2000));
   if (Math.random() < 0.5) {
     return c.json({ error: "random error" }, 500);
   }
   return c.json({ status: "ok" });
 });
+
+app.get(`${API_BASE}/subscriptions`, (c) => c.json({ subscriptions: SUBSCRIPTIONS }));
+
+app.put(`${API_BASE}/subscriptions`, async (c) => {
+  console.debug("recieved", (await c.req.json())?.subscriptions?.length, "subscriptions");
+  const body = await c.req.json();
+  SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...body.subscriptions);
+  return c.json({ status: "ok" });
+});
+
+app.get(`${API_BASE}/subscription/rules`, (c) => {
+  if (Math.random() < 0.5) {
+    return c.json({ error: "random error" }, 500);
+  }
+  const url = c.req.query("url");
+  // Mock fetching rules from URL
+  const count = Math.floor(Math.random() * 50) + 5;
+  const rules = Array.from({ length: count }).map(() => ({
+    enable: true,
+    id: Math.random().toString(16).substring(2, 10),
+    rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
+    type: Math.random() < 0.5 ? "namespace" : "domain",
+  }));
+
+  return c.json({ rules });
+});
+
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));
 app.get(`${API_BASE}/logs`, async (c) => {
   return streamSSE(c, async (stream) => {

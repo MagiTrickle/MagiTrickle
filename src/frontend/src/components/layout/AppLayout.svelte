@@ -3,6 +3,7 @@
 
   import { t } from "../../data/locale.svelte";
   import GroupsView from "../../modules/groups/GroupsView.svelte";
+  import SubscriptionsView from "../../modules/subscriptions/SubscriptionsView.svelte";
   // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
   // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
   import Overlay from "../feedback/Overlay.svelte";
@@ -11,7 +12,7 @@
   import Toast from "../feedback/Toast.svelte";
   import HeaderSettings from "./HeaderSettings.svelte";
 
-  import { LayoutList, Menu } from "../ui/icons";
+  import { LayoutList, Menu, RSS } from "../ui/icons";
 
   let active_tab = $state("groups");
   let isMenuOpen = $state(false);
@@ -52,6 +53,11 @@
               {t("Groups")}
             </Tabs.Trigger>
 
+            <Tabs.Trigger value="subscriptions" onclick={closeMenu}>
+              <span class="tab-icon"><RSS size={24} /></span>
+              {t("Subscriptions")}
+            </Tabs.Trigger>
+
             <!--
             <Tabs.Trigger value="settings" onclick={closeMenu}>Settings</Tabs.Trigger>
             <Tabs.Trigger value="logs" onclick={closeMenu}>Logs</Tabs.Trigger>
@@ -68,6 +74,9 @@
     <article>
       <Tabs.Content value="groups">
         <GroupsView onRenderComplete={() => (isRenderComplete = true)} />
+      </Tabs.Content>
+      <Tabs.Content value="subscriptions">
+        <SubscriptionsView onRenderComplete={() => (isRenderComplete = true)} />
       </Tabs.Content>
       <!-- <Tabs.Content value="settings">...</Tabs.Content> -->
     </article>

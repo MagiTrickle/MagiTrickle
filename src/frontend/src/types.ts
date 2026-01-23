@@ -3,6 +3,7 @@ import {
   boolean,
   fallback,
   length,
+  number,
   object,
   optional,
   parse,
@@ -50,6 +51,25 @@ export const GroupSchema = object({
   rules: array(RuleSchema),
 });
 export type Group = InferOutput<typeof GroupSchema>;
+
+export const SubscriptionRuleSchema = object({
+  enable: fallback(boolean(), true),
+  id: fallback(pipe(string(), length(8), regex(/^[0-9a-f]{8}/)), randomId()),
+  rule: string(),
+  type: fallback(string(), "namespace"),
+});
+export type SubscriptionRule = InferOutput<typeof SubscriptionRuleSchema>;
+
+export const SubscriptionSchema = object({
+  id: fallback(pipe(string(), length(8), regex(/^[0-9a-f]{8}/)), randomId()),
+  name: fallback(string(), ""),
+  interface: string(),
+  enable: fallback(boolean(), true),
+  rules: array(SubscriptionRuleSchema),
+  url: string(),
+  last_update: fallback(optional(number()), 0),
+});
+export type Subscription = InferOutput<typeof SubscriptionSchema>;
 
 export const ConfigSchema = object({
   groups: array(GroupSchema),
