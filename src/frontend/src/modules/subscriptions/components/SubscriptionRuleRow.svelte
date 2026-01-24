@@ -55,7 +55,7 @@
 
   .subscription-rule-row {
     display: grid;
-    grid-template-columns: 1.5rem 1.5fr 5.5fr 0.6fr;
+    grid-template-columns: 1rem 1fr 5.5fr 0.6fr;
     gap: 0.5rem;
     padding: 0.1rem 0;
     background: inherit;
