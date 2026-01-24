@@ -27,7 +27,8 @@
   let tracker = $state(new ChangeTracker<Subscription[]>([]));
   let data = $derived(tracker.data);
   let dataRevision = $state(0);
-  let canSave = $derived(tracker.isDirty);
+  let valid_rules = $state(true);
+  let canSave = $derived(tracker.isDirty && valid_rules);
   let open_state = $state<Record<string, boolean>>({});
 
   let addSubscriptionModal = $state(false);
@@ -119,6 +120,26 @@
     dataRevision += 1;
   }
 
+  function checkRulesValidityState() {
+    valid_rules = !document.querySelector(".subscription-rule .invalid");
+  }
+
+  $effect(() => {
+    $state.snapshot(data);
+    setTimeout(checkRulesValidityState, 10);
+  });
+
+  $effect(() => {
+    if (typeof window === "undefined" || !canSave) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  });
+
   onMount(async () => {
     finishedSubscriptionsCount = 0;
     fetchError = false;
@@ -128,6 +149,7 @@
         [];
       tracker = new ChangeTracker(fetched);
       dataRevision = 0;
+      setTimeout(checkRulesValidityState, 10);
     } catch (error) {
       fetchError = true;
       console.error("Failed to load subscriptions:", error);

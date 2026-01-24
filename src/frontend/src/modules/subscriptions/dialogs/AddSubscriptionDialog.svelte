@@ -281,6 +281,15 @@
     border-color: var(--red) !important;
   }
 
+  /* Hack for autofill color */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px var(--bg-dark-extra) inset !important;
+    -webkit-text-fill-color: var(--text) !important;
+  }
+
   .subscription-dialog-actions {
     display: flex;
     align-items: center;
