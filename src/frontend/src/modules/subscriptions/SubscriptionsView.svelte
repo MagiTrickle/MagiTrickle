@@ -199,11 +199,19 @@
     if (!sub) return;
     overlay.show(t("syncing..."));
     try {
-      const res = await fetcher.get<{ rules: SubscriptionRule[] }>(
-        `/subscription/rules?url=${encodeURIComponent(sub.url)}`,
+      // Send PATCH to trigger sync on backend and get updated data
+      const updatedSub = await fetcher.patch<{ rules: SubscriptionRule[]; last_update: number }>(
+        "/subscription",
+        { id: sub.id },
       );
-      sub.rules = res.rules;
-      sub.last_update = Date.now();
+
+      // Update local state with response
+      sub.rules = updatedSub.rules;
+      sub.last_update = updatedSub.last_update;
+
+      // Acknowledge update in tracker so it's not marked as dirty
+      tracker.acknowledgeUpdate(sub);
+
       toast.success(t("Synced"));
       bumpDataRevision();
     } catch (e) {
@@ -225,7 +233,7 @@
     bumpDataRevision();
   }
 
-  function handleAdd(e: CustomEvent) {
+  async function handleAdd(e: CustomEvent) {
     const { url, name, rules, interface: iface } = e.detail;
     const newSub: Subscription = {
       id: randomId(),
@@ -237,12 +245,24 @@
       last_update: Date.now(),
     };
 
-    data.unshift(newSub);
-    open_state[newSub.id] = true;
-    if (searchActive) {
-      searchControls?.forceVisibleGroup(newSub.id);
+    overlay.show(t("Adding..."));
+    try {
+      await fetcher.post("/subscription", newSub);
+      data.unshift(newSub);
+      tracker.acknowledgeNewItem(data, newSub, "start");
+
+      open_state[newSub.id] = true;
+      if (searchActive) {
+        searchControls?.forceVisibleGroup(newSub.id);
+      }
+      bumpDataRevision();
+      toast.success(t("Added"));
+    } catch (e) {
+      console.error(e);
+      toast.error(t("Failed to add subscription"));
+    } finally {
+      overlay.hide();
     }
-    bumpDataRevision();
   }
 
   function deleteRuleFromSubscription(sub_index: number, rule_index: number) {
