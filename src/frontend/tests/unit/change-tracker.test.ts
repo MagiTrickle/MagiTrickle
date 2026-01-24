@@ -304,4 +304,75 @@ describe("ChangeTracker", () => {
       assert.ok(deleted.find((x: any) => x.id === "r2"));
     });
   });
+  describe("Partial Commits (acknowledge methods)", () => {
+    it("should acknowledge a mutation and make it clean", () => {
+      const data = [createItem({ id: "1", name: "Old" })];
+      const tracker = new ChangeTracker(data);
+      const proxy = tracker.data;
+
+      proxy[0].name = "New";
+      assert.strictEqual(tracker.isDirty, true);
+      assert.strictEqual(tracker.changes.mutated.length, 1);
+
+      tracker.acknowledgeUpdate(proxy[0]);
+
+      assert.strictEqual(tracker.isDirty, false);
+      assert.strictEqual(tracker.changes.mutated.length, 0);
+      assert.strictEqual(tracker.changes.added.length, 0);
+      assert.strictEqual(tracker.changes.deleted.length, 0);
+    });
+
+    it("should acknowledge a new item and make it clean", () => {
+      const tracker = new ChangeTracker<RuleItem[]>([]);
+      const proxy = tracker.data;
+      const newItem = createItem({ id: "new1", name: "Added" });
+
+      proxy.push(newItem);
+      assert.strictEqual(tracker.isDirty, true);
+      assert.strictEqual(tracker.changes.added.length, 1);
+
+      tracker.acknowledgeNewItem(proxy, newItem, "end");
+
+      assert.strictEqual(tracker.isDirty, false);
+      assert.strictEqual(tracker.changes.added.length, 0);
+      assert.strictEqual(tracker.changes.mutated.length, 0);
+      assert.strictEqual(tracker.changes.deleted.length, 0);
+    });
+
+    it("should acknowledge a new item at start and maintain order", () => {
+      const existing = createItem({ id: "1" });
+      const tracker = new ChangeTracker([existing]);
+      const proxy = tracker.data;
+
+      const newItem = createItem({ id: "new1" });
+      proxy.unshift(newItem); // Add to start
+
+      assert.strictEqual(tracker.isDirty, true);
+
+      tracker.acknowledgeNewItem(proxy, newItem, "start");
+
+      assert.strictEqual(tracker.isDirty, false);
+      assert.strictEqual(proxy[0].id, "new1");
+      assert.strictEqual(proxy[1].id, "1");
+    });
+
+    it("should handle acknowledged update mixed with other dirty states", () => {
+      const i1 = createItem({ id: "1", name: "A" });
+      const i2 = createItem({ id: "2", name: "B" });
+      const tracker = new ChangeTracker([i1, i2]);
+      const proxy = tracker.data;
+
+      proxy[0].name = "A_Changed"; // i1 dirty
+      proxy[1].name = "B_Changed"; // i2 dirty
+
+      assert.strictEqual(tracker.changes.mutated.length, 2);
+
+      // Acknowledge only i2
+      tracker.acknowledgeUpdate(proxy[1]);
+
+      assert.strictEqual(tracker.isDirty, true);
+      assert.strictEqual(tracker.changes.mutated.length, 1);
+      assert.strictEqual(tracker.changes.mutated[0].id, "1");
+    });
+  });
 });

@@ -68,6 +68,13 @@ fetcher.put = <T>(url: string, body: any) =>
     body: JSON.stringify(body),
   });
 
+fetcher.patch = <T>(url: string, body: any) =>
+  fetcher<T>(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
 fetcher.delete = <T>(url: string) =>
   fetcher<T>(url, {
     method: "DELETE",

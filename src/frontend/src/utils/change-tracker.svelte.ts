@@ -5,6 +5,7 @@ export class ChangeTracker<T extends object> {
   private originalObjects = new Map<string, any>();
   private originalArrays = new WeakMap<object, string[]>();
   private proxyCache = new WeakMap<object, any>();
+  private reverseProxyCache = new WeakMap<object, object>();
 
   private dirtyObjectProps = new Map<string, Set<string>>();
   private dirtyArrays = new Set<object>();
@@ -21,6 +22,7 @@ export class ChangeTracker<T extends object> {
     this.originalObjects.clear();
     this.originalArrays = new WeakMap();
     this.proxyCache = new WeakMap();
+    this.reverseProxyCache = new WeakMap();
     this.dirtyObjectProps.clear();
     this.dirtyArrays.clear();
     this.indexAndLink(this.state, snapshot);
@@ -96,6 +98,7 @@ export class ChangeTracker<T extends object> {
 
     const proxy = new Proxy(target, handler);
     this.proxyCache.set(target, proxy);
+    this.reverseProxyCache.set(proxy, target);
     return proxy;
   }
 
@@ -206,6 +209,51 @@ export class ChangeTracker<T extends object> {
     }
 
     this.init(snapshot);
+    this.notify();
+  }
+
+  acknowledgeUpdate(object: any) {
+    if (!object || !object.id) return;
+    const snapshot = $state.snapshot(object);
+    const target = this.reverseProxyCache.get(object) || object;
+
+    // Update original object snapshot
+    this.originalObjects.set(object.id, snapshot);
+    // Traverse and index any new nested structures if necessary
+    // For now simplistic re-indexing of this object might be enough or just letting it be.
+    // However, if the object has nested array, we might want to re-index those.
+    // A simple approach is recursively calling indexAndLink for this object.
+    this.indexAndLink(target, snapshot);
+
+    // Re-check dirty status for this object
+    if (this.dirtyObjectProps.has(object.id)) {
+      this.dirtyObjectProps.delete(object.id);
+    }
+    this.notify();
+  }
+
+  acknowledgeNewItem(array: any[], item: any, position: "start" | "end" = "end") {
+    const targetArray = this.reverseProxyCache.get(array) || array;
+    if (!this.originalArrays.has(targetArray)) return;
+    if (!item || !item.id) return;
+
+    const originalIds = this.originalArrays.get(targetArray)!;
+    const snapshot = $state.snapshot(item);
+    const targetItem = this.reverseProxyCache.get(item) || item;
+
+    // Add to original objects
+    this.originalObjects.set(item.id, snapshot);
+    this.indexAndLink(targetItem, snapshot);
+
+    // Update original array order
+    if (position === "start") {
+      originalIds.unshift(item.id);
+    } else {
+      originalIds.push(item.id);
+    }
+
+    // Re-check array dirtiness
+    this.checkArrayStructure(targetArray);
     this.notify();
   }
 }

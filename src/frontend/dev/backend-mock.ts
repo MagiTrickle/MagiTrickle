@@ -47,8 +47,8 @@ function randomLogLine() {
     message: ["error", "fatal", "panic"].includes(level)
       ? "error message"
       : `group: ${randomIndex(DATA.groups).name}, ip: ${randomIP()} > int: ${randomIndex(
-          INTERFACES.interfaces.map((item) => item.id),
-        )}`,
+        INTERFACES.interfaces.map((item) => item.id),
+      )}`,
   };
 }
 
@@ -107,6 +107,41 @@ app.put(`${API_BASE}/subscriptions`, async (c) => {
   const body = await c.req.json();
   SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...body.subscriptions);
   return c.json({ status: "ok" });
+});
+
+app.post(`${API_BASE}/subscription`, async (c) => {
+  const body = await c.req.json();
+  console.debug("created subscription", body);
+  SUBSCRIPTIONS.unshift(body);
+  return c.json({ status: "ok" });
+});
+
+app.patch(`${API_BASE}/subscription`, async (c) => {
+  const body = await c.req.json();
+  console.debug("updated subscription, syncing rules", body);
+  const index = SUBSCRIPTIONS.findIndex((s) => s.id === body.id);
+
+  if (index !== -1) {
+    // Simulate fetching rules (Sync logic)
+    const count = Math.floor(Math.random() * 50) + 5;
+    const rules = Array.from({ length: count }).map(() => ({
+      enable: true,
+      id: Math.random().toString(16).substring(2, 10),
+      rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
+      type: Math.random() < 0.5 ? "namespace" : "domain",
+    }));
+
+    const updatedSub = {
+      ...SUBSCRIPTIONS[index],
+      ...body,
+      rules: rules,
+      last_update: Date.now()
+    };
+
+    SUBSCRIPTIONS[index] = updatedSub;
+    return c.json(updatedSub);
+  }
+  return c.json({ error: "Subscription not found" }, 404);
 });
 
 app.get(`${API_BASE}/subscription/rules`, (c) => {
