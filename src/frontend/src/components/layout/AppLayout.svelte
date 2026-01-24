@@ -16,7 +16,9 @@
 
   let active_tab = $state("groups");
   let isMenuOpen = $state(false);
-  let isRenderComplete = $state(false);
+  let isRenderCompleteGroups = $state(false);
+  let isRenderCompleteSubscriptions = $state(false);
+  let isRenderComplete = $derived(isRenderCompleteGroups && isRenderCompleteSubscriptions);
 
   const toggleMenu = () => (isMenuOpen = !isMenuOpen);
   const closeMenu = () => (isMenuOpen = false);
@@ -73,10 +75,10 @@
 
     <article>
       <Tabs.Content value="groups">
-        <GroupsView onRenderComplete={() => (isRenderComplete = true)} />
+        <GroupsView onRenderComplete={() => (isRenderCompleteGroups = true)} />
       </Tabs.Content>
       <Tabs.Content value="subscriptions">
-        <SubscriptionsView onRenderComplete={() => (isRenderComplete = true)} />
+        <SubscriptionsView onRenderComplete={() => (isRenderCompleteSubscriptions = true)} />
       </Tabs.Content>
       <!-- <Tabs.Content value="settings">...</Tabs.Content> -->
     </article>
