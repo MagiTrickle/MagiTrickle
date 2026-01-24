@@ -11,7 +11,12 @@
   import type { SubscriptionRule } from "../../../types";
   import { fetcher } from "../../../utils/fetcher";
 
-  let { open } = $props<{ open: boolean }>();
+  type DialogProps = {
+    open: boolean;
+    existingUrls?: string[];
+  };
+
+  let { open, existingUrls = [] }: DialogProps = $props();
 
   const dispatch = createEventDispatcher();
 
@@ -61,7 +66,13 @@
     }
   }
 
-  let isValidUrl = $derived(validateUrl(url));
+  let isDuplicate = $derived(existingUrls.includes(url));
+  let isValidUrl = $derived(validateUrl(url) && !isDuplicate);
+
+  let displayedError = $derived(
+    isDuplicate ? t("Subscription already exists") : error || t("Request failed"),
+  );
+  let isErrorVisible = $derived(isDuplicate || fetchError);
 
   async function handleNext() {
     if (!url || !isValidUrl) {
@@ -186,8 +197,8 @@
   </div>
 
   <div slot="actions" class="subscription-dialog-actions">
-    <div class="helper-text" class:visible={fetchError}>
-      <Info size={16} /><span> {error || t("Request failed")}</span>
+    <div class="helper-text" class:visible={isErrorVisible}>
+      <Info size={16} /><span> {displayedError}</span>
     </div>
     <div class="button-container">
       {#if step === 1}

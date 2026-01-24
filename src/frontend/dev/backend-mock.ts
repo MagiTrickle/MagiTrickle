@@ -117,9 +117,10 @@ app.post(`${API_BASE}/subscription`, async (c) => {
 });
 
 app.patch(`${API_BASE}/subscription`, async (c) => {
+  const id = c.req.query("id");
   const body = await c.req.json();
-  console.debug("updated subscription, syncing rules", body);
-  const index = SUBSCRIPTIONS.findIndex((s) => s.id === body.id);
+  console.debug("updated subscription, syncing rules", id, body);
+  const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
 
   if (index !== -1) {
     // Simulate fetching rules (Sync logic)
@@ -140,6 +141,17 @@ app.patch(`${API_BASE}/subscription`, async (c) => {
 
     SUBSCRIPTIONS[index] = updatedSub;
     return c.json(updatedSub);
+  }
+  return c.json({ error: "Subscription not found" }, 404);
+});
+
+app.delete(`${API_BASE}/subscription`, async (c) => {
+  const id = c.req.query("id");
+  console.debug("deleting subscription", id);
+  const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
+  if (index !== -1) {
+    SUBSCRIPTIONS.splice(index, 1);
+    return c.json({ status: "ok" });
   }
   return c.json({ error: "Subscription not found" }, 404);
 });

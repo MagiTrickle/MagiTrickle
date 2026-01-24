@@ -201,10 +201,9 @@
     try {
       // Send PATCH to trigger sync on backend and get updated data
       const updatedSub = await fetcher.patch<{ rules: SubscriptionRule[]; last_update: number }>(
-        "/subscription",
-        { id: sub.id },
+        `/subscription?id=${sub.id}`,
+        {},
       );
-
       // Update local state with response
       sub.rules = updatedSub.rules;
       sub.last_update = updatedSub.last_update;
@@ -222,15 +221,29 @@
     }
   }
 
-  function deleteSubscription(index: number) {
+  async function deleteSubscription(index: number) {
     if (!confirm(t("Delete this subscription?"))) return;
     const removed = data[index];
-    data.splice(index, 1);
-    if (removed) {
-      delete open_state[removed.id];
-      searchControls?.removeForcedGroup(removed.id);
+    if (!removed) return;
+
+    overlay.show(t("Deleting..."));
+    try {
+      await fetcher.delete(`/subscription?id=${removed.id}`);
+      data.splice(index, 1);
+      tracker.acknowledgeDelete(data, removed.id);
+
+      if (removed) {
+        delete open_state[removed.id];
+        searchControls?.removeForcedGroup(removed.id);
+      }
+      bumpDataRevision();
+      toast.success(t("Deleted"));
+    } catch (e) {
+      console.error(e);
+      toast.error(t("Failed to delete subscription"));
+    } finally {
+      overlay.hide();
     }
-    bumpDataRevision();
   }
 
   async function handleAdd(e: CustomEvent) {
@@ -416,6 +429,7 @@
 
 <AddSubscriptionDialog
   open={addSubscriptionModal}
+  existingUrls={data.map((s) => s.url)}
   on:close={() => (addSubscriptionModal = false)}
   on:add={handleAdd}
 />

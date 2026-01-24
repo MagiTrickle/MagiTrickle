@@ -217,15 +217,9 @@ export class ChangeTracker<T extends object> {
     const snapshot = $state.snapshot(object);
     const target = this.reverseProxyCache.get(object) || object;
 
-    // Update original object snapshot
     this.originalObjects.set(object.id, snapshot);
-    // Traverse and index any new nested structures if necessary
-    // For now simplistic re-indexing of this object might be enough or just letting it be.
-    // However, if the object has nested array, we might want to re-index those.
-    // A simple approach is recursively calling indexAndLink for this object.
     this.indexAndLink(target, snapshot);
 
-    // Re-check dirty status for this object
     if (this.dirtyObjectProps.has(object.id)) {
       this.dirtyObjectProps.delete(object.id);
     }
@@ -241,18 +235,38 @@ export class ChangeTracker<T extends object> {
     const snapshot = $state.snapshot(item);
     const targetItem = this.reverseProxyCache.get(item) || item;
 
-    // Add to original objects
     this.originalObjects.set(item.id, snapshot);
     this.indexAndLink(targetItem, snapshot);
 
-    // Update original array order
     if (position === "start") {
       originalIds.unshift(item.id);
     } else {
       originalIds.push(item.id);
     }
 
-    // Re-check array dirtiness
+    this.checkArrayStructure(targetArray);
+    this.notify();
+  }
+
+  acknowledgeDelete(array: any[], itemId: string) {
+    const targetArray = this.reverseProxyCache.get(array) || array;
+    if (!this.originalArrays.has(targetArray)) return;
+
+    const originalIds = this.originalArrays.get(targetArray)!;
+
+    if (this.originalObjects.has(itemId)) {
+      this.originalObjects.delete(itemId);
+    }
+
+    const index = originalIds.indexOf(itemId);
+    if (index !== -1) {
+      originalIds.splice(index, 1);
+    }
+
+    if (this.dirtyObjectProps.has(itemId)) {
+      this.dirtyObjectProps.delete(itemId);
+    }
+
     this.checkArrayStructure(targetArray);
     this.notify();
   }
