@@ -226,7 +226,7 @@
     const removed = data[index];
     if (!removed) return;
 
-    overlay.show(t("Deleting..."));
+    overlay.show(t("deleting subscription..."));
     try {
       await fetcher.delete(`/subscription?id=${removed.id}`);
       data.splice(index, 1);

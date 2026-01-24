@@ -102,5 +102,7 @@
   "Sync Subscription": "Синхронизировать подписку",
   "Disable Subscription": "Отключить подписку",
   "Enable Subscription": "Включить подписку",
-  "Check connection or try again": "Проверьте соединение или попробуйте снова"
+  "Check connection or try again": "Проверьте соединение или попробуйте снова",
+  "deleting subscription...": "удаление подписки...",
+  "Subscription already exists": "Подписка уже существует"
 }
