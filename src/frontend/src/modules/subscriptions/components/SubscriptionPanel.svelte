@@ -424,7 +424,7 @@
 
   .subscription-rules-header {
     display: grid;
-    grid-template-columns: 1.5rem 1.5fr 5.5fr 0.6fr;
+    grid-template-columns: 0.5rem 1fr 5.5fr 0.6fr;
     gap: 0.5rem;
     align-items: center;
     font-size: 0.9rem;
@@ -441,7 +441,7 @@
 
     &.total {
       justify-content: start;
-      padding-left: 0.6rem;
+      padding-left: 0.3rem;
     }
   }
 
