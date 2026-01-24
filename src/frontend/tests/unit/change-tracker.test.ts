@@ -389,5 +389,43 @@ describe("ChangeTracker", () => {
       assert.strictEqual(tracker.isDirty, false);
       assert.strictEqual(tracker.changes.deleted.length, 0);
     });
+
+    it("should clean up dirty state of children when parent is updated", () => {
+      const tracker = new ChangeTracker([
+        { id: "p1", name: "Parent", children: [{ id: "c1", name: "Child" }] }
+      ]);
+      const proxy = tracker.data;
+
+      // Modify child
+      proxy[0].children[0].name = "Child Modified";
+      assert.strictEqual(tracker.isDirty, true);
+
+      // Acknowledge parent update
+      tracker.acknowledgeUpdate(proxy[0]);
+
+      assert.strictEqual(tracker.isDirty, false, "Tracker should be clean after acknowledging parent update");
+    });
+
+    it("should clean up dirty state of children when parent is deleted", () => {
+      const tracker = new ChangeTracker([
+        { id: "p1", name: "Parent", children: [{ id: "c1", name: "Child" }] }
+      ]);
+      const proxy = tracker.data;
+
+      // Modify child
+      proxy[0].children[0].name = "Child Modified";
+      assert.strictEqual(tracker.isDirty, true);
+
+      // Delete parent
+      proxy.pop();
+      tracker.acknowledgeDelete(proxy, "p1");
+
+      if (tracker.isDirty) {
+        console.log("Dirty Objects:", tracker["dirtyObjectProps"]);
+        console.log("Dirty Arrays:", tracker["dirtyArrays"]);
+      }
+
+      assert.strictEqual(tracker.isDirty, false, "Tracker should be clean after acknowledging parent delete");
+    });
   });
 });

@@ -217,12 +217,19 @@ export class ChangeTracker<T extends object> {
     const snapshot = $state.snapshot(object);
     const target = this.reverseProxyCache.get(object) || object;
 
+    if (this.originalObjects.has(object.id)) {
+      this.clearDirtyStateFor(this.originalObjects.get(object.id));
+    }
+
     this.originalObjects.set(object.id, snapshot);
     this.indexAndLink(target, snapshot);
 
     if (this.dirtyObjectProps.has(object.id)) {
       this.dirtyObjectProps.delete(object.id);
     }
+
+    this.clearDirtyStateFor(snapshot);
+
     this.notify();
   }
 
@@ -244,6 +251,8 @@ export class ChangeTracker<T extends object> {
       originalIds.push(item.id);
     }
 
+    this.clearDirtyStateFor(snapshot);
+
     this.checkArrayStructure(targetArray);
     this.notify();
   }
@@ -254,10 +263,6 @@ export class ChangeTracker<T extends object> {
 
     const originalIds = this.originalArrays.get(targetArray)!;
 
-    if (this.originalObjects.has(itemId)) {
-      this.originalObjects.delete(itemId);
-    }
-
     const index = originalIds.indexOf(itemId);
     if (index !== -1) {
       originalIds.splice(index, 1);
@@ -267,7 +272,36 @@ export class ChangeTracker<T extends object> {
       this.dirtyObjectProps.delete(itemId);
     }
 
+    if (this.originalObjects.has(itemId)) {
+      const originalSnapshot = this.originalObjects.get(itemId);
+      this.clearDirtyStateFor(originalSnapshot);
+    }
+
+    if (this.originalObjects.has(itemId)) {
+      this.originalObjects.delete(itemId);
+    }
+
     this.checkArrayStructure(targetArray);
     this.notify();
+  }
+
+  private clearDirtyStateFor(node: any) {
+    if (!node || typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      this.dirtyArrays.delete(node);
+      for (const item of node) {
+        this.clearDirtyStateFor(item);
+      }
+    } else {
+      if (node.id) {
+        this.dirtyObjectProps.delete(node.id);
+      }
+      for (const key in node) {
+        if (typeof node[key] === "object") {
+          this.clearDirtyStateFor(node[key]);
+        }
+      }
+    }
   }
 }
