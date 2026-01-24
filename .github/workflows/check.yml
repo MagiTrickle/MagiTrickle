@@ -40,8 +40,8 @@ jobs:
         run: |
           GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" GOMIPS="${{ matrix.gomips }}" GOARM="${{ matrix.goarm }}" go vet ./...
 
-  test:
-    name: Testing
+  test_backend:
+    name: Backend testing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -55,7 +55,43 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Testing
+      - name: Backend tests
         working-directory: ./src/backend
         run: |
           GOOS=linux go test ./...
+
+  test_frontend:
+    name: Frontend testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.JS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Install frontend dependencies
+        working-directory: ./src/frontend
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: ./src/frontend
+        run: npx playwright install --with-deps
+
+      - name: Frontend unit tests
+        working-directory: ./src/frontend
+        run: npm run test:unit
+
+      - name: Frontend e2e tests
+        working-directory: ./src/frontend
+        run: npm run test:e2e

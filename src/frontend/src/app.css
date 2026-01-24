@@ -54,42 +54,114 @@ body {
   /* bits ui changes only body scroll */
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: overlay;
-  scrollbar-gutter: stable both-edges;
 }
-/* 
-*::-webkit-scrollbar {
-  height: 0.5rem;
+
+html.has-overlay-scrollbar,
+body.has-overlay-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.has-overlay-scrollbar::-webkit-scrollbar,
+body.has-overlay-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+@property --overlay-top-fade {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+.overlay-scrollbar {
+  position: fixed;
+  right: 0;
+  top: 8px;
+  bottom: 8px;
   width: 0.5rem;
-}
-*::-webkit-scrollbar-track {
   user-select: none;
-  touch-action: none;
   display: flex;
   background-color: transparent;
-  width: 0.2rem;
-  margin: 0.2rem;
+  margin: 0;
   padding: 0.2rem;
-  transition: all 0.3 ease-in-out;
+  border-radius: 0.5rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
 }
-*::-webkit-scrollbar-track:hover {
+
+.overlay-scrollbar.is-visible {
+  opacity: var(--overlay-top-fade, 1);
+  pointer-events: auto;
+}
+
+.overlay-scrollbar.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay-scrollbar.is-visible:hover {
   background-color: var(--bg-medium);
 }
-*::-webkit-scrollbar-thumb {
+
+@supports (animation-timeline: scroll()) {
+  .overlay-scrollbar {
+    animation-name: overlayTopFade;
+    animation-duration: 1s;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline: scroll();
+    animation-range: 0px 96px;
+  }
+
+  @keyframes overlayTopFade {
+    from {
+      --overlay-top-fade: 0;
+    }
+
+    to {
+      --overlay-top-fade: 1;
+    }
+  }
+}
+
+.overlay-scrollbar__thumb {
   flex: 1;
   position: relative;
+  width: 100%;
+  border-radius: 0.5rem;
   opacity: 0.6;
   background-color: var(--bg-light);
-  border-radius: 0.5rem;
   border: 1px solid var(--bg-light-extra);
-  transition: all 0.3 ease-in-out;
+  background-clip: padding-box;
+  cursor: grab;
+  transition: background-color 0.2s ease-in-out, opacity 0.2s ease-in-out;
+  will-change: transform, height;
 }
-*::-webkit-scrollbar-thumb:hover {
+
+.overlay-scrollbar__thumb:hover {
   background-color: var(--bg-light-extra);
 }
-*::-webkit-scrollbar-thumb:active {
+
+.overlay-scrollbar__thumb:active {
+  cursor: grabbing;
   background-color: var(--bg-light-extra);
+  opacity: 0.85;
 }
-*::-webkit-scrollbar-corner {
-  background-color: transparent;
-} */
+
+@media (max-width: 1036px) {
+  .overlay-scrollbar {
+    width: 0.15rem;
+    padding: 0;
+  }
+
+  .overlay-scrollbar__thumb {
+    border-radius: 0.25rem;
+    opacity: 0.55;
+  }
+
+  .overlay-scrollbar.is-visible .overlay-scrollbar__thumb {
+    opacity: 0.75;
+  }
+}
