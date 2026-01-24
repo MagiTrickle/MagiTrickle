@@ -4,6 +4,7 @@
   import { t } from "../../data/locale.svelte";
   import GroupsView from "../../modules/groups/GroupsView.svelte";
   import SubscriptionsView from "../../modules/subscriptions/SubscriptionsView.svelte";
+  import { persistedState } from "../../utils/persisted-state.svelte";
   // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
   // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
   import Overlay from "../feedback/Overlay.svelte";
@@ -14,11 +15,16 @@
 
   import { LayoutList, Menu, RSS } from "../ui/icons";
 
-  let active_tab = $state("groups");
+  const lastActiveTab = persistedState("active_tab", "groups");
+  let active_tab = $state(lastActiveTab.current);
   let isMenuOpen = $state(false);
   let isRenderCompleteGroups = $state(false);
   let isRenderCompleteSubscriptions = $state(false);
   let isRenderComplete = $derived(isRenderCompleteGroups && isRenderCompleteSubscriptions);
+
+  $effect(() => {
+    lastActiveTab.current = active_tab;
+  });
 
   const toggleMenu = () => (isMenuOpen = !isMenuOpen);
   const closeMenu = () => (isMenuOpen = false);
@@ -56,7 +62,7 @@
             </Tabs.Trigger>
 
             <Tabs.Trigger value="subscriptions" onclick={closeMenu}>
-              <span class="tab-icon"><RSS size={24} /></span>
+              <span class="tab-icon"><RSS size={24} strokeWidth={3} /></span>
               {t("Subscriptions")}
             </Tabs.Trigger>
 
