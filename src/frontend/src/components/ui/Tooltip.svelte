@@ -90,7 +90,7 @@
     border: 1px solid var(--bg-light-extra);
     border-radius: 0.5rem;
     background-color: var(--bg-dark);
-    padding: 0.2rem 0.5rem 0.1rem 0.5rem;
+    padding: 0.2rem 0.5rem;
     font-size: smaller;
     color: var(--text);
     white-space: nowrap;

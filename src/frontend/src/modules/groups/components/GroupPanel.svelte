@@ -464,12 +464,12 @@
     & {
       display: inline-block;
       width: 2rem;
-      height: calc(100% + 1px);
-      border-top-left-radius: 0.5rem;
-      border-bottom-left-radius: 0.5rem;
+      height: 100%;
+      border-top-left-radius: calc(0.5rem - 1px);
+      border-bottom-left-radius: calc(0.5rem - 1px);
       position: absolute;
-      left: 0px;
-      top: -1px;
+      left: 0;
+      top: 0;
       overflow: hidden;
       cursor: pointer;
     }
@@ -614,6 +614,7 @@
       flex-direction: column;
       align-items: start;
       justify-content: center;
+      padding: 0.4rem 0.5rem;
     }
 
     .group-left {
@@ -623,9 +624,6 @@
       & input[type="text"] {
         width: calc(100% - 2rem);
         margin-left: 2rem;
-      }
-      & label {
-        height: calc(100% + 1px);
       }
     }
 

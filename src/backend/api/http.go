@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"magitrickle/api/utils"
-	"magitrickle/api/v1"
+	v1 "magitrickle/api/v1"
 	"magitrickle/app"
 	"magitrickle/auth"
 	"magitrickle/constant"
@@ -42,6 +42,10 @@ func SetupHTTP(a app.Main, errChan chan error) (*http.Server, error) {
 	r.Use(middleware.Recoverer)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, "/api/") {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !a.Config().HTTPWeb.Auth.Enabled || r.URL.Path == "/api/v1/auth" {
 				next.ServeHTTP(w, r)
 				return

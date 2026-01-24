@@ -16,6 +16,7 @@
     removeForcedGroup: (groupId: string) => void;
     removeForcedRule: (groupId: string, ruleId: string) => void;
     moveForcedRule: (sourceGroupId: string, targetGroupId: string, ruleId: string) => void;
+    syncRuleDeletion: (groupIndex: number, ruleIndex: number) => void;
   };
 
   type Props = {
@@ -126,6 +127,32 @@
     targetForced.add(ruleId);
   }
 
+  function syncRuleDeletion(groupIndex: number, ruleIndex: number) {
+    if (!searchActive) return;
+    const targetIndex = visibleGroups.findIndex((entry) => entry.group_index === groupIndex);
+    if (targetIndex === -1) return;
+    const target = visibleGroups[targetIndex];
+    if (!target?.ruleIndices) return;
+
+    const ruleIndices = target.ruleIndices;
+    let write = 0;
+    for (let i = 0; i < ruleIndices.length; i++) {
+      const index = ruleIndices[i];
+      if (index === ruleIndex) continue;
+      ruleIndices[write] = index > ruleIndex ? index - 1 : index;
+      write += 1;
+    }
+
+    if (write === 0) {
+      visibleGroups.splice(targetIndex, 1);
+      return;
+    }
+
+    ruleIndices.length = write;
+    target.ruleIndices = ruleIndices;
+    visibleGroups[targetIndex] = target;
+  }
+
   function performSearch() {
     const query = normalizedSearch;
     resetForcedVisibility(query);
@@ -186,6 +213,7 @@
     removeForcedGroup,
     removeForcedRule,
     moveForcedRule,
+    syncRuleDeletion,
   };
 
   $effect(() => {
