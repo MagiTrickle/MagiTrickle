@@ -374,5 +374,20 @@ describe("ChangeTracker", () => {
       assert.strictEqual(tracker.changes.mutated.length, 1);
       assert.strictEqual(tracker.changes.mutated[0].id, "1");
     });
+
+    it("should acknowledge a deletion and make array clean", () => {
+      const item = createItem({ id: "1" });
+      const tracker = new ChangeTracker([item]);
+      const proxy = tracker.data;
+
+      proxy.pop(); // Delete from array
+      assert.strictEqual(tracker.isDirty, true);
+      assert.strictEqual(tracker.changes.deleted.length, 1);
+
+      tracker.acknowledgeDelete(proxy, "1");
+
+      assert.strictEqual(tracker.isDirty, false);
+      assert.strictEqual(tracker.changes.deleted.length, 0);
+    });
   });
 });
