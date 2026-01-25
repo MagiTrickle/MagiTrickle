@@ -89,12 +89,17 @@
   }
 
   .subscription-rule-type,
-  .subscription-rule-pattern {
+  .subscription-rule-pattern,
+  .subscription-rule-actions {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.1rem;
+    padding: 0 0.5rem;
     min-width: 0;
+  }
+
+  .subscription-rule-type {
+    justify-content: flex-end;
   }
 
   .subscription-rule-actions {
