@@ -6,6 +6,7 @@ import (
 
 	"magitrickle/config"
 	"magitrickle/models"
+	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
 
 	"github.com/vishvananda/netlink"
@@ -14,9 +15,16 @@ import (
 type Main interface {
 	Config() models.AppConfig
 	Groups() []Group
+	UserGroups() []Group
 	ClearGroups()
 	AddGroup(groupModel *models.Group) error
 	RemoveGroupByIndex(idx int)
+	RemoveGroupByID(id intID.ID) bool
+	SyncSubscriptionGroups()
+	Subscriptions() []*models.Subscription
+	SetSubscriptions(subscriptions []*models.Subscription)
+	AddSubscription(subscription *models.Subscription) error
+	RemoveSubscriptionByID(id intID.ID) bool
 	ListInterfaces() ([]net.Interface, error)
 	DnsOverrider() *netfilterTools.PortRemap
 	LoadConfig() error

@@ -11,6 +11,7 @@ import (
 	"magitrickle/constant"
 	"magitrickle/models"
 	"magitrickle/utils/dnsMITMProxy"
+	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
 	"magitrickle/utils/recordsCache"
 
@@ -21,6 +22,7 @@ var (
 	ErrAlreadyRunning           = errors.New("already running")
 	ErrGroupIDConflict          = errors.New("group id conflict")
 	ErrRuleIDConflict           = errors.New("rule id conflict")
+	ErrSubscriptionIDConflict   = errors.New("subscription id conflict")
 	ErrConfigUnsupportedVersion = errors.New("config unsupported version")
 )
 
@@ -30,11 +32,12 @@ type App struct {
 
 	config models.AppConfig
 
-	dnsMITM      *dnsMITMProxy.DNSMITMProxy
-	nfHelper     *netfilterTools.Helper
-	recordsCache *recordsCache.Records
-	groups       []*Group
-	dnsOverrider *netfilterTools.PortRemap
+	dnsMITM       *dnsMITMProxy.DNSMITMProxy
+	nfHelper      *netfilterTools.Helper
+	recordsCache  *recordsCache.Records
+	groups        []*Group
+	dnsOverrider  *netfilterTools.PortRemap
+	subscriptions []*models.Subscription
 }
 
 // New создаёт новый экземпляр App
@@ -62,12 +65,29 @@ func (a *App) Groups() []app.Group {
 	return groups
 }
 
+// UserGroups returns only non-internal groups.
+func (a *App) UserGroups() []app.Group {
+	list := make([]app.Group, 0, len(a.groups))
+	for _, g := range a.groups {
+		if g.Internal {
+			continue
+		}
+		list = append(list, g)
+	}
+	return list
+}
+
 // ClearGroups отключает все группы и очищает список
 func (a *App) ClearGroups() {
+	kept := make([]*Group, 0, len(a.groups))
 	for _, g := range a.groups {
+		if g.Internal {
+			kept = append(kept, g)
+			continue
+		}
 		_ = g.Disable()
 	}
-	a.groups = a.groups[:0]
+	a.groups = kept
 }
 
 // AddGroup добавляет новую группу
@@ -112,6 +132,49 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 // RemoveGroupByIndex удаляет группу по индексу
 func (a *App) RemoveGroupByIndex(idx int) {
 	a.groups = append(a.groups[:idx], a.groups[idx+1:]...)
+}
+
+// RemoveGroupByID removes a group by ID.
+func (a *App) RemoveGroupByID(id intID.ID) bool {
+	for idx, group := range a.groups {
+		if group.ID == id {
+			a.groups = append(a.groups[:idx], a.groups[idx+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// Subscriptions returns the current subscriptions list.
+func (a *App) Subscriptions() []*models.Subscription {
+	return a.subscriptions
+}
+
+// SetSubscriptions replaces the subscriptions list.
+func (a *App) SetSubscriptions(subscriptions []*models.Subscription) {
+	a.subscriptions = subscriptions
+}
+
+// AddSubscription adds a new subscription if ID is unique.
+func (a *App) AddSubscription(subscription *models.Subscription) error {
+	for _, sub := range a.subscriptions {
+		if sub.ID == subscription.ID {
+			return ErrSubscriptionIDConflict
+		}
+	}
+	a.subscriptions = append(a.subscriptions, subscription)
+	return nil
+}
+
+// RemoveSubscriptionByID removes a subscription by ID.
+func (a *App) RemoveSubscriptionByID(id intID.ID) bool {
+	for idx, sub := range a.subscriptions {
+		if sub.ID == id {
+			a.subscriptions = append(a.subscriptions[:idx], a.subscriptions[idx+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 // ListInterfaces возвращает список сетевых интерфейсов, удовлетворяющих заданным критериям

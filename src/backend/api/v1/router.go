@@ -31,7 +31,7 @@ func NewRouter(a app.Main) chi.Router {
 						utils.WriteError(w, http.StatusBadRequest, "invalid group id")
 						return
 					}
-					for i, group := range h.app.Groups() {
+					for i, group := range h.userGroups() {
 						if group.Model().ID == id {
 							r.Header.Set("groupIdx", strconv.Itoa(i))
 							next.ServeHTTP(w, r)
@@ -58,7 +58,7 @@ func NewRouter(a app.Main) chi.Router {
 								return
 							}
 							groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-							for idx, rule := range h.app.Groups()[groupIdx].Model().Rules {
+							for idx, rule := range h.userGroups()[groupIdx].Model().Rules {
 								if rule.ID == id {
 									r.Header.Set("ruleIdx", strconv.Itoa(idx))
 									next.ServeHTTP(w, r)
@@ -74,6 +74,16 @@ func NewRouter(a app.Main) chi.Router {
 				})
 			})
 		})
+	})
+	r.Route("/subscriptions", func(r chi.Router) {
+		r.Get("/", h.GetSubscriptions)
+		r.Put("/", h.PutSubscriptions)
+	})
+	r.Route("/subscription", func(r chi.Router) {
+		r.Post("/", h.CreateSubscription)
+		r.Patch("/", h.SyncSubscription)
+		r.Delete("/", h.DeleteSubscription)
+		r.Get("/rules", h.GetSubscriptionRules)
 	})
 	r.Route("/system", func(r chi.Router) {
 		r.Get("/interfaces", h.ListInterfaces)

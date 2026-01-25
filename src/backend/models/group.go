@@ -11,4 +11,5 @@ type Group struct {
 	Interface string
 	Enable    bool
 	Rules     []*Rule
+	Internal  bool
 }

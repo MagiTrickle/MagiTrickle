@@ -200,12 +200,47 @@ func (a *App) ImportConfig(cfg config.Config) error {
 		}
 	}
 
+	if cfg.Subscriptions != nil {
+		a.subscriptions = a.subscriptions[:0]
+		for _, sub := range *cfg.Subscriptions {
+			enable := true
+			if sub.Enable != nil {
+				enable = *sub.Enable
+			}
+			rules := make([]*models.SubscriptionRule, len(sub.Rules))
+			for idx, rule := range sub.Rules {
+				rules[idx] = &models.SubscriptionRule{
+					ID:     rule.ID,
+					Rule:   rule.Rule,
+					Type:   rule.Type,
+					Enable: rule.Enable,
+				}
+			}
+			a.subscriptions = append(a.subscriptions, &models.Subscription{
+				ID:         sub.ID,
+				GroupID:    sub.GroupID,
+				Name:       sub.Name,
+				Interface:  sub.Interface,
+				Enable:     enable,
+				URL:        sub.URL,
+				LastUpdate: sub.LastUpdate,
+				Rules:      rules,
+			})
+		}
+	} else {
+		a.subscriptions = a.subscriptions[:0]
+	}
+
+	a.syncSubscriptionGroups()
 	return nil
 }
 
 func (a *App) ExportConfig() config.Config {
-	groups := make([]config.Group, len(a.groups))
-	for idx, group := range a.groups {
+	groups := make([]config.Group, 0, len(a.groups))
+	for _, group := range a.groups {
+		if group.Internal {
+			continue
+		}
 		groupCfg := config.Group{
 			ID:        group.ID,
 			Name:      group.Name,
@@ -223,7 +258,7 @@ func (a *App) ExportConfig() config.Config {
 				Enable: rule.Enable,
 			}
 		}
-		groups[idx] = groupCfg
+		groups = append(groups, groupCfg)
 	}
 
 	return config.Config{
@@ -272,6 +307,33 @@ func (a *App) ExportConfig() config.Config {
 			ShowAllInterfaces: &a.config.ShowAllInterfaces,
 			LogLevel:          &a.config.LogLevel,
 		},
-		Groups: &groups,
+		Groups:        &groups,
+		Subscriptions: exportSubscriptions(a.subscriptions),
 	}
+}
+
+func exportSubscriptions(subs []*models.Subscription) *[]config.Subscription {
+	list := make([]config.Subscription, len(subs))
+	for idx, sub := range subs {
+		rules := make([]config.SubscriptionRule, len(sub.Rules))
+		for rIdx, rule := range sub.Rules {
+			rules[rIdx] = config.SubscriptionRule{
+				ID:     rule.ID,
+				Rule:   rule.Rule,
+				Type:   rule.Type,
+				Enable: rule.Enable,
+			}
+		}
+		list[idx] = config.Subscription{
+			ID:         sub.ID,
+			GroupID:    sub.GroupID,
+			Name:       sub.Name,
+			Interface:  sub.Interface,
+			Enable:     &sub.Enable,
+			URL:        sub.URL,
+			LastUpdate: sub.LastUpdate,
+			Rules:      rules,
+		}
+	}
+	return &list
 }

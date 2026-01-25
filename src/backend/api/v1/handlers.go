@@ -24,6 +24,19 @@ func NewHandler(a app.Main) *Handler {
 	return &Handler{app: a}
 }
 
+func (h *Handler) userGroups() []app.Group {
+	all := h.app.Groups()
+	userGroups := make([]app.Group, 0, len(all))
+	for _, group := range all {
+		model := group.Model()
+		if model != nil && model.Internal {
+			continue
+		}
+		userGroups = append(userGroups, group)
+	}
+	return userGroups
+}
+
 // NetfilterDHook
 //
 //	@Summary		Хук эвента netfilter.d
@@ -102,7 +115,7 @@ func (h *Handler) SaveConfig(w http.ResponseWriter, r *http.Request) {
 //	@Router			/api/v1/groups [get]
 func (h *Handler) GetGroups(w http.ResponseWriter, r *http.Request) {
 	withRules := r.URL.Query().Get("with_rules") == "true"
-	appGroups := h.app.Groups()
+	appGroups := h.userGroups()
 	modelGroups := make([]*models.Group, len(appGroups))
 	for i, g := range appGroups {
 		modelGroups[i] = g.Model()
@@ -133,13 +146,13 @@ func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 		utils.WriteError(w, http.StatusBadRequest, "no groups in request")
 		return
 	}
-	for _, g := range h.app.Groups() {
+	for _, g := range h.userGroups() {
 		_ = g.Disable()
 	}
 	newGroups := make([]*models.Group, len(*req.Groups))
 	for i, gReq := range *req.Groups {
 		var existing *models.Group
-		for _, g := range h.app.Groups() {
+		for _, g := range h.userGroups() {
 			if gReq.ID != nil && g.Model().ID == *gReq.ID {
 				existing = g.Model()
 				break
@@ -158,6 +171,7 @@ func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	h.app.SyncSubscriptionGroups()
 	utils.WriteJson(w, http.StatusOK, RespFromGroups(newGroups, true))
 	if r.URL.Query().Get("save") == "true" {
 		if err := h.app.SaveConfig(); err != nil {
@@ -217,7 +231,7 @@ func (h *Handler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetGroup(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
 	withRules := r.URL.Query().Get("with_rules") == "true"
-	group := h.app.Groups()[groupIdx].Model()
+	group := h.userGroups()[groupIdx].Model()
 	utils.WriteJson(w, http.StatusOK, RespFromGroup(group, withRules))
 }
 
@@ -243,7 +257,7 @@ func (h *Handler) PutGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	groupWrapper := h.app.Groups()[groupIdx]
+	groupWrapper := h.userGroups()[groupIdx]
 
 	enabled := groupWrapper.Enabled()
 	if enabled {
@@ -291,14 +305,14 @@ func (h *Handler) PutGroup(w http.ResponseWriter, r *http.Request) {
 //	@Router			/api/v1/groups/{groupID} [delete]
 func (h *Handler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	groupWrapper := h.app.Groups()[groupIdx]
+	groupWrapper := h.userGroups()[groupIdx]
 	if groupWrapper.Enabled() {
 		if err := groupWrapper.Disable(); err != nil {
 			utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to disable group: %v", err))
 			return
 		}
 	}
-	h.app.RemoveGroupByIndex(groupIdx)
+	h.app.RemoveGroupByID(groupWrapper.Model().ID)
 	if r.URL.Query().Get("save") == "true" {
 		if err := h.app.SaveConfig(); err != nil {
 			log.Error().Err(err).Msg("failed to save config file")
@@ -319,7 +333,7 @@ func (h *Handler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 //	@Router			/api/v1/groups/{groupID}/rules [get]
 func (h *Handler) GetRules(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	rules := h.app.Groups()[groupIdx].Model().Rules
+	rules := h.userGroups()[groupIdx].Model().Rules
 	utils.WriteJson(w, http.StatusOK, RespFromRules(rules))
 }
 
@@ -349,7 +363,7 @@ func (h *Handler) PutRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	groupWrapper := h.app.Groups()[groupIdx]
+	groupWrapper := h.userGroups()[groupIdx]
 	enabled := groupWrapper.Enabled()
 
 	newRules := make([]*models.Rule, len(*req.Rules))
@@ -414,7 +428,7 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	groupWrapper := h.app.Groups()[groupIdx]
+	groupWrapper := h.userGroups()[groupIdx]
 	enabled := groupWrapper.Enabled()
 
 	rule, err := RuleFromReq(req, groupWrapper.Model().Rules)
@@ -452,7 +466,7 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetRule(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
 	ruleIdx, _ := strconv.Atoi(r.Header.Get("ruleIdx"))
-	rule := h.app.Groups()[groupIdx].Model().Rules[ruleIdx]
+	rule := h.userGroups()[groupIdx].Model().Rules[ruleIdx]
 	utils.WriteJson(w, http.StatusOK, RespFromRule(rule))
 }
 
@@ -479,7 +493,7 @@ func (h *Handler) PutRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	groupWrapper := h.app.Groups()[groupIdx]
+	groupWrapper := h.userGroups()[groupIdx]
 	enabled := groupWrapper.Enabled()
 
 	ruleIdx, _ := strconv.Atoi(r.Header.Get("ruleIdx"))
@@ -518,7 +532,7 @@ func (h *Handler) PutRule(w http.ResponseWriter, r *http.Request) {
 //	@Router			/api/v1/groups/{groupID}/rules/{ruleID} [delete]
 func (h *Handler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
-	groupWrapper := h.app.Groups()[groupIdx]
+	groupWrapper := h.userGroups()[groupIdx]
 	enabled := groupWrapper.Enabled()
 
 	ruleIdx, _ := strconv.Atoi(r.Header.Get("ruleIdx"))
