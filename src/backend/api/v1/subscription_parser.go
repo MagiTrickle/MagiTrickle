@@ -19,9 +19,9 @@ import (
 const subscriptionListMaxBytes = 5 * 1024 * 1024
 
 var (
-	domainRe   = regexp.MustCompile(`^(?!\.)(?!.*\.$)(?!.*\.\.)[a-zA-Z0-9\-.]+$`)
-	wildcardRe = regexp.MustCompile(`^(?!\.)(?!.*\.$)(?!.*\.\.)(?!.*\*\*)[a-zA-Z0-9\-.*?]+$`)
-	subnetRe   = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$`)
+	domainCharRe   = regexp.MustCompile(`^[a-zA-Z0-9-.]+$`)
+	wildcardCharRe = regexp.MustCompile(`^[a-zA-Z0-9\-.*?]+$`)
+	subnetRe       = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$`)
 )
 
 func fetchSubscriptionList(rawURL string) (string, error) {
@@ -112,11 +112,29 @@ func detectSubscriptionRuleType(pattern string) string {
 }
 
 func isValidWildcard(pattern string) bool {
-	return wildcardRe.MatchString(pattern)
+	if pattern == "" {
+		return false
+	}
+	if strings.HasPrefix(pattern, ".") || strings.HasSuffix(pattern, ".") {
+		return false
+	}
+	if strings.Contains(pattern, "..") || strings.Contains(pattern, "**") {
+		return false
+	}
+	return wildcardCharRe.MatchString(pattern)
 }
 
 func isValidDomain(pattern string) bool {
-	return domainRe.MatchString(pattern)
+	if pattern == "" {
+		return false
+	}
+	if strings.HasPrefix(pattern, ".") || strings.HasSuffix(pattern, ".") {
+		return false
+	}
+	if strings.Contains(pattern, "..") {
+		return false
+	}
+	return domainCharRe.MatchString(pattern)
 }
 
 func isValidNamespace(pattern string) bool {
