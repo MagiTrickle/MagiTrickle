@@ -30,15 +30,16 @@
   {...rest}
 >
   <div class="subscription-rule-row">
-    <div class="subscription-rule-type">
-      <div class="label">{t("Type")}</div>
-      <Select options={RULE_TYPES} bind:selected={rule.type} />
-    </div>
+    <div class="subscription-rule-number">{rule_index + 1}</div>
     <div class="subscription-rule-pattern">
       <div class="label">{t("Pattern")}</div>
       <div class="subscription-rule-value pattern-value" class:invalid={isPatternInvalid()}>
         {rule.rule}
       </div>
+    </div>
+    <div class="subscription-rule-type">
+      <div class="label">{t("Type")}</div>
+      <Select options={RULE_TYPES} bind:selected={rule.type} />
     </div>
     <div class="subscription-rule-actions">
       <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
@@ -55,16 +56,25 @@
 
   .subscription-rule-row {
     display: grid;
-    grid-template-columns: 1rem 1fr 5.5fr 0.6fr;
+    grid-template-columns: 2.5rem 5.5fr 1fr 0.6fr;
     gap: 0.5rem;
     padding: 0.1rem 0;
     background: inherit;
     border-radius: inherit;
   }
-  .subscription-rule-type {
+
+  .subscription-rule-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    color: var(--text-2);
+  }
+
+  .subscription-rule-pattern {
     grid-column: 2;
   }
-  .subscription-rule-pattern {
+  .subscription-rule-type {
     grid-column: 3;
   }
   .subscription-rule-actions {
@@ -129,14 +139,21 @@
       padding: 0.5rem 0.35rem 0.45rem;
       align-items: start;
     }
+
+    .subscription-rule-number {
+      display: none;
+    }
+
     .subscription-rule-type,
     .subscription-rule-pattern,
     .subscription-rule-actions {
       grid-column: auto;
     }
+
     .label {
       display: block;
     }
+
     .subscription-rule-type,
     .subscription-rule-pattern {
       display: grid;
@@ -146,15 +163,18 @@
       padding: 0.05rem 0;
       grid-column: 1;
     }
+
     .subscription-rule-pattern .label,
     .subscription-rule-type .label {
       justify-self: end;
       text-align: right;
       position: static;
     }
+
     .subscription-rule-type :global([data-select-trigger]) {
       justify-content: flex-start;
     }
+
     .subscription-rule-actions {
       grid-column: 2;
       grid-row: 1 / span 2;

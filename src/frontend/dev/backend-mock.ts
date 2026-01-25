@@ -47,8 +47,8 @@ function randomLogLine() {
     message: ["error", "fatal", "panic"].includes(level)
       ? "error message"
       : `group: ${randomIndex(DATA.groups).name}, ip: ${randomIP()} > int: ${randomIndex(
-        INTERFACES.interfaces.map((item) => item.id),
-      )}`,
+          INTERFACES.interfaces.map((item) => item.id),
+        )}`,
   };
 }
 
@@ -123,8 +123,7 @@ app.patch(`${API_BASE}/subscription`, async (c) => {
   const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
 
   if (index !== -1) {
-    // Simulate fetching rules (Sync logic)
-    const count = Math.floor(Math.random() * 50) + 5;
+    const count = Math.floor(Math.random() * 70) + 5;
     const rules = Array.from({ length: count }).map(() => ({
       enable: true,
       id: Math.random().toString(16).substring(2, 10),
@@ -136,7 +135,7 @@ app.patch(`${API_BASE}/subscription`, async (c) => {
       ...SUBSCRIPTIONS[index],
       ...body,
       rules: rules,
-      last_update: Date.now()
+      last_update: Date.now(),
     };
 
     SUBSCRIPTIONS[index] = updatedSub;
@@ -161,7 +160,7 @@ app.get(`${API_BASE}/subscription/rules`, (c) => {
     return c.json({ error: "random error" }, 500);
   }
   const url = c.req.query("url");
-  // Mock fetching rules from URL
+
   const count = Math.floor(Math.random() * 50) + 5;
   const rules = Array.from({ length: count }).map(() => ({
     enable: true,

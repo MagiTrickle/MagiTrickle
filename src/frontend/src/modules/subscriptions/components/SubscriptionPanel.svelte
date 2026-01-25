@@ -277,10 +277,11 @@
             <div class="subscription-rules-header-column total">
               #{totalRulesCount}
             </div>
-            <div class="subscription-rules-header-column">{t("Type")}</div>
-            <div class="subscription-rules-header-column">
+            <div class="subscription-rules-header-column pattern">
               {t("Pattern")}
             </div>
+            <div class="subscription-rules-header-column">{t("Type")}</div>
+
             <div class="subscription-rules-header-column">{t("Enabled")}</div>
           </div>
         {/if}
@@ -424,7 +425,7 @@
 
   .subscription-rules-header {
     display: grid;
-    grid-template-columns: 1rem 1fr 5.5fr 0.6fr;
+    grid-template-columns: 2.5rem 5.5fr 1fr 0.6fr;
     gap: 0.5rem;
     align-items: center;
     font-size: 0.9rem;
@@ -438,11 +439,6 @@
     align-items: center;
     justify-content: center;
     min-width: 0;
-
-    &.total {
-      justify-content: start;
-      padding-left: 0.3rem;
-    }
   }
 
   :global {
