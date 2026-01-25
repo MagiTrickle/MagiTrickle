@@ -424,7 +424,7 @@
 
   .subscription-rules-header {
     display: grid;
-    grid-template-columns: 0.5rem 1fr 5.5fr 0.6fr;
+    grid-template-columns: 1rem 1fr 5.5fr 0.6fr;
     gap: 0.5rem;
     align-items: center;
     font-size: 0.9rem;
