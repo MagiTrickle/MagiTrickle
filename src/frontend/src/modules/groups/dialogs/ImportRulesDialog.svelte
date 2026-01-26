@@ -1,6 +1,7 @@
 <script lang="ts">
   import LoaderCircle from "lucide-svelte/icons/loader-circle";
   import { createEventDispatcher, tick } from "svelte";
+  import { slide } from "svelte/transition";
 
   import Button from "../../../components/ui/Button.svelte";
   import GenericDialog from "../../../components/ui/GenericDialog.svelte";
@@ -32,7 +33,45 @@
   let editorHeight = $state(200);
 
   const MIN_EDITOR_HEIGHT = 200;
-  const HEIGHT_PER_LINE = 22;
+  const DESKTOP_MAX_EDITOR_HEIGHT = 500;
+
+  function getMaxEditorHeight() {
+    if (typeof window === "undefined") return DESKTOP_MAX_EDITOR_HEIGHT;
+    const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const isMobile = window.matchMedia("(max-width: 600px)").matches;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    return isMobile ? viewportHeight - 10 * rootFontSize : DESKTOP_MAX_EDITOR_HEIGHT;
+  }
+
+  function getTextMetrics() {
+    if (!textAreaRef || typeof window === "undefined") {
+      return { lineHeight: 22, paddingY: 24 };
+    }
+    const styles = getComputedStyle(textAreaRef);
+    const fontSize = parseFloat(styles.fontSize) || 16;
+    let lineHeight = parseFloat(styles.lineHeight);
+    if (Number.isNaN(lineHeight)) {
+      lineHeight = fontSize * 1.5;
+    }
+    const paddingY =
+      (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+    return { lineHeight, paddingY };
+  }
+
+  function scheduleEditorResize() {
+    if (!textAreaRef) return;
+    requestAnimationFrame(() => {
+      if (!textAreaRef) return;
+      const tokens = import_rules_text.split(/[\n,]+/).filter((t) => t.trim().length > 0);
+      const lineCount = Math.max(1, tokens.length);
+      const { lineHeight, paddingY } = getTextMetrics();
+      const baseLines = Math.max(1, Math.floor((MIN_EDITOR_HEIGHT - paddingY) / lineHeight));
+      const extraLines = Math.max(0, lineCount - baseLines);
+      const maxHeight = getMaxEditorHeight();
+      const targetHeight = MIN_EDITOR_HEIGHT + extraLines * lineHeight;
+      editorHeight = Math.max(MIN_EDITOR_HEIGHT, Math.min(targetHeight, maxHeight));
+    });
+  }
 
   type ParsedLine = {
     text: string;
@@ -56,9 +95,8 @@
   });
 
   $effect(() => {
-    const tokens = import_rules_text.split(/[\n,]+/).filter((t) => t.trim().length > 0);
-    const lineCount = Math.max(1, tokens.length);
-    editorHeight = MIN_EDITOR_HEIGHT + (lineCount - 1) * HEIGHT_PER_LINE;
+    import_rules_text;
+    scheduleEditorResize();
   });
 
   const TYPE_COLORS: Record<string, string> = {
@@ -209,7 +247,7 @@
   });
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onresize={scheduleEditorResize} />
 
 <GenericDialog
   {open}
@@ -269,7 +307,7 @@
     </div>
 
     {#if !isEditing && !isParsing && Object.keys(counts).length > 0}
-      <div class="counts">
+      <div class="counts" transition:slide={{ duration: 160 }}>
         {#each Object.entries(counts) as [type, count]}
           <span
             class="badge count-badge"
@@ -453,8 +491,9 @@
   }
 
   .rule-type-select {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 0.5rem;
     width: 100%;
   }
@@ -466,7 +505,16 @@
     border: 1px solid var(--bg-light-extra);
     border-radius: 0.5rem;
     background-color: var(--bg-light);
-    width: 100% !important;
+    width: auto !important;
+  }
+
+  .rule-type-select :global(.select-root) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .rule-type-select :global(button) {
+    flex: 0 0 auto;
   }
 
   @media (max-width: 600px) {
@@ -494,17 +542,6 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-    }
-
-    .rule-type-select :global(.select-root) {
-      flex: 1 1 auto;
-      min-width: 0;
-      width: auto !important;
-    }
-
-    .rule-type-select :global(button) {
-      flex: 0 0 auto;
-      width: auto !important;
     }
   }
 </style>
