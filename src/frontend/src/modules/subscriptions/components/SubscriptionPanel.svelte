@@ -366,12 +366,11 @@
     margin-left: 0.4rem;
     display: flex;
     align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+    gap: 0.7rem;
+    min-width: 0;
   }
 
-  .url-line,
-  .update-line {
+  .url-line {
     display: flex;
     align-items: center;
     gap: 0.3rem;
@@ -382,6 +381,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .update-line {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .icon-wrap {
@@ -425,7 +432,7 @@
 
   .subscription-rules-header {
     display: grid;
-    grid-template-columns: 2.5rem 5.5fr 1fr 0.6fr;
+    grid-template-columns: minmax(2.5rem, auto) 5.5fr 1fr 0.6fr;
     gap: 0.5rem;
     align-items: center;
     font-size: 0.9rem;
@@ -439,6 +446,11 @@
     align-items: center;
     justify-content: center;
     min-width: 0;
+
+    &.total {
+      padding-left: 0.2rem;
+      padding-right: 0.2rem;
+    }
   }
 
   :global {
