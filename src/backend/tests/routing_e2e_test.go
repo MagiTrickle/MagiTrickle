@@ -222,7 +222,7 @@ func newNetfilterE2EApp(t *testing.T, env netfilterE2EEnv) *magitrickle.App {
 			},
 			DNSProxy: &config.DNSProxy{
 				Host: &config.DNSProxyServer{
-					Address: strPtr("127.0.0.1"),
+					Address: strPtr("::"),
 					Port:    uint16Ptr(env.dnsPort),
 				},
 				DisableRemap53: boolPtr(true),
