@@ -11,7 +11,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -315,10 +314,13 @@ func waitForTCP(t *testing.T, ns netns.NsHandle, addr string, errCh <-chan error
 
 func waitForAuth(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
+	var lastErr error
 	for time.Now().Before(deadline) {
 		if err := tryRequestInNetns(t, ns, http.MethodGet, url); err == nil {
 			return
+		} else {
+			lastErr = err
 		}
 		select {
 		case err := <-errCh:
@@ -328,6 +330,9 @@ func waitForAuth(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error
 		default:
 		}
 		time.Sleep(150 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("timeout waiting for auth endpoint: %v", lastErr)
 	}
 	t.Fatalf("timeout waiting for auth endpoint")
 }
@@ -355,7 +360,7 @@ func tryRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string) erro
 			err = reqErr
 			return
 		}
-		client := newNetnsHTTPClient(500 * time.Millisecond)
+		client := &http.Client{Timeout: 5 * time.Second}
 		resp, reqErr := client.Do(req)
 		if reqErr != nil {
 			err = reqErr
@@ -581,7 +586,7 @@ func doRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string, data 
 			req.Header.Set("Content-Type", "application/json")
 		}
 
-		client := newNetnsHTTPClient(5 * time.Second)
+		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s %s error: %v", method, url, err)
@@ -592,19 +597,6 @@ func doRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string, data 
 		body, _ = io.ReadAll(resp.Body)
 	})
 	return status, body
-}
-
-func newNetnsHTTPClient(timeout time.Duration) *http.Client {
-	noProxy := func(*http.Request) (*url.URL, error) {
-		return nil, nil
-	}
-	transport := &http.Transport{
-		Proxy:             noProxy,
-		DialContext:       (&net.Dialer{Timeout: timeout}).DialContext,
-		DisableKeepAlives: true,
-		ForceAttemptHTTP2: false,
-	}
-	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
 func assertStatusOK(t *testing.T, status int, body []byte) {
