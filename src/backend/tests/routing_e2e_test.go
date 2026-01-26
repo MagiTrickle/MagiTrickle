@@ -257,7 +257,7 @@ func startAppInNetns(t *testing.T, ns netns.NsHandle, app *magitrickle.App, ctx 
 		})
 	}()
 
-	waitForHTTP(t, ns, fmt.Sprintf("http://127.0.0.1:%d/api/v1/auth", httpPort), errCh)
+	waitForTCP(t, ns, fmt.Sprintf("127.0.0.1:%d", httpPort), errCh)
 	return errCh
 }
 
@@ -292,11 +292,11 @@ func apiRequest(t *testing.T, ns netns.NsHandle, method, url string, payload any
 	return doRequestInNetns(t, ns, method, url, data)
 }
 
-func waitForHTTP(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error) {
+func waitForTCP(t *testing.T, ns netns.NsHandle, addr string, errCh <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := tryRequestInNetns(t, ns, http.MethodGet, url); err == nil {
+		if err := tryDialInNetns(t, ns, addr); err == nil {
 			return
 		}
 		select {
@@ -311,25 +311,16 @@ func waitForHTTP(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error
 	t.Fatalf("timeout waiting for http server")
 }
 
-func tryRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string) error {
+func tryDialInNetns(t *testing.T, ns netns.NsHandle, addr string) error {
 	t.Helper()
 	var err error
 	withNetns(t, ns, func() {
-		req, reqErr := http.NewRequest(method, url, nil)
-		if reqErr != nil {
-			err = reqErr
+		conn, dialErr := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if dialErr != nil {
+			err = dialErr
 			return
 		}
-		client := &http.Client{Timeout: 500 * time.Millisecond}
-		resp, reqErr := client.Do(req)
-		if reqErr != nil {
-			err = reqErr
-			return
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			err = fmt.Errorf("unexpected status %d", resp.StatusCode)
-		}
+		_ = conn.Close()
 	})
 	return err
 }
