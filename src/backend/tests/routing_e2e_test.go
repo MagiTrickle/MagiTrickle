@@ -46,7 +46,7 @@ func TestRoutingE2E(t *testing.T) {
 	}()
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1", env.httpPort)
-	waitForTCP(t, env.routerNS, fmt.Sprintf("127.0.0.1:%d", env.httpPort), errCh)
+	waitForAuth(t, env.routerNS, baseURL+"/auth", errCh)
 
 	status, body := apiRequest(t, env.routerNS, http.MethodGet, baseURL+"/auth", nil)
 	assertStatusOK(t, status, body)
@@ -312,6 +312,25 @@ func waitForTCP(t *testing.T, ns netns.NsHandle, addr string, errCh <-chan error
 	t.Fatalf("timeout waiting for http server")
 }
 
+func waitForAuth(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := tryRequestInNetns(t, ns, http.MethodGet, url); err == nil {
+			return
+		}
+		select {
+		case err := <-errCh:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("app start error: %v", err)
+			}
+		default:
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for auth endpoint")
+}
+
 func tryDialInNetns(t *testing.T, ns netns.NsHandle, addr string) error {
 	t.Helper()
 	var err error
@@ -322,6 +341,29 @@ func tryDialInNetns(t *testing.T, ns netns.NsHandle, addr string) error {
 			return
 		}
 		_ = conn.Close()
+	})
+	return err
+}
+
+func tryRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string) error {
+	t.Helper()
+	var err error
+	withNetns(t, ns, func() {
+		req, reqErr := http.NewRequest(method, url, nil)
+		if reqErr != nil {
+			err = reqErr
+			return
+		}
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		resp, reqErr := client.Do(req)
+		if reqErr != nil {
+			err = reqErr
+			return
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			err = fmt.Errorf("unexpected status %d", resp.StatusCode)
+		}
 	})
 	return err
 }
