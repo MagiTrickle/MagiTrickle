@@ -46,7 +46,7 @@ func TestRoutingE2E(t *testing.T) {
 		waitForAppStop(t, errCh)
 	}()
 
-	baseURL := fmt.Sprintf("http://%s/api/v1", httpAddr)
+	baseURL := fmt.Sprintf("http://100.64.0.2/api/v1", httpAddr)
 	waitForAuth(t, env.routerNS, baseURL+"/auth", errCh)
 
 	status, body := apiRequest(t, env.routerNS, http.MethodGet, baseURL+"/auth", nil)
