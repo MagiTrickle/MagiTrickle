@@ -1,22 +1,18 @@
 package v1
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"magitrickle/models"
 	"magitrickle/utils/intID"
 
 	"github.com/dlclark/regexp2"
 )
-
-const subscriptionListMaxBytes = 5 * 1024 * 1024
 
 var (
 	domainCharRe   = regexp.MustCompile(`^[a-zA-Z0-9-.]+$`)
@@ -33,7 +29,7 @@ func fetchSubscriptionList(rawURL string) (string, error) {
 		return "", fmt.Errorf("unsupported url scheme")
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{}
 	resp, err := client.Get(rawURL)
 	if err != nil {
 		return "", err
@@ -43,13 +39,9 @@ func fetchSubscriptionList(rawURL string) (string, error) {
 		return "", fmt.Errorf("bad response status: %d", resp.StatusCode)
 	}
 
-	limited := io.LimitReader(resp.Body, subscriptionListMaxBytes+1)
-	data, err := io.ReadAll(limited)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
-	}
-	if int64(len(data)) > subscriptionListMaxBytes {
-		return "", errors.New("subscription list too large")
 	}
 	return string(data), nil
 }
