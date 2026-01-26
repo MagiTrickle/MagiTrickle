@@ -95,11 +95,11 @@ func detectSubscriptionRuleType(pattern string) string {
 	if isValidSubnet(p) {
 		return "subnet"
 	}
-	if strings.Count(p, ".") >= 2 && isValidDomain(p) {
-		return "domain"
-	}
 	if isValidNamespace(p) {
 		return "namespace"
+	}
+	if isValidDomain(p) {
+		return "domain"
 	}
 	if isValidRegex(p) {
 		return "regex"
@@ -108,7 +108,7 @@ func detectSubscriptionRuleType(pattern string) string {
 		return "wildcard"
 	}
 
-	return "domain"
+	return ""
 }
 
 func isValidWildcard(pattern string) bool {
