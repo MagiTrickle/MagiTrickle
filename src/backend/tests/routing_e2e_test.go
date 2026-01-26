@@ -40,13 +40,13 @@ func TestRoutingE2E(t *testing.T) {
 
 	app := newNetfilterE2EApp(t, env)
 	ctx, cancel := context.WithCancel(context.Background())
-	errCh, httpAddr := startAppInNetns(t, env.routerNS, app, ctx)
+	errCh := startAppInNetns(t, env.routerNS, app, ctx, env.httpPort)
 	defer func() {
 		cancel()
 		waitForAppStop(t, errCh)
 	}()
 
-	baseURL := fmt.Sprintf("http://100.64.0.2/api/v1", httpAddr)
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1", env.httpPort)
 	waitForAuth(t, env.routerNS, baseURL+"/auth", errCh)
 
 	status, body := apiRequest(t, env.routerNS, http.MethodGet, baseURL+"/auth", nil)
@@ -115,6 +115,7 @@ type netfilterE2EEnv struct {
 	ifRouterWan    string
 	ifDefRouter    string
 	ifRouterDef    string
+	httpPort       uint16
 	dnsPort        uint16
 }
 
@@ -133,6 +134,7 @@ func newNetfilterE2EEnv(t *testing.T, baseName string) netfilterE2EEnv {
 		ifRouterWan:    "w0",
 		ifDefRouter:    "r-def0",
 		ifRouterDef:    "d0",
+		httpPort:       18088,
 		dnsPort:        53535,
 	}
 
@@ -217,7 +219,7 @@ func newNetfilterE2EApp(t *testing.T, env netfilterE2EEnv) *magitrickle.App {
 			HTTPWeb: &config.HTTPWeb{
 				Host: &config.HTTPWebServer{
 					Address: strPtr("127.0.0.1"),
-					Port:    uint16Ptr(0),
+					Port:    uint16Ptr(env.httpPort),
 				},
 			},
 			DNSProxy: &config.DNSProxy{
@@ -248,7 +250,7 @@ func newNetfilterE2EApp(t *testing.T, env netfilterE2EEnv) *magitrickle.App {
 	return app
 }
 
-func startAppInNetns(t *testing.T, ns netns.NsHandle, app *magitrickle.App, ctx context.Context) (<-chan error, string) {
+func startAppInNetns(t *testing.T, ns netns.NsHandle, app *magitrickle.App, ctx context.Context, httpPort uint16) <-chan error {
 	t.Helper()
 	errCh := make(chan error, 1)
 	go func() {
@@ -257,9 +259,8 @@ func startAppInNetns(t *testing.T, ns netns.NsHandle, app *magitrickle.App, ctx 
 		})
 	}()
 
-	httpAddr := waitForHTTPAddr(t, app, errCh)
-	waitForTCP(t, ns, httpAddr, errCh)
-	return errCh, httpAddr
+	waitForTCP(t, ns, fmt.Sprintf("127.0.0.1:%d", httpPort), errCh)
+	return errCh
 }
 
 func buildSubnetRules() []types.RuleReq {
@@ -312,26 +313,6 @@ func waitForTCP(t *testing.T, ns netns.NsHandle, addr string, errCh <-chan error
 	t.Fatalf("timeout waiting for http server")
 }
 
-func waitForHTTPAddr(t *testing.T, app *magitrickle.App, errCh <-chan error) string {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if addr := app.HTTPAddr(); addr != "" {
-			return addr
-		}
-		select {
-		case err := <-errCh:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Fatalf("app start error: %v", err)
-			}
-		default:
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("timeout waiting for http addr")
-	return ""
-}
-
 func waitForAuth(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -373,25 +354,20 @@ func tryDialInNetns(t *testing.T, ns netns.NsHandle, addr string) error {
 
 func tryRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string) error {
 	t.Helper()
-	var err error
-	withNetns(t, ns, func() {
-		req, reqErr := http.NewRequest(method, url, nil)
-		if reqErr != nil {
-			err = reqErr
-			return
-		}
-		client := newNetnsHTTPClient(5 * time.Second)
-		resp, reqErr := client.Do(req)
-		if reqErr != nil {
-			err = reqErr
-			return
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			err = fmt.Errorf("unexpected status %d", resp.StatusCode)
-		}
-	})
-	return err
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return err
+	}
+	client := newNetnsHTTPClient(ns, 5*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func waitForAppStop(t *testing.T, errCh <-chan error) {
@@ -592,40 +568,54 @@ func doRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string, data 
 	t.Helper()
 	var status int
 	var body []byte
-	withNetns(t, ns, func() {
-		var reader io.Reader
-		if data != nil {
-			reader = bytes.NewReader(data)
-		}
+	var reader io.Reader
+	if data != nil {
+		reader = bytes.NewReader(data)
+	}
 
-		req, err := http.NewRequest(method, url, reader)
-		if err != nil {
-			t.Fatalf("http.NewRequest failed: %v", err)
-		}
-		if data != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
+	req, err := http.NewRequest(method, url, reader)
+	if err != nil {
+		t.Fatalf("http.NewRequest failed: %v", err)
+	}
+	if data != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
-		client := newNetnsHTTPClient(5 * time.Second)
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatalf("%s %s error: %v", method, url, err)
-		}
-		defer resp.Body.Close()
+	client := newNetnsHTTPClient(ns, 5*time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s error: %v", method, url, err)
+	}
+	defer resp.Body.Close()
 
-		status = resp.StatusCode
-		body, _ = io.ReadAll(resp.Body)
-	})
+	status = resp.StatusCode
+	body, _ = io.ReadAll(resp.Body)
+
 	return status, body
 }
 
-func newNetnsHTTPClient(timeout time.Duration) *http.Client {
+func newNetnsHTTPClient(ns netns.NsHandle, timeout time.Duration) *http.Client {
 	noProxy := func(*http.Request) (*url.URL, error) {
 		return nil, nil
 	}
+	baseDialer := &net.Dialer{Timeout: timeout}
 	transport := &http.Transport{
-		Proxy:             noProxy,
-		DialContext:       (&net.Dialer{Timeout: timeout}).DialContext,
+		Proxy: noProxy,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+
+			orig, err := netns.Get()
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = netns.Set(orig) }()
+
+			if err := netns.Set(ns); err != nil {
+				return nil, err
+			}
+			return baseDialer.DialContext(ctx, network, addr)
+		},
 		DisableKeepAlives: true,
 		ForceAttemptHTTP2: false,
 	}
