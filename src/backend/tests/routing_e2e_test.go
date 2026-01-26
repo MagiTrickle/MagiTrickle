@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -354,7 +355,7 @@ func tryRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string) erro
 			err = reqErr
 			return
 		}
-		client := &http.Client{Timeout: 500 * time.Millisecond}
+		client := newNetnsHTTPClient(500 * time.Millisecond)
 		resp, reqErr := client.Do(req)
 		if reqErr != nil {
 			err = reqErr
@@ -580,7 +581,7 @@ func doRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string, data 
 			req.Header.Set("Content-Type", "application/json")
 		}
 
-		client := &http.Client{Timeout: 5 * time.Second}
+		client := newNetnsHTTPClient(5 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			t.Fatalf("%s %s error: %v", method, url, err)
@@ -591,6 +592,19 @@ func doRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string, data 
 		body, _ = io.ReadAll(resp.Body)
 	})
 	return status, body
+}
+
+func newNetnsHTTPClient(timeout time.Duration) *http.Client {
+	noProxy := func(*http.Request) (*url.URL, error) {
+		return nil, nil
+	}
+	transport := &http.Transport{
+		Proxy:             noProxy,
+		DialContext:       (&net.Dialer{Timeout: timeout}).DialContext,
+		DisableKeepAlives: true,
+		ForceAttemptHTTP2: false,
+	}
+	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
 func assertStatusOK(t *testing.T, status int, body []byte) {
