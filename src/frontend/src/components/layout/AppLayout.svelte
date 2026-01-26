@@ -101,7 +101,6 @@
     width: 100%;
     max-width: 1000px;
     position: relative;
-    z-index: 10;
   }
 
   .nav-left {
@@ -184,7 +183,7 @@
       padding: 1rem 0.7rem;
       display: flex;
       flex-direction: column;
-      z-index: 99;
+      z-index: 1;
       opacity: 0;
       visibility: hidden;
       pointer-events: none;

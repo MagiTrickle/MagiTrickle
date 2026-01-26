@@ -28,7 +28,7 @@
     border-radius: 50%;
     color: var(--text-2);
     padding: 15px;
-    z-index: 2;
+    z-index: 1;
     cursor: pointer;
     box-shadow: 0 0 10px 2px var(--bg-dark-extra);
   }

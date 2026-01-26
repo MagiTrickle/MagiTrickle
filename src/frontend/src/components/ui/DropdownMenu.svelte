@@ -56,7 +56,6 @@
       border-radius: 0.5rem;
       border: 1px solid var(--bg-light-extra);
       box-shadow: var(--shadow-popover);
-      z-index: 100;
       min-width: 160px;
     }
 
