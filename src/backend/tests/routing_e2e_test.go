@@ -46,9 +46,9 @@ func TestRoutingE2E(t *testing.T) {
 	}()
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1", env.httpPort)
-	waitForAuth(t, env.routerNS, baseURL+"/auth", errCh)
+	waitForAuth(t, env.routerNS, baseURL+"/groups", errCh)
 
-	status, body := apiRequest(t, env.routerNS, http.MethodGet, baseURL+"/auth", nil)
+	status, body := apiRequest(t, env.routerNS, http.MethodGet, baseURL+"/groups", nil)
 	assertStatusOK(t, status, body)
 	assertInterfaces(t, env.routerNS, baseURL)
 	assertNoGroups(t, env.routerNS, baseURL)
