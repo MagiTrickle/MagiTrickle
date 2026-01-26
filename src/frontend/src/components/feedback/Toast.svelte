@@ -41,10 +41,17 @@
     return {
       duration: 320,
       easing: backOut,
-      css: (t: number) =>
-        `transform: translate3d(0, ${(1 - t) * -26}px, 0) scale(${
-          0.96 + t * (1 - 0.96)
-        }); opacity: ${t * opacity}; filter: blur(${(1 - t) * 4}px);`,
+      css: (t: number) => {
+        const blurValue = Math.max(0, (1 - t) * 4);
+        const scaleValue = 0.96 + t * (1 - 0.96);
+        const opacityValue = Math.max(0, Math.min(1, t * opacity));
+
+        return `
+        transform: translate3d(0, ${(1 - t) * -26}px, 0) scale(${scaleValue});
+        opacity: ${opacityValue};
+        filter: blur(${blurValue}px);
+      `;
+      },
     };
   }
 
