@@ -63,7 +63,7 @@ func TestRoutingE2E(t *testing.T) {
 	status, body = apiRequest(t, env.routerNS, http.MethodPost, baseURL+"/groups", types.GroupReq{
 		Name:      "E2E",
 		Interface: env.ifWanRouter,
-		Enable: boolPtr(true),
+		Enable:    boolPtr(true),
 		RulesReq:  types.RulesReq{Rules: &rules},
 	})
 	if status != http.StatusOK {
@@ -296,8 +296,7 @@ func waitForHTTP(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		status, _ := doRequestInNetns(t, ns, http.MethodGet, url, nil)
-		if status == http.StatusOK {
+		if err := tryRequestInNetns(t, ns, http.MethodGet, url); err == nil {
 			return
 		}
 		select {
@@ -310,6 +309,29 @@ func waitForHTTP(t *testing.T, ns netns.NsHandle, url string, errCh <-chan error
 		time.Sleep(150 * time.Millisecond)
 	}
 	t.Fatalf("timeout waiting for http server")
+}
+
+func tryRequestInNetns(t *testing.T, ns netns.NsHandle, method, url string) error {
+	t.Helper()
+	var err error
+	withNetns(t, ns, func() {
+		req, reqErr := http.NewRequest(method, url, nil)
+		if reqErr != nil {
+			err = reqErr
+			return
+		}
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		resp, reqErr := client.Do(req)
+		if reqErr != nil {
+			err = reqErr
+			return
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			err = fmt.Errorf("unexpected status %d", resp.StatusCode)
+		}
+	})
+	return err
 }
 
 func waitForAppStop(t *testing.T, errCh <-chan error) {
