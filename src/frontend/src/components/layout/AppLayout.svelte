@@ -174,6 +174,7 @@
 
   :global([data-tabs-content]) {
     padding-top: 1rem;
+    outline: none;
   }
 
   @media (max-width: 700px) {
