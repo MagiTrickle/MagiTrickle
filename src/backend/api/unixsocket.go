@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"magitrickle/api/v1"
+	v1 "magitrickle/api/v1"
 	"magitrickle/app"
 	"magitrickle/constant"
 

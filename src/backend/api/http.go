@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"magitrickle/api/auth"
 	"magitrickle/api/utils"
 	v1 "magitrickle/api/v1"
 	"magitrickle/app"
-	"magitrickle/auth"
 	"magitrickle/constant"
 
 	"github.com/go-chi/chi/v5"
