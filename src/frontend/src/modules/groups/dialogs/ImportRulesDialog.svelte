@@ -29,6 +29,10 @@
   let isParsing = $state(false);
   let isEditing = $state(true);
   let textAreaRef = $state<HTMLTextAreaElement | null>(null);
+  let editorHeight = $state(200);
+
+  const MIN_EDITOR_HEIGHT = 200;
+  const HEIGHT_PER_LINE = 22;
 
   type ParsedLine = {
     text: string;
@@ -49,6 +53,12 @@
     if (!isEditing && import_rules_text.trim()) {
       parseRules(true);
     }
+  });
+
+  $effect(() => {
+    const tokens = import_rules_text.split(/[\n,]+/).filter((t) => t.trim().length > 0);
+    const lineCount = Math.max(1, tokens.length);
+    editorHeight = MIN_EDITOR_HEIGHT + (lineCount - 1) * HEIGHT_PER_LINE;
   });
 
   const TYPE_COLORS: Record<string, string> = {
@@ -210,7 +220,11 @@
   on:submit={submit}
 >
   <div slot="body" class="dialog-body">
-    <div class="editor-container" class:parsing={isParsing} class:empty={isEmpty}>
+    <div
+      class="editor-container"
+      class:parsing={isParsing}
+      style={`--editor-height: ${editorHeight}px`}
+    >
       {#if isEditing || isParsing}
         <textarea
           bind:this={textAreaRef}
@@ -287,18 +301,12 @@
   .editor-container {
     position: relative;
     width: 100%;
-    height: 40vh;
     min-height: 200px;
-    max-height: 400px;
+    height: var(--editor-height, 200px);
+    max-height: var(--editor-max-height, 500px);
     display: flex;
     flex-direction: column;
     transition: height 0.2s ease-in-out;
-  }
-
-  .editor-container.empty {
-    height: 20vh;
-    min-height: 100px;
-    max-height: 200px;
   }
 
   textarea,
@@ -466,17 +474,14 @@
       max-width: calc(100vw - 2rem) !important;
       max-height: calc(100vh - 2rem) !important;
       padding: 0.75rem !important;
-      margin: 1rem !important;
+      margin: 0 !important;
+      left: 50% !important;
+      top: 50% !important;
+      transform: translate(-50%, -50%) !important;
     }
 
     .editor-container {
-      height: calc(100vh - 15rem);
-      max-height: none;
-    }
-
-    .editor-container.empty {
-      height: calc(50vh - 7.5rem);
-      max-height: none;
+      --editor-max-height: calc(100vh - 10rem);
     }
 
     textarea,
@@ -486,7 +491,20 @@
     }
 
     .rule-type-select {
-      grid-template-columns: 1fr;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .rule-type-select :global(.select-root) {
+      flex: 1 1 auto;
+      min-width: 0;
+      width: auto !important;
+    }
+
+    .rule-type-select :global(button) {
+      flex: 0 0 auto;
+      width: auto !important;
     }
   }
 </style>
