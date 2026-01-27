@@ -44,3 +44,4 @@ export { default as ChevronRight } from "lucide-svelte/icons/chevron-right";
 export { default as SortDesc } from "lucide-svelte/icons/arrow-down-a-z";
 export { default as SortAsc } from "lucide-svelte/icons/arrow-up-a-z";
 export { default as SortNeutral } from "lucide-svelte/icons/arrow-up-down";
+export { default as Globe } from "lucide-svelte/icons/globe";
