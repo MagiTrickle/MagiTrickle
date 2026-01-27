@@ -28,7 +28,7 @@
 <div class="container">
   <div class="version">
     <Tooltip value={`${t("build")}: ${version}`}>
-      <span>{version}</span>
+      <span class="version-text">{version}</span>
     </Tooltip>
     {#if isDev}
       <div class="under-construction">dev</div>
