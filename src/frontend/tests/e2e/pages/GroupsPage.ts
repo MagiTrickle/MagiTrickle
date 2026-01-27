@@ -13,10 +13,7 @@ export class GroupsPage {
     this.saveButton = page.locator("#save-changes");
     this.groupList = page.locator(".group-list");
     // Select the wrapper that contains the tooltip text "Add Group", then find the button inside it.
-    this.addGroupButton = page
-      .locator(".tooltip-wrapper")
-      .filter({ hasText: "Add Group" })
-      .locator("button");
+    this.addGroupButton = page.locator('[data-value="Add Group"]').locator("button");
     this.searchContainer = page.locator(".search-container");
     this.searchInput = page.locator(".search-input");
   }
@@ -52,10 +49,7 @@ export class GroupsPage {
     // Find the 'Add Rule' button specifically within the requested group
     // The group header contains the actions.
     const header = await this.getGroupHeader(groupIndex);
-    const addRuleBtn = header
-      .locator(".tooltip-wrapper")
-      .filter({ hasText: "Add Rule" })
-      .locator("button");
+    const addRuleBtn = header.locator('[data-value="Add Rule"]').locator("button");
     await addRuleBtn.click();
   }
 
@@ -80,19 +74,13 @@ export class GroupsPage {
 
   async deleteGroup(index: number) {
     const header = await this.getGroupHeader(index);
-    const deleteBtn = header
-      .locator(".tooltip-wrapper")
-      .filter({ hasText: "Delete Group" })
-      .locator("button");
+    const deleteBtn = header.locator('[data-value="Delete Group"]').locator("button");
     await deleteBtn.click();
   }
 
   async deleteRule(groupIndex: number, ruleIndex: number) {
     const rule = await this.getRule(groupIndex, ruleIndex);
-    const deleteBtn = rule
-      .locator(".tooltip-wrapper")
-      .filter({ hasText: "Delete Rule" })
-      .locator("button");
+    const deleteBtn = rule.locator('[data-value="Delete Rule"]').locator("button");
     await deleteBtn.click();
   }
 }

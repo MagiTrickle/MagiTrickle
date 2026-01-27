@@ -34,8 +34,6 @@
   let valid_rules = $state(true);
   let canSave = $derived(tracker.isDirty && valid_rules);
   let open_state = $state<Record<string, boolean>>({});
-  let controlsSentinel: HTMLDivElement | null = null;
-  let isControlsStuck = $state(false);
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
     open: false,
@@ -192,16 +190,6 @@
       window.addEventListener("keydown", handleSaveShortcut);
     }
 
-    if (typeof window !== "undefined" && controlsSentinel) {
-      const observer = new IntersectionObserver(
-        ([entry]) => {
-          isControlsStuck = !entry.isIntersecting;
-        },
-        { threshold: [0, 1] },
-      );
-      observer.observe(controlsSentinel);
-      return () => observer.disconnect();
-    }
   });
 
   $effect(() => {
@@ -500,8 +488,7 @@
 </script>
 
 <div class="groups-page" use:smoothReflow>
-  <div class="group-controls-sentinel" bind:this={controlsSentinel} aria-hidden="true"></div>
-  <div class="group-controls" class:is-stuck={isControlsStuck} use:smoothReflow>
+  <div class="group-controls" use:smoothReflow>
     <Search
       groups={data}
       {dataRevision}
@@ -704,12 +691,6 @@
     opacity: 1;
   }
 
-  .group-controls-sentinel {
-    height: 1px;
-    width: 100%;
-    pointer-events: none;
-  }
-
   .group-controls {
     display: flex;
     align-items: center;
@@ -720,12 +701,8 @@
     margin-bottom: 1rem;
     position: sticky;
     top: 0;
-    z-index: 0;
-    background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
-  }
-
-  .group-controls.is-stuck {
     z-index: 5;
+    background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
   }
 
   @media (max-width: 570px) {

@@ -7,6 +7,7 @@
   import AppLayout from "./components/layout/AppLayout.svelte";
   import { authState, token } from "./data/auth.svelte";
   import { fetchInterfaces } from "./data/interfaces.svelte";
+  import TooltipLayer from "./lib/tooltip/TooltipLayer.svelte";
 
   import { fetcher } from "./utils/fetcher";
 
@@ -35,3 +36,5 @@
 {:else}
   <AppLayout />
 {/if}
+
+<TooltipLayer />
