@@ -79,15 +79,10 @@ func (a *App) UserGroups() []app.Group {
 
 // ClearGroups отключает все группы и очищает список
 func (a *App) ClearGroups() {
-	kept := make([]*Group, 0, len(a.groups))
 	for _, g := range a.groups {
-		if g.Internal {
-			kept = append(kept, g)
-			continue
-		}
 		_ = g.Disable()
 	}
-	a.groups = kept
+	a.groups = nil
 }
 
 // AddGroup добавляет новую группу
