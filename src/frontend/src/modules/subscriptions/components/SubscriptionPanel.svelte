@@ -121,7 +121,7 @@
 
   function formatTime(timestamp: number | undefined | null) {
     if (!timestamp) return t("Never updated");
-    return new Date(timestamp).toLocaleString();
+    return new Date(timestamp).toLocaleDateString();
   }
 
   type SubscriptionDnD = {
@@ -321,6 +321,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     padding: 0.5rem;
     border-radius: 0.5rem;
     background-color: var(--bg-light);
