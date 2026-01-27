@@ -59,5 +59,14 @@
   "No groups yet": "Групп пока нет",
   "Create a new group to get started": "Для начала создайте новую группу",
   "Showing": "Показано",
-  "of": "из"
+  "of": "из",
+  "Bug Tracker": "Трекер багов",
+  "GitLab Repository": "Репозиторий GitLab",
+  "Telegram Chat": "Чат Telegram",
+  "Change Locale": "Изменить язык",
+  "Logout": "Выход",
+  "build": "билд",
+  "Info": "Инфо",
+  "Info about this app": "Информация о приложении",
+  "Official website": "Официальный сайт"
 }

@@ -1,12 +1,17 @@
 <script lang="ts">
   import { authState, token } from "../../data/auth.svelte";
   import { locale, locales, t } from "../../data/locale.svelte";
+  import InfoDialog from "../InfoDialog.svelte";
   import Button from "../ui/Button.svelte";
+  import Tooltip from "../ui/Tooltip.svelte";
 
-  import { Bug, Gitlab, Locale, LogOut } from "../ui/icons";
+  import { Info, Locale, LogOut } from "../ui/icons";
 
   const version = import.meta.env.VITE_PKG_VERSION || "0.0.0";
-  const isDev = import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true";
+  const isDev =
+    import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true" || version === "0.0.0";
+
+  let infoIsOpen = $state(false);
 
   const rotateLocale = () => {
     const keys = Object.keys(locales);
@@ -22,39 +27,48 @@
 
 <div class="container">
   <div class="version">
-    <span title={version}>build: {version}</span>
+    <Tooltip value={`${t("build")}: ${version}`}>
+      <span class="version-text">{version}</span>
+    </Tooltip>
     {#if isDev}
       <div class="under-construction">dev</div>
     {/if}
   </div>
-  <div class="links">
-    <a
-      target="_blank"
-      rel="noopener noreferrer"
-      href="https://gitlab.com/magitrickle/magitrickle/-/boards"><Bug size={22} /></a
-    >
-    <a target="_blank" rel="noopener noreferrer" href="https://gitlab.com/magitrickle/magitrickle"
-      ><Gitlab size={22} /></a
-    >
+
+  <div class="info">
+    <Tooltip value={t("Info about this app")}>
+      <Button small onclick={() => (infoIsOpen = true)}>
+        <div class="info-content">
+          <Info size={16} />
+          {t("Info")}
+        </div>
+      </Button>
+    </Tooltip>
   </div>
 
   <div class="locale">
-    <Button small onclick={rotateLocale}>
-      <div class="locale-content">
-        <Locale size={16} />
-        {flag(locale.current)}
-      </div>
-    </Button>
+    <Tooltip value={t("Change Locale")}>
+      <Button small onclick={rotateLocale}>
+        <div class="locale-content">
+          <Locale size={16} />
+          {flag(locale.current)}
+        </div>
+      </Button>
+    </Tooltip>
   </div>
 
   {#if authState.enabled}
     <div class="logout">
-      <Button small onclick={logout}>
-        <LogOut size={20} />
-      </Button>
+      <Tooltip value={t("Logout")}>
+        <Button small onclick={logout}>
+          <LogOut size={20} />
+        </Button>
+      </Tooltip>
     </div>
   {/if}
 </div>
+
+<InfoDialog bind:open={infoIsOpen} />
 
 <style>
   .under-construction {
@@ -86,22 +100,45 @@
   }
 
   .locale,
-  .links,
-  .logout {
+  .logout,
+  .info {
     display: flex;
     flex-direction: row;
     align-items: center;
     flex: 0 0 auto;
   }
 
-  .links,
   .locale,
   .logout {
     gap: 1rem;
   }
 
+  .logout :global(button),
+  .locale :global(button),
+  .info :global(button) {
+    background: var(--bg-light);
+    border-radius: 0.5rem;
+    height: 35px;
+  }
+
+  .locale :global(button) {
+    width: 55px;
+  }
+
+  .locale-content,
+  .info-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .info-content {
+    font-size: 0.85rem;
+  }
+
   @media (max-width: 700px) {
-    .links,
     .locale,
     .logout {
       gap: 0.5rem;
@@ -121,34 +158,5 @@
     text-overflow: ellipsis;
     min-width: 0;
     flex: 1;
-  }
-
-  .links a {
-    & {
-      color: var(--text);
-      cursor: pointer;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    &:hover {
-      color: var(--accent);
-    }
-  }
-
-  .logout,
-  .locale {
-    background: var(--bg-light);
-    border-radius: 0.5rem;
-  }
-
-  .locale-content {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 1rem;
-    line-height: 1;
   }
 </style>

@@ -109,10 +109,6 @@
     align-items: center;
   }
 
-  .header-settings {
-    overflow: hidden;
-  }
-
   .mobile-dropdown-btn {
     display: none;
   }
