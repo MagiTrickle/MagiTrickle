@@ -34,6 +34,7 @@
 
   const MIN_EDITOR_HEIGHT = 200;
   const DESKTOP_MAX_EDITOR_HEIGHT = 500;
+  const ROWS_LIMIT = 500;
 
   function getMaxEditorHeight() {
     if (typeof window === "undefined") return DESKTOP_MAX_EDITOR_HEIGHT;
@@ -53,8 +54,7 @@
     if (Number.isNaN(lineHeight)) {
       lineHeight = fontSize * 1.5;
     }
-    const paddingY =
-      (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+    const paddingY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
     return { lineHeight, paddingY };
   }
 
@@ -79,7 +79,10 @@
     isValid: boolean;
   };
 
-  let parsedLines = $state<ParsedLine[]>([]);
+  let previewLines = $state<ParsedLine[]>([]);
+  // svelte-ignore non_reactive_update
+  let allParsedLines: ParsedLine[] = [];
+  let stats = $state<Record<string, number>>({});
 
   const RULE_TYPE_SELECT = [{ value: "auto", label: "Auto" }, ...RULE_TYPES];
   type RuleTypeValue = (typeof RULE_TYPE_SELECT)[number]["value"];
@@ -170,7 +173,19 @@
     isEditing = false;
 
     await new Promise((r) => setTimeout(r, 400));
-    parsedLines = getParsedData(import_rules_text, selectedRuleType);
+    const lines = getParsedData(import_rules_text, selectedRuleType);
+    allParsedLines = lines;
+    previewLines = lines.slice(0, ROWS_LIMIT);
+
+    const c: Record<string, number> = {};
+    lines.forEach((l) => {
+      if (l.text.trim() && !l.text.trim().startsWith("#")) {
+        const type = l.type || "INVALID";
+        c[type] = (c[type] || 0) + 1;
+      }
+    });
+    stats = c;
+
     isParsing = false;
   }
 
@@ -180,7 +195,7 @@
 
     const currentParsed = isEditing
       ? getParsedData(import_rules_text, selectedRuleType)
-      : parsedLines;
+      : allParsedLines;
 
     const rules: Rule[] = [];
     const seen = new Set<string>();
@@ -212,7 +227,9 @@
 
   function close() {
     import_rules_text = "";
-    parsedLines = [];
+    previewLines = [];
+    allParsedLines = [];
+    stats = {};
     triedSubmit = false;
     isEditing = true;
     selectedRuleType = "auto";
@@ -234,17 +251,6 @@
     await tick();
     textAreaRef?.focus();
   }
-
-  let counts = $derived.by(() => {
-    const c: Record<string, number> = {};
-    parsedLines.forEach((l) => {
-      if (l.text.trim() && !l.text.trim().startsWith("#")) {
-        const type = l.type || "INVALID";
-        c[type] = (c[type] || 0) + 1;
-      }
-    });
-    return c;
-  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} onresize={scheduleEditorResize} />
@@ -286,10 +292,10 @@
           role="button"
           tabindex="0"
         >
-          {#if parsedLines.length === 0}
+          {#if previewLines.length === 0}
             <div class="empty-state">{t("No rules found")}</div>
           {/if}
-          {#each parsedLines as line}
+          {#each previewLines as line}
             <div class="line-row" class:invalid={!line.isValid && line.text.trim().length > 0}>
               <span class="line-text">{line.text}</span>
               {#if line.text.trim() && !line.text.trim().startsWith("#")}
@@ -302,13 +308,18 @@
               {/if}
             </div>
           {/each}
+          {#if allParsedLines.length > ROWS_LIMIT}
+            <div class="line-row ellipsis-row">
+              <span class="line-text">...</span>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
 
-    {#if !isEditing && !isParsing && Object.keys(counts).length > 0}
+    {#if !isEditing && !isParsing && Object.keys(stats).length > 0}
       <div class="counts" transition:slide={{ duration: 160 }}>
-        {#each Object.entries(counts) as [type, count]}
+        {#each Object.entries(stats) as [type, count]}
           <span
             class="badge count-badge"
             style="--badge-color: {TYPE_COLORS[type] || 'var(--text-2)'}"
@@ -413,6 +424,15 @@
     color: var(--text-2);
     text-decoration: line-through;
     opacity: 0.7;
+  }
+
+  .ellipsis-row {
+    text-align: center;
+    color: var(--text-2);
+    opacity: 0.5;
+    font-size: 1.5rem;
+    line-height: 1;
+    user-select: none;
   }
 
   .parsing-overlay {
