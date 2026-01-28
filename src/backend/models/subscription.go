@@ -16,6 +16,7 @@ type Subscription struct {
 	Interface  string
 	Enable     bool
 	URL        string
+	Interval   uint32
 	LastUpdate int64
 	Rules      []*SubscriptionRule
 }

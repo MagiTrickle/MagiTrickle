@@ -1,4 +1,4 @@
-package v1
+package subscriptions
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ var (
 	subnetRe       = regexp.MustCompile(`^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$`)
 )
 
-func fetchSubscriptionList(rawURL string) (string, error) {
+func FetchList(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("invalid url")
@@ -46,7 +46,7 @@ func fetchSubscriptionList(rawURL string) (string, error) {
 	return string(data), nil
 }
 
-func parseSubscriptionRulesFromList(list string) []*models.SubscriptionRule {
+func ParseRules(list string) []*models.SubscriptionRule {
 	rules := make([]*models.SubscriptionRule, 0)
 	seen := make(map[string]struct{})
 	parts := strings.FieldsFunc(list, func(r rune) bool {

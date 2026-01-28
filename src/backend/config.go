@@ -223,6 +223,7 @@ func (a *App) ImportConfig(cfg config.Config) error {
 				Interface:  sub.Interface,
 				Enable:     enable,
 				URL:        sub.URL,
+				Interval:   sub.Interval,
 				LastUpdate: sub.LastUpdate,
 				Rules:      rules,
 			})
@@ -331,6 +332,7 @@ func exportSubscriptions(subs []*models.Subscription) *[]config.Subscription {
 			Interface:  sub.Interface,
 			Enable:     &sub.Enable,
 			URL:        sub.URL,
+			Interval:   sub.Interval,
 			LastUpdate: sub.LastUpdate,
 			Rules:      rules,
 		}

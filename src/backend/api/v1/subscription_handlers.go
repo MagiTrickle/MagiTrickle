@@ -3,12 +3,12 @@ package v1
 import (
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"magitrickle/api/utils"
 	"magitrickle/api/v1/types"
 	"magitrickle/models"
+	"magitrickle/subscriptions"
 	"magitrickle/utils/intID"
 
 	"github.com/rs/zerolog/log"
@@ -188,13 +188,12 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := fetchSubscriptionList(target.URL)
+	list, err := subscriptions.FetchList(target.URL)
 	if err != nil {
 		utils.WriteError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	fetchedRules := parseSubscriptionRulesFromList(list)
-	target.Rules = mergeSubscriptionRules(target.Rules, fetchedRules)
+	target.Rules = subscriptions.ParseRules(list)
 	target.LastUpdate = time.Now().UnixMilli()
 	h.app.SyncSubscriptionGroups()
 
@@ -271,12 +270,12 @@ func (h *Handler) GetSubscriptionRules(w http.ResponseWriter, r *http.Request) {
 		utils.WriteError(w, http.StatusBadRequest, "subscription url is required")
 		return
 	}
-	list, err := fetchSubscriptionList(url)
+	list, err := subscriptions.FetchList(url)
 	if err != nil {
 		utils.WriteError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	rules := parseSubscriptionRulesFromList(list)
+	rules := subscriptions.ParseRules(list)
 	utils.WriteJson(w, http.StatusOK, RespFromSubscriptionRules(rules))
 }
 
@@ -300,28 +299,4 @@ func ensureUniqueSubscriptionRuleIDs(sub *models.Subscription) error {
 		dup[rule.ID] = struct{}{}
 	}
 	return nil
-}
-
-func mergeSubscriptionRules(existing []*models.SubscriptionRule, fetched []*models.SubscriptionRule) []*models.SubscriptionRule {
-	existingByRule := make(map[string]*models.SubscriptionRule, len(existing))
-	for _, rule := range existing {
-		key := strings.TrimSpace(rule.Rule)
-		existingByRule[key] = rule
-	}
-
-	merged := make([]*models.SubscriptionRule, 0, len(fetched))
-	for _, fetchedRule := range fetched {
-		key := strings.TrimSpace(fetchedRule.Rule)
-		if existingRule, ok := existingByRule[key]; ok {
-			merged = append(merged, &models.SubscriptionRule{
-				ID:     existingRule.ID,
-				Rule:   fetchedRule.Rule,
-				Type:   existingRule.Type,
-				Enable: existingRule.Enable,
-			})
-			continue
-		}
-		merged = append(merged, fetchedRule)
-	}
-	return merged
 }

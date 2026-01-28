@@ -38,6 +38,7 @@ type SubscriptionReq struct {
 	Interface  string    `json:"interface" example:"nwg0"`
 	Enable     *bool     `json:"enable" example:"true" TODO:"Make required after 1.0.0"`
 	URL        string    `json:"url" example:"https://example.com/list.txt"`
+	Interval   *uint32   `json:"interval" example:"86400"`
 	LastUpdate *int64    `json:"last_update" example:"1700000000000"`
 	SubscriptionRulesReq
 }
@@ -48,6 +49,7 @@ type SubscriptionRes struct {
 	Interface  string   `json:"interface" example:"nwg0"`
 	Enable     bool     `json:"enable" example:"true"`
 	URL        string   `json:"url" example:"https://example.com/list.txt"`
+	Interval   uint32   `json:"interval" example:"86400"`
 	LastUpdate int64    `json:"last_update" example:"1700000000000"`
 	SubscriptionRulesRes
 }

@@ -30,6 +30,9 @@ func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscriptio
 	if req.Enable != nil {
 		sub.Enable = *req.Enable
 	}
+	if req.Interval != nil {
+		sub.Interval = *req.Interval
+	}
 	if req.LastUpdate != nil {
 		sub.LastUpdate = *req.LastUpdate
 	}
@@ -88,6 +91,7 @@ func RespFromSubscription(sub *models.Subscription, withRules bool) types.Subscr
 		Interface:  sub.Interface,
 		Enable:     sub.Enable,
 		URL:        sub.URL,
+		Interval:   sub.Interval,
 		LastUpdate: sub.LastUpdate,
 	}
 	if withRules {
