@@ -78,8 +78,9 @@
     padding: 4px 4px;
     border-radius: 4px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    flex-shrink: 0;
+    flex: 0 0 auto;
     margin-left: 0.5rem;
+    white-space: nowrap;
   }
 
   .container {
@@ -92,11 +93,27 @@
   }
 
   .version {
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    flex: 1 1 auto;
+    flex: 1;
     min-width: 0;
+  }
+
+  .version :global(> *:first-child) {
+    min-width: 0;
+    display: block;
+    overflow: hidden;
+  }
+
+  .version-text {
+    display: block;
+    font-size: smaller;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
   }
 
   .locale,
@@ -147,16 +164,5 @@
     .container {
       gap: 0.5rem;
     }
-  }
-
-  .version span {
-    display: block;
-    font-size: smaller;
-    color: var(--text-2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-    flex: 1;
   }
 </style>
