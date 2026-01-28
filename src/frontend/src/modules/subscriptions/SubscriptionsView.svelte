@@ -452,6 +452,10 @@
     animation: subscription-appear 0.15s ease-out forwards;
   }
 
+  .subscription-wrapper:has(:global([data-select-trigger][data-state="open"])) {
+    z-index: 1;
+  }
+
   @keyframes subscription-appear {
     from {
       opacity: 0;

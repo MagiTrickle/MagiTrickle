@@ -313,7 +313,6 @@
     display: flex;
     align-items: center;
     pointer-events: none;
-    z-index: 1;
   }
 
   input,
