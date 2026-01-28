@@ -1,9 +1,9 @@
 <script module lang="ts">
   export const intervals = [
-    { value: 3600, labelKey: "Hour" },
+    { value: 3600, labelKey: "hour" },
     { value: 21600, labelKey: "6 hours" },
-    { value: 86400, labelKey: "Day" },
-    { value: 604800, labelKey: "Week" },
+    { value: 86400, labelKey: "day" },
+    { value: 604800, labelKey: "week" },
   ];
 
   export function parseIntervalSeconds(value: string) {
@@ -142,7 +142,8 @@
 
   function formatTime(timestamp: number | undefined | null) {
     if (!timestamp) return t("Never updated");
-    return new Date(timestamp).toLocaleDateString();
+    const date = new Date(timestamp);
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
   }
 
   type SubscriptionDnD = {
@@ -231,23 +232,23 @@
             </span>
             <span class="update-line">
               <span class="icon-wrap"><History size={14} /></span>
-              <span class="update-text">({formatTime(subscription.last_update)})</span>
+              <span class="update-text">{formatTime(subscription.last_update)}</span>
               <span class="update-sep">•</span>
               <span class="update-interval">
                 <span class="interval-label">{t("Update every")}</span>
                 <Select
-              options={intervals.map((item) => ({
-                value: String(item.value),
-                label: t(item.labelKey),
-              }))}
-              selected={String(subscription.interval ?? 86400)}
-              onValueChange={(value) =>
-                handleIntervalChange(value, (next) => {
-                  subscription.interval = next;
-                })}
-              class="subscription-interval"
-              ariaLabel={t("Update every")}
-            />
+                  options={intervals.map((item) => ({
+                    value: String(item.value),
+                    label: t(item.labelKey),
+                  }))}
+                  selected={String(subscription.interval ?? 86400)}
+                  onValueChange={(value) =>
+                    handleIntervalChange(value, (next) => {
+                      subscription.interval = next;
+                    })}
+                  class="subscription-interval"
+                  ariaLabel={t("Update every")}
+                />
               </span>
             </span>
           </div>
@@ -415,9 +416,13 @@
     color: var(--text-2);
     margin-left: 0.4rem;
     display: flex;
-    align-items: center;
-    gap: 0.7rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
     min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .url-line {
@@ -425,6 +430,8 @@
     align-items: center;
     gap: 0.3rem;
     min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .url-text {
@@ -437,17 +444,15 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    flex-shrink: 0;
     flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .icon-wrap {
     display: flex;
     align-items: center;
-    opacity: 0.7;
-  }
-
-  .update-text {
     opacity: 0.7;
   }
 
@@ -492,16 +497,16 @@
   .update-interval {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-  }
-
-  .update-interval .interval-label {
-    opacity: 0.7;
   }
 
   .update-interval :global([data-select-trigger]) {
     padding: 0.1rem 0.3rem;
     font-size: 0.85rem;
+    color: var(--text-2);
+  }
+
+  .update-interval :global(.selected-value) {
+    padding-left: 0;
   }
 
   .subscription-rules-header {
