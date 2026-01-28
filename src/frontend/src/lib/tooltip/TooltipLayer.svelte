@@ -17,7 +17,7 @@
 <style>
   .tooltip-content {
     position: fixed;
-    z-index: 1000;
+    z-index: 15;
     pointer-events: none;
     background-color: var(--bg-dark);
     color: var(--text);

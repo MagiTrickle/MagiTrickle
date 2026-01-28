@@ -57,7 +57,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 9998;
+    z-index: 10;
     background-color: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(2px);
   }

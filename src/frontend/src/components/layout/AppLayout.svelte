@@ -114,6 +114,7 @@
 
   .tabs-panel {
     display: block;
+    z-index: 10;
   }
 
   :global([data-tabs-list]) {
@@ -183,7 +184,6 @@
       padding: 1rem 0.7rem;
       display: flex;
       flex-direction: column;
-      z-index: 1;
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
