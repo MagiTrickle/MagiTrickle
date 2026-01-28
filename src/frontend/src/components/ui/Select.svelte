@@ -102,7 +102,6 @@
     border-radius: 0.5rem;
     border: 1px solid var(--bg-light-extra);
     box-shadow: var(--shadow-popover);
-    z-index: 100;
     max-height: 12rem;
     overflow-y: auto;
     width: max-content;

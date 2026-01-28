@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
   import { createEventDispatcher } from "svelte";
-  import { scale } from "svelte/transition";
+  import { fade } from "svelte/transition";
 
   import { Add } from "./icons";
 
@@ -41,8 +41,8 @@
           <div
             {...props}
             class="modal"
-            in:scale={{ duration: 120, start: 0.96 }}
-            out:scale={{ duration: 55 }}
+            in:fade={{ duration: 120 }}
+            out:fade={{ duration: 120 }}
           >
             <Dialog.Title class="title">{title}</Dialog.Title>
             <Dialog.Close class="close">
@@ -122,7 +122,6 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 10;
     background-color: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(2px);
   }
@@ -134,7 +133,6 @@
     transform: translate(-50%, -50%);
     width: 100%;
     max-width: min(var(--generic-dialog-max-width, 300px), calc(100vw - 5rem));
-    z-index: 9999;
     background-color: var(--bg-dark);
     border-radius: 0.5rem;
     border: 1px solid var(--bg-light-extra);
