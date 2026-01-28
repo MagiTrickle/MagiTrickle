@@ -23,54 +23,52 @@
 </script>
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
-  <Dialog.Portal>
-    <Dialog.Overlay />
-    <Dialog.Content
-      class="dialog"
-      data-state={open ? "open" : "closed"}
-      escapeKeydownBehavior="close"
-      forceMount
-      onOpenAutoFocus={(e) => {
-        e.preventDefault();
-        // textArea?.focus();
-      }}
-      style={`--generic-dialog-max-width: ${maxWidth}px`}
-    >
-      {#snippet child({ props, open })}
-        {#if open}
-          <div
-            {...props}
-            class="modal"
-            in:fade={{ duration: 120 }}
-            out:fade={{ duration: 120 }}
-          >
-            <Dialog.Title class="title">{title}</Dialog.Title>
-            <Dialog.Close class="close">
-              <Add size={22} style="transform:rotate(45deg)" />
-            </Dialog.Close>
-            <form on:submit|preventDefault={() => dispatch("submit")}>
-              <div class="body">
-                <slot name="body">
-                  <textarea
-                    bind:this={textArea}
-                    bind:value={textareaValue}
-                    placeholder={textareaPlaceholder}
-                    class:invalid={triedSubmit && !textareaValue.trim()}
-                    on:input={(e) =>
-                      dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
-                  ></textarea>
-                </slot>
-              </div>
+  <Dialog.Overlay />
+  <Dialog.Content
+    class="dialog"
+    data-state={open ? "open" : "closed"}
+    escapeKeydownBehavior="close"
+    forceMount
+    onOpenAutoFocus={(e) => {
+      e.preventDefault();
+      // textArea?.focus();
+    }}
+    style={`--generic-dialog-max-width: ${maxWidth}px`}
+  >
+    {#snippet child({ props, open })}
+      {#if open}
+        <div
+          {...props}
+          class="modal"
+          in:fade={{ duration: 120 }}
+          out:fade={{ duration: 120 }}
+        >
+          <Dialog.Title class="title">{title}</Dialog.Title>
+          <Dialog.Close class="close">
+            <Add size={22} style="transform:rotate(45deg)" />
+          </Dialog.Close>
+          <form on:submit|preventDefault={() => dispatch("submit")}>
+            <div class="body">
+              <slot name="body">
+                <textarea
+                  bind:this={textArea}
+                  bind:value={textareaValue}
+                  placeholder={textareaPlaceholder}
+                  class:invalid={triedSubmit && !textareaValue.trim()}
+                  on:input={(e) =>
+                    dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
+                ></textarea>
+              </slot>
+            </div>
 
-              <div class="actions">
-                <slot name="actions" />
-              </div>
-            </form>
-          </div>
-        {/if}
-      {/snippet}
-    </Dialog.Content>
-  </Dialog.Portal>
+            <div class="actions">
+              <slot name="actions" />
+            </div>
+          </form>
+        </div>
+      {/if}
+    {/snippet}
+  </Dialog.Content>
 </Dialog.Root>
 
 <style>
@@ -124,6 +122,7 @@
     align-items: center;
     background-color: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(2px);
+    z-index: 15;
   }
 
   :global([data-dialog-content]) {
@@ -137,6 +136,7 @@
     border-radius: 0.5rem;
     border: 1px solid var(--bg-light-extra);
     padding: 1rem;
+    z-index: 16;
   }
 
   :global([data-dialog-title]) {

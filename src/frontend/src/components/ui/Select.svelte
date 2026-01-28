@@ -39,22 +39,20 @@
       </div>
     </Select.Trigger>
 
-    <Select.Portal>
-      <Select.Content align="start" sideOffset={4}>
-        {#each options as option}
-          <Select.Item value={option.value} label={option.label}>
-            {#snippet children({ selected })}
-              <div class="option">
-                <div class="option-label">{option.label}</div>
-                <div class="option-check">
-                  {#if selected}<Check size={16} />{/if}
-                </div>
+    <Select.Content align="start" sideOffset={4}>
+      {#each options as option}
+        <Select.Item value={option.value} label={option.label}>
+          {#snippet children({ selected })}
+            <div class="option">
+              <div class="option-label">{option.label}</div>
+              <div class="option-check">
+                {#if selected}<Check size={16} />{/if}
               </div>
-            {/snippet}
-          </Select.Item>
-        {/each}
-      </Select.Content>
-    </Select.Portal>
+            </div>
+          {/snippet}
+        </Select.Item>
+      {/each}
+    </Select.Content>
   </Select.Root>
 </div>
 

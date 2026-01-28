@@ -17,15 +17,13 @@
 
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>{@render trigger()}</DropdownMenu.Trigger>
-  <DropdownMenu.Portal>
-    <DropdownMenu.Content alignOffset={0} align="end">
-      {#each items as item, index}
-        <DropdownMenu.Item>
-          {@render item()}
-        </DropdownMenu.Item>
-      {/each}
-    </DropdownMenu.Content>
-  </DropdownMenu.Portal>
+  <DropdownMenu.Content alignOffset={0} align="end">
+    {#each items as item, index}
+      <DropdownMenu.Item>
+        {@render item()}
+      </DropdownMenu.Item>
+    {/each}
+  </DropdownMenu.Content>
 </DropdownMenu.Root>
 
 <style>
@@ -57,6 +55,7 @@
       border: 1px solid var(--bg-light-extra);
       box-shadow: var(--shadow-popover);
       min-width: 160px;
+      z-index: 10;
     }
 
     [data-dropdown-menu-item] {
