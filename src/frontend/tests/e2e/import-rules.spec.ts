@@ -34,8 +34,8 @@ test.describe("Import Rules Dialog", () => {
   });
 
   async function openImportDialog(page: any) {
-    // Locate the import button using the tooltip text wrapper
-    const wrapper = page.locator(".tooltip-wrapper", { hasText: "Import Rule List" });
+    // Locate the import button using the tooltip value wrapper
+    const wrapper = page.locator('[data-value="Import Rule List"]');
     const btn = wrapper.locator("button");
     await expect(btn).toBeVisible();
     await btn.click();
