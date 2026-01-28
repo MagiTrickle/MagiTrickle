@@ -6,10 +6,10 @@
   import Select from "../../../components/ui/Select.svelte";
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
+  import { handleIntervalChange, intervals } from "../components/SubscriptionPanel.svelte";
 
   import { Info, Link, LoaderCircle, Network, Refresh, Type } from "../../../components/ui/icons";
   import type { SubscriptionRule } from "../../../types";
-  import { handleIntervalChange, intervals } from "../components/SubscriptionPanel.svelte";
   import { fetcher } from "../../../utils/fetcher";
 
   type DialogProps = {
@@ -121,7 +121,6 @@
     handleClose();
   }
 
-
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -196,17 +195,17 @@
               <span class="icon"><Refresh size={18} /></span>
               <Select
                 id="sub-interval"
-              options={intervals.map((item) => ({
-                value: String(item.value),
-                label: t(item.labelKey),
-              }))}
-              selected={String(selectedInterval)}
-              onValueChange={(value) =>
-                handleIntervalChange(value, (next) => {
-                  selectedInterval = next;
-                })}
-              class="interval-select"
-            />
+                options={intervals.map((item) => ({
+                  value: String(item.value),
+                  label: t(item.labelKey),
+                }))}
+                selected={String(selectedInterval)}
+                onValueChange={(value) =>
+                  handleIntervalChange(value, (next) => {
+                    selectedInterval = next;
+                  })}
+                class="interval-select"
+              />
             </div>
           </div>
 
@@ -247,12 +246,8 @@
           </div>
         </Button>
       {:else}
-        <Button
-          onclick={handleAdd}
-          disabled={rules.length === 0}
-          style="width: 100%"
-        >
-          >{t("Add")}</Button
+        <Button onclick={handleAdd} disabled={rules.length === 0} style="width: 100%">
+          {t("Add")}</Button
         >
       {/if}
     </div>
@@ -283,10 +278,21 @@
     flex: 1 1 0;
   }
 
-  @media (max-width: 520px) {
+  @media (max-width: 700px) {
     .field-row {
       flex-direction: column;
     }
+  }
+
+  :global(.interface-select),
+  :global(.interval-select) {
+    width: 100%;
+  }
+
+  :global(.interface-select .selected),
+  :global(.interval-select .selected) {
+    justify-content: space-between;
+    width: 100%;
   }
 
   label {
@@ -317,8 +323,8 @@
     border: 1px solid var(--bg-light-extra) !important;
     color: var(--text) !important;
     padding: 0.75rem !important;
-    padding-left: 2.5rem !important;
-    padding-right: 2.5rem !important;
+    padding-left: 2.3rem !important;
+    padding-right: 0.5rem !important;
     border-radius: 0.5rem !important;
     font-size: 1rem !important;
     font-family: var(--font) !important;
