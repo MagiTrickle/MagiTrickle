@@ -68,6 +68,7 @@ export const SubscriptionSchema = object({
   rules: array(SubscriptionRuleSchema),
   url: string(),
   last_update: fallback(optional(number()), 0),
+  interval: fallback(optional(number()), 86400),
 });
 export type Subscription = InferOutput<typeof SubscriptionSchema>;
 

@@ -7,8 +7,9 @@
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
 
-  import { Info, Link, LoaderCircle, Network, Type } from "../../../components/ui/icons";
+  import { Info, Link, LoaderCircle, Network, Refresh, Type } from "../../../components/ui/icons";
   import type { SubscriptionRule } from "../../../types";
+  import { handleIntervalChange, intervals } from "../components/SubscriptionPanel.svelte";
   import { fetcher } from "../../../utils/fetcher";
 
   type DialogProps = {
@@ -24,6 +25,7 @@
   let url = $state("");
   let name = $state("");
   let selectedInterface = $state("");
+  let selectedInterval = $state(86400);
   let rules = $state<SubscriptionRule[]>([]);
   let isLoading = $state(false);
   let error = $state<string | null>(null);
@@ -45,6 +47,7 @@
     url = "";
     name = "";
     selectedInterface = interfaces.list[0] || "";
+    selectedInterval = 86400;
     rules = [];
     isLoading = false;
     error = null;
@@ -73,7 +76,6 @@
     isDuplicate ? t("Subscription already exists") : error || t("Request failed"),
   );
   let isErrorVisible = $derived(isDuplicate || fetchError);
-
   async function handleNext() {
     if (!url || !isValidUrl) {
       error = t("Invalid URL");
@@ -109,9 +111,16 @@
   }
 
   function handleAdd() {
-    dispatch("add", { url, name, rules, interface: selectedInterface });
+    dispatch("add", {
+      url,
+      name,
+      rules,
+      interface: selectedInterface,
+      interval: selectedInterval,
+    });
     handleClose();
   }
+
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
@@ -180,16 +189,38 @@
           </div>
         </div>
 
-        <div class="field">
-          <label for="sub-interface">{t("Interface")}</label>
-          <div class="subscription-input-wrapper">
-            <span class="icon"><Network size={18} /></span>
-            <Select
-              id="sub-interface"
-              options={interfaces.list.map((i) => ({ value: i, label: i }))}
-              bind:selected={selectedInterface}
-              class="interface-select"
+        <div class="field-row">
+          <div class="field">
+            <label for="sub-interval">{t("Update every")}</label>
+            <div class="subscription-input-wrapper">
+              <span class="icon"><Refresh size={18} /></span>
+              <Select
+                id="sub-interval"
+              options={intervals.map((item) => ({
+                value: String(item.value),
+                label: t(item.labelKey),
+              }))}
+              selected={String(selectedInterval)}
+              onValueChange={(value) =>
+                handleIntervalChange(value, (next) => {
+                  selectedInterval = next;
+                })}
+              class="interval-select"
             />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="sub-interface">{t("Interface")}</label>
+            <div class="subscription-input-wrapper">
+              <span class="icon"><Network size={18} /></span>
+              <Select
+                id="sub-interface"
+                options={interfaces.list.map((i) => ({ value: i, label: i }))}
+                bind:selected={selectedInterface}
+                class="interface-select"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -216,7 +247,11 @@
           </div>
         </Button>
       {:else}
-        <Button onclick={handleAdd} disabled={rules.length === 0} style="width: 100%"
+        <Button
+          onclick={handleAdd}
+          disabled={rules.length === 0}
+          style="width: 100%"
+        >
           >{t("Add")}</Button
         >
       {/if}
@@ -236,6 +271,22 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .field-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .field-row .field {
+    flex: 1 1 0;
+  }
+
+  @media (max-width: 520px) {
+    .field-row {
+      flex-direction: column;
+    }
   }
 
   label {
@@ -260,12 +311,14 @@
   }
 
   input,
-  :global(.interface-select [data-select-trigger]) {
+  :global(.interface-select [data-select-trigger]),
+  :global(.interval-select [data-select-trigger]) {
     background-color: var(--bg-dark-extra) !important;
     border: 1px solid var(--bg-light-extra) !important;
     color: var(--text) !important;
     padding: 0.75rem !important;
     padding-left: 2.5rem !important;
+    padding-right: 2.5rem !important;
     border-radius: 0.5rem !important;
     font-size: 1rem !important;
     font-family: var(--font) !important;
@@ -275,7 +328,8 @@
     box-sizing: border-box !important;
   }
 
-  :global(.interface-select [data-select-trigger]) {
+  :global(.interface-select [data-select-trigger]),
+  :global(.interval-select [data-select-trigger]) {
     display: flex;
     align-items: center;
     justify-content: flex-start;
