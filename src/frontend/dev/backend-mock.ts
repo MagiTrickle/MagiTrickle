@@ -21,6 +21,7 @@ const SUBSCRIPTIONS = [
     enable: true,
     url: "https://services.should.be.blocked.com",
     last_update: Date.now(),
+    interval: 86400,
     rules: [
       { enable: true, id: "11223344", rule: "google.com", type: "domain" },
       { enable: true, id: "55667788", rule: "facebook.com", type: "domain" },

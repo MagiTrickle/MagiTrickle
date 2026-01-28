@@ -1,3 +1,24 @@
+<script module lang="ts">
+  export const intervals = [
+    { value: 3600, labelKey: "Hour" },
+    { value: 21600, labelKey: "6 hours" },
+    { value: 86400, labelKey: "Day" },
+    { value: 604800, labelKey: "Week" },
+  ];
+
+  export function parseIntervalSeconds(value: string) {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return null;
+    return next;
+  }
+
+  export function handleIntervalChange(value: string, apply: (next: number) => void) {
+    const next = parseIntervalSeconds(value);
+    if (next === null) return;
+    apply(next);
+  }
+</script>
+
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { slide } from "svelte/transition";
@@ -211,62 +232,90 @@
             <span class="update-line">
               <span class="icon-wrap"><History size={14} /></span>
               <span class="update-text">({formatTime(subscription.last_update)})</span>
+              <span class="update-sep">•</span>
+              <span class="update-interval">
+                <span class="interval-label">{t("Update every")}</span>
+                <Select
+              options={intervals.map((item) => ({
+                value: String(item.value),
+                label: t(item.labelKey),
+              }))}
+              selected={String(subscription.interval ?? 86400)}
+              onValueChange={(value) =>
+                handleIntervalChange(value, (next) => {
+                  subscription.interval = next;
+                })}
+              class="subscription-interval"
+              ariaLabel={t("Update every")}
+            />
+              </span>
             </span>
           </div>
         </div>
       </div>
 
       <div class="subscription-actions">
-        <Select
-          options={interfaces.list.map((item) => ({ value: item, label: item }))}
-          bind:selected={subscription.interface}
-        />
+        <div class="action interface">
+          <Select
+            options={interfaces.list.map((item) => ({ value: item, label: item }))}
+            bind:selected={subscription.interface}
+            class="subscription-interface"
+          />
+        </div>
 
-        <Tooltip value={t(subscription.enable ? "Disable Subscription" : "Enable Subscription")}>
-          <Switch class="enable-subscription" bind:checked={subscription.enable} />
-        </Tooltip>
+        <div class="action toggle">
+          <Tooltip value={t(subscription.enable ? "Disable Subscription" : "Enable Subscription")}>
+            <Switch class="enable-subscription" bind:checked={subscription.enable} />
+          </Tooltip>
+        </div>
 
-        <Tooltip value={t("Sync Subscription")}>
-          <Button small onclick={() => syncSubscription(subscription_index)}>
-            <Refresh size={20} />
-          </Button>
-        </Tooltip>
-
-        {#if is_desktop}
-          <Tooltip value={t("Delete Subscription")}>
-            <Button small onclick={() => deleteSubscription(subscription_index)}>
-              <Delete size={20} />
+        <div class="action sync">
+          <Tooltip value={t("Sync Subscription")}>
+            <Button small onclick={() => syncSubscription(subscription_index)}>
+              <Refresh size={20} />
             </Button>
           </Tooltip>
-        {:else}
-          <DropdownMenu>
-            {#snippet trigger()}
-              <Dots size={20} />
-            {/snippet}
-            {#snippet item1()}
-              <Button general onclick={() => syncSubscription(subscription_index)}>
-                <div class="dd-icon"><Refresh size={20} /></div>
-                <div class="dd-label">{t("Sync")}</div>
-              </Button>
-            {/snippet}
-            {#snippet item2()}
-              <Button general onclick={() => deleteSubscription(subscription_index)}>
-                <div class="dd-icon"><Delete size={20} /></div>
-                <div class="dd-label">{t("Delete Subscription")}</div>
-              </Button>
-            {/snippet}
-          </DropdownMenu>
-        {/if}
+        </div>
 
-        <Tooltip value={t(effectiveOpen ? "Collapse" : "Expand")}>
-          <Collapsible.Trigger>
-            {#if effectiveOpen}
-              <GroupCollapse size={20} />
-            {:else}
-              <GroupExpand size={20} />
-            {/if}
-          </Collapsible.Trigger>
-        </Tooltip>
+        <div class="action delete">
+          {#if is_desktop}
+            <Tooltip value={t("Delete Subscription")}>
+              <Button small onclick={() => deleteSubscription(subscription_index)}>
+                <Delete size={20} />
+              </Button>
+            </Tooltip>
+          {:else}
+            <DropdownMenu>
+              {#snippet trigger()}
+                <Dots size={20} />
+              {/snippet}
+              {#snippet item1()}
+                <Button general onclick={() => syncSubscription(subscription_index)}>
+                  <div class="dd-icon"><Refresh size={20} /></div>
+                  <div class="dd-label">{t("Sync")}</div>
+                </Button>
+              {/snippet}
+              {#snippet item2()}
+                <Button general onclick={() => deleteSubscription(subscription_index)}>
+                  <div class="dd-icon"><Delete size={20} /></div>
+                  <div class="dd-label">{t("Delete Subscription")}</div>
+                </Button>
+              {/snippet}
+            </DropdownMenu>
+          {/if}
+        </div>
+
+        <div class="action collapse">
+          <Tooltip value={t(effectiveOpen ? "Collapse" : "Expand")}>
+            <Collapsible.Trigger>
+              {#if effectiveOpen}
+                <GroupCollapse size={20} />
+              {:else}
+                <GroupExpand size={20} />
+              {/if}
+            </Collapsible.Trigger>
+          </Tooltip>
+        </div>
       </div>
     </div>
 
@@ -389,7 +438,7 @@
     align-items: center;
     gap: 0.3rem;
     flex-shrink: 0;
-    white-space: nowrap;
+    flex-wrap: wrap;
   }
 
   .icon-wrap {
@@ -423,12 +472,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.2rem;
+    gap: 0.35rem;
     flex-shrink: 0;
 
     &:global([data-switch-root]) {
       margin: 0 0.3rem;
     }
+  }
+
+  .subscription-actions .action {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .update-sep {
+    opacity: 0.5;
+  }
+
+  .update-interval {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .update-interval .interval-label {
+    opacity: 0.7;
+  }
+
+  .update-interval :global([data-select-trigger]) {
+    padding: 0.1rem 0.3rem;
+    font-size: 0.85rem;
   }
 
   .subscription-rules-header {
@@ -492,10 +565,11 @@
 
     .subscription-actions {
       width: 100%;
-      justify-content: stretch;
-      gap: 0.25rem;
-      margin-left: 0rem;
-      margin-top: 0rem;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-left: 0;
+      margin-top: 0;
     }
 
     .subscription-url {
@@ -522,19 +596,17 @@
       white-space: nowrap;
     }
 
-    :global(.subscription-actions > *:nth-child(3)) {
-      display: none;
-    }
-
-    :global(.subscription-actions > *:nth-child(1)) {
-      margin-right: auto;
-      width: 150px;
+    .subscription-actions .action.interface {
+      flex: 1 1 160px;
       min-width: 140px;
-      flex: 1 1 auto;
     }
 
-    :global(.subscription-actions > *:nth-child(2)) {
+    .subscription-actions .action.toggle {
       margin-left: auto;
+    }
+
+    .subscription-actions .action.sync {
+      display: none;
     }
 
     .subscription-rules-header {

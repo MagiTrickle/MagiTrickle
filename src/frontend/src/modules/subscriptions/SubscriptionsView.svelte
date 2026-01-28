@@ -247,7 +247,7 @@
   }
 
   async function handleAdd(e: CustomEvent) {
-    const { url, name, rules, interface: iface } = e.detail;
+    const { url, name, rules, interface: iface, interval } = e.detail;
     const newSub: Subscription = {
       id: randomId(),
       name,
@@ -256,6 +256,7 @@
       enable: true,
       interface: iface || "",
       last_update: Date.now(),
+      interval,
     };
 
     overlay.show(t("Adding..."));
