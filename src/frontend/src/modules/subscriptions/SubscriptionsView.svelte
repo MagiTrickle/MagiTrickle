@@ -452,7 +452,8 @@
     animation: subscription-appear 0.15s ease-out forwards;
   }
 
-  .subscription-wrapper:has(:global([data-select-trigger][data-state="open"])) {
+  .subscription-wrapper:has(:global([data-select-trigger][data-state="open"])),
+  .subscription-wrapper:has(:global([data-dropdown-menu-trigger][data-state="open"])) {
     z-index: 1;
   }
 
