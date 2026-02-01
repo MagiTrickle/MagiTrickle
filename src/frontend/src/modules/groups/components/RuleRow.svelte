@@ -61,20 +61,18 @@
     drop_position?: "before" | "after";
   };
 
-  const dropData: DnDTransferData = {
+  let dropEdge = $state<"before" | "after">("before");
+
+  const dropData = $derived<DnDTransferData>({
     rule_id,
     group_id,
     rule_index,
     group_index,
-    drop_position: "before",
-  };
-
-  let dropEdge = $state<"before" | "after">("before");
+    drop_position: dropEdge,
+  });
 
   function applyDropEdge(after: boolean) {
-    const edge = after ? "after" : "before";
-    dropData.drop_position = edge;
-    dropEdge = edge;
+    dropEdge = after ? "after" : "before";
   }
 
   function updateDropIntent(event: DragEvent) {
@@ -88,7 +86,6 @@
 
   function resetDropIntent(delay = false) {
     const reset = () => {
-      dropData.drop_position = "before";
       dropEdge = "before";
     };
     if (delay) {
@@ -99,11 +96,8 @@
   }
 
   $effect(() => {
-    dropData.rule_id = rule_id;
-    dropData.group_id = group_id;
-    dropData.rule_index = rule_index;
-    dropData.group_index = group_index;
-    dropData.drop_position = "before";
+    void rule_id;
+    void group_id;
     dropEdge = "before";
   });
 
