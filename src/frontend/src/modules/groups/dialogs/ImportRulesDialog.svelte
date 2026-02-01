@@ -537,6 +537,10 @@
     flex: 0 0 auto;
   }
 
+  .rule-type-select :global([data-select-content]) {
+    z-index: 20;
+  }
+
   @media (max-width: 600px) {
     :global([data-dialog-content]) {
       max-width: calc(100vw - 2rem) !important;

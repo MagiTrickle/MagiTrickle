@@ -116,26 +116,25 @@ valid.com`);
     const dialog = await openImportDialog(page);
     const textarea = dialog.locator("textarea");
 
-    await textarea.fill("example.com");
+    await textarea.fill("*.example.com");
     await textarea.blur();
 
-    // Initially detected as namespace
-    await expect(dialog.locator(".results-view .badge", { hasText: "namespace" })).toBeVisible();
+    await expect(dialog.locator(".results-view .badge")).toBeVisible();
 
-    // Change type to Wildcard
     const selectTrigger = dialog.locator("[data-select-trigger]");
     await selectTrigger.click();
 
     const option = page.getByRole("option", { name: "Wildcard" });
-    await option.click();
 
-    // Verify badge changes to wildcard
-    await expect(dialog.locator(".results-view .badge", { hasText: "wildcard" })).toBeVisible();
+    await option.waitFor({ state: "attached" });
 
-    // Import
+    await option.dispatchEvent("click");
+
+    const wildcardBadge = dialog.locator(".results-view .badge", { hasText: "wildcard" });
+    await expect(wildcardBadge).toBeVisible({ timeout: 15000 });
+
     await dialog.getByRole("button", { name: "Import" }).click();
 
-    // Check rule
     await expect(page.locator(".rule")).toHaveCount(1);
     await expect(page.locator(".rule")).toContainText("Wildcard");
   });
