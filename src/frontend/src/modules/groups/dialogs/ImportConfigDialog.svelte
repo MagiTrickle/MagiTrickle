@@ -1,33 +1,40 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-
   import Button from "../../../components/ui/Button.svelte";
   import Checkbox from "../../../components/ui/Checkbox.svelte";
   import GenericDialog from "../../../components/ui/GenericDialog.svelte";
+  import Switch from "../../../components/ui/Switch.svelte";
   import { t } from "../../../data/locale.svelte";
 
+  import { Check, Scan } from "../../../components/ui/icons";
   import type { Group } from "../../../types";
 
-  export let open = false;
-  export let groups: Group[] = [];
-  export let fileName = "";
+  let {
+    open = false,
+    groups = [],
+    fileName = "",
+    onclose,
+    onimport,
+  }: {
+    open?: boolean;
+    groups?: Group[];
+    fileName?: string;
+    onclose?: () => void;
+    onimport?: (data: { groups: Group[]; replace: boolean }) => void;
+  } = $props();
 
-  const dispatch = createEventDispatcher<{
-    close: void;
-    import: { groups: Group[] };
-  }>();
+  let triedSubmit = $state(false);
+  let selection = $state(new Set<number>());
+  let replaceMode = $state(false);
 
-  let triedSubmit = false;
-  let selection = new Set<number>();
-  let wasOpen = false;
+  $effect(() => {
+    if (open) {
+      selection = new Set(groups.map((_, index) => index));
+      triedSubmit = false;
+      replaceMode = false;
+    }
+  });
 
-  $: if (open && !wasOpen) {
-    selection = new Set(groups.map((_, index) => index));
-    triedSubmit = false;
-  }
-
-  $: wasOpen = open;
-  $: selectedCount = selection.size;
+  let selectedCount = $derived(selection.size);
 
   function toggleGroup(index: number, checked: boolean) {
     const next = new Set(selection);
@@ -51,12 +58,12 @@
       return;
     }
 
-    dispatch("import", { groups: selectedGroups });
+    onimport?.({ groups: selectedGroups, replace: replaceMode });
     close();
   }
 
   function close() {
-    dispatch("close");
+    onclose?.();
   }
 </script>
 
@@ -73,14 +80,26 @@
   <div slot="body" class="import-config">
     <p class="file-name">
       {#if fileName}
-        {t("Select groups to import")} — {fileName}
+        {t("Select groups to import")} - <i>{fileName}</i>
       {:else}
         {t("Select groups to import")}
       {/if}
     </p>
-    <div class="controls">
-      <Button small type="button" onclick={() => selectAll(true)}>{t("Select all")}</Button>
-      <Button small type="button" onclick={() => selectAll(false)}>{t("Deselect all")}</Button>
+    <div class="controls-row">
+      <div class="controls">
+        <Button type="button" onclick={() => selectAll(true)}>
+          <Check size={16} />
+          <span class="with-icon">{t("All")}</span>
+        </Button>
+        <Button type="button" onclick={() => selectAll(false)}>
+          <Scan size={16} />
+          <span class="with-icon">{t("Reset")}</span>
+        </Button>
+      </div>
+
+      <div class="selected-count">
+        {selectedCount} / {groups.length}
+      </div>
     </div>
     <div class="group-list">
       {#each groups as group, index (index)}
@@ -101,8 +120,10 @@
     {/if}
   </div>
   <div slot="actions" class="dialog-actions">
-    <div class="selected-count">
-      {selectedCount} / {groups.length}
+    <div class="mode-toggle">
+      <span class:active={!replaceMode}>{t("Append")}</span>
+      <Switch bind:checked={replaceMode} />
+      <span class:active={replaceMode}>{t("Replace")}</span>
     </div>
     <div class="buttons">
       <Button type="button" onclick={close}>{t("Cancel")}</Button>
@@ -126,10 +147,38 @@
     line-height: 1.4;
   }
 
+  .controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
   .controls {
     display: inline-flex;
     gap: 0.5rem;
-    flex-wrap: wrap;
+  }
+
+  .with-icon {
+    margin-left: 0.25rem;
+  }
+
+  .mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-2);
+  }
+
+  .mode-toggle span {
+    transition: color 0.2s ease;
+  }
+
+  .mode-toggle span.active {
+    color: var(--text);
+    font-weight: 500;
   }
 
   .group-list {
@@ -186,6 +235,24 @@
     justify-content: space-between;
     align-items: center;
     margin-top: 0.75rem;
+  }
+
+  @media (max-width: 500px) {
+    .dialog-actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 1rem;
+    }
+
+    .mode-toggle {
+      justify-content: center;
+    }
+
+    .buttons {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+    }
   }
 
   .buttons {

@@ -40,13 +40,15 @@
     groupIndex: null,
   });
 
-  let importConfigModal = $state<{ open: boolean; groups: Group[]; fileName: string }>({
+  let importConfigModal = $state<{ open: boolean; fileName: string }>({
     open: false,
-    groups: [],
     fileName: "",
   });
+  let importedGroups: Group[] = [];
+
   function resetImportConfigModal() {
-    importConfigModal = { open: false, groups: [], fileName: "" };
+    importConfigModal = { open: false, fileName: "" };
+    importedGroups = [];
   }
 
   function cloneGroupWithNewIds(group: Group): Group {
@@ -384,9 +386,9 @@
           return;
         }
 
+        importedGroups = groups;
         importConfigModal = {
           open: true,
-          groups,
           fileName: file.name,
         };
       } catch (error) {
@@ -612,12 +614,18 @@
 
 <ImportConfigDialog
   open={importConfigModal.open}
-  groups={importConfigModal.groups}
+  groups={importedGroups}
   fileName={importConfigModal.fileName}
-  on:close={resetImportConfigModal}
-  on:import={(e) => {
-    const imported = e.detail.groups.map(cloneGroupWithNewIds);
+  onclose={resetImportConfigModal}
+  onimport={(e) => {
+    const imported = e.groups.map(cloneGroupWithNewIds);
     if (!imported.length) return;
+
+    if (e.replace) {
+      data.splice(0, data.length);
+      open_state = {};
+    }
+
     for (let i = imported.length - 1; i >= 0; i--) {
       const group = imported[i];
       data.unshift(group);
