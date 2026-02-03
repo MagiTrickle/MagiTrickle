@@ -1,9 +1,7 @@
 package netfilterTools
 
 import (
-	"fmt"
-
-	"github.com/coreos/go-iptables/iptables"
+	"magitrickle/utils/iptables"
 )
 
 type Helper struct {
@@ -16,21 +14,14 @@ type Helper struct {
 }
 
 func New(chainPrefix, ipsetPrefix string, disableIPv4, disableIPv6 bool, startIdx uint32) (*Helper, error) {
-	var err error
 	var ipt4, ipt6 *iptables.IPTables
 
 	if !disableIPv4 {
-		ipt4, err = iptables.New(iptables.IPFamily(iptables.ProtocolIPv4))
-		if err != nil {
-			return nil, fmt.Errorf("iptables init fail: %w", err)
-		}
+		ipt4 = iptables.NewIPTables(iptables.NewRealIPTables())
 	}
 
 	if !disableIPv6 {
-		ipt6, err = iptables.New(iptables.IPFamily(iptables.ProtocolIPv6))
-		if err != nil {
-			return nil, fmt.Errorf("ip6tables init fail: %w", err)
-		}
+		ipt6 = iptables.NewIPTables(iptables.NewRealIP6Tables())
 	}
 
 	return &Helper{

@@ -8,7 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/coreos/go-iptables/iptables"
+	"magitrickle/utils/iptables"
+
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
@@ -34,90 +35,86 @@ type IPSetToLink struct {
 	ip6Route  [3]*netlink.Route
 }
 
-func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables, table string) error {
+func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 	if ipt == nil {
 		return nil
 	}
 
-	if table == "" || table == "filter" {
-		err := ipt.NewChain("filter", r.chainName)
-		if err != nil {
-			// If not "AlreadyExists"
-			if eerr, eok := err.(*iptables.Error); !(eok && eerr.ExitStatus() == 1) {
-				return fmt.Errorf("failed to create chain: %w", err)
-			}
-		}
+	ipsetName := r.ipset.ipsetName
+	if ipt.Proto() == iptables.ProtocolIPv4 {
+		ipsetName += "_4"
+	} else {
+		ipsetName += "_6"
+	}
 
-		if r.ifaceName != Blackhole {
-			err = ipt.AppendUnique("filter", r.chainName, "-o", r.ifaceName, "-j", "ACCEPT")
-			if err != nil {
-				return fmt.Errorf("failed to fix protect for IPv4: %w", err)
-			}
-		}
+	/*
+		Filter Forward
+	*/
 
-		if ipt.Proto() == iptables.ProtocolIPv4 {
-			err = ipt.AppendUnique("filter", "FORWARD", "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
-		} else {
-			err = ipt.AppendUnique("filter", "FORWARD", "-m", "set", "--match-set", r.ipset.ipsetName+"_6", "dst", "-j", r.chainName)
-		}
+	err := ipt.RegisterChainOverride("filter", r.chainName)
+	if err != nil {
+		return fmt.Errorf("failed to create chain: %w", err)
+	}
+
+	if r.ifaceName != Blackhole {
+		err = ipt.Append("filter", r.chainName, "-o", r.ifaceName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "ACCEPT")
 		if err != nil {
-			return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
+			return fmt.Errorf("failed to fix protect for IPv4: %w", err)
 		}
 	}
 
-	if table == "" || table == "mangle" {
-		err := ipt.NewChain("mangle", r.chainName)
-		if err != nil {
-			// If not "AlreadyExists"
-			if eerr, eok := err.(*iptables.Error); !(eok && eerr.ExitStatus() == 1) {
-				return fmt.Errorf("failed to create chain: %w", err)
-			}
-		}
+	err = ipt.Append("filter", "FORWARD", "-j", r.chainName)
+	if err != nil {
+		return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
+	}
 
-		for _, iptablesArgs := range [][]string{
-			{"-j", "MARK", "--set-mark", strconv.Itoa(int(r.mark))},
-			{"-j", "CONNMARK", "--save-mark"},
-		} {
-			err = ipt.AppendUnique("mangle", r.chainName, iptablesArgs...)
-			if err != nil {
-				return fmt.Errorf("failed to append rule: %w", err)
-			}
-		}
+	/*
+		Mangle Prerouting
+	*/
 
-		if ipt.Proto() == iptables.ProtocolIPv4 {
-			err = ipt.AppendUnique("mangle", "PREROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
-		} else {
-			err = ipt.AppendUnique("mangle", "PREROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_6", "dst", "-j", r.chainName)
-		}
+	err = ipt.RegisterChainOverride("mangle", r.chainName)
+	if err != nil {
+		return fmt.Errorf("failed to create chain: %w", err)
+	}
+
+	for _, iptablesArgs := range [][]string{
+		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "MARK", "--set-mark", strconv.Itoa(int(r.mark))},
+		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "CONNMARK", "--save-mark"},
+	} {
+		err = ipt.Append("mangle", r.chainName, iptablesArgs...)
 		if err != nil {
-			return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
+			return fmt.Errorf("failed to append rule: %w", err)
 		}
 	}
 
-	if table == "" || table == "nat" {
-		err := ipt.NewChain("nat", r.chainName)
-		if err != nil {
-			// If not "AlreadyExists"
-			if eerr, eok := err.(*iptables.Error); !(eok && eerr.ExitStatus() == 1) {
-				return fmt.Errorf("failed to create chain: %w", err)
-			}
-		}
-
-		err = ipt.AppendUnique("nat", r.chainName, "-j", "MASQUERADE")
-		if err != nil {
-			return fmt.Errorf("failed to create rule: %w", err)
-		}
-
-		if ipt.Proto() == iptables.ProtocolIPv4 {
-			err = ipt.AppendUnique("nat", "POSTROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
-		} else {
-			err = ipt.AppendUnique("nat", "POSTROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_6", "dst", "-j", r.chainName)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to append rule to POSTROUTING: %w", err)
-		}
+	err = ipt.Append("mangle", "PREROUTING", "-j", r.chainName)
+	if err != nil {
+		return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
 	}
 
+	/*
+		NAT Postrouting
+	*/
+
+	err = ipt.RegisterChainOverride("nat", r.chainName)
+	if err != nil {
+		return fmt.Errorf("failed to create chain: %w", err)
+	}
+
+	err = ipt.Append("nat", r.chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "MASQUERADE")
+	if err != nil {
+		return fmt.Errorf("failed to create rule: %w", err)
+	}
+
+	err = ipt.Append("nat", "POSTROUTING", "-j", r.chainName)
+	if err != nil {
+		return fmt.Errorf("failed to append rule to POSTROUTING: %w", err)
+	}
+
+	err = ipt.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit iptables rules: %w", err)
+	}
 	return nil
 }
 
@@ -127,65 +124,52 @@ func (r *IPSetToLink) deleteIPTablesRules(ipt *iptables.IPTables) error {
 	}
 	var errs []error
 
-	iptErr := new(*iptables.Error)
+	/*
+		Filter Forward
+	*/
 
-	err := ipt.ClearChain("filter", r.chainName)
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
+	err := ipt.RegisterChainDelete("filter", r.chainName)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to clear chain: %w", err))
 	}
 
-	if ipt.Proto() == iptables.ProtocolIPv4 {
-		err = ipt.DeleteIfExists("filter", "FORWARD", "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
-	} else {
-		err = ipt.DeleteIfExists("filter", "FORWARD", "-m", "set", "--match-set", r.ipset.ipsetName+"_6", "dst", "-j", r.chainName)
-	}
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
+	err = ipt.Delete("filter", "FORWARD", "-j", r.chainName)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
 	}
 
-	err = ipt.DeleteChain("filter", r.chainName)
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
+	/*
+		Mangle Prerouting
+	*/
+
+	err = ipt.RegisterChainDelete("mangle", r.chainName)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to delete chain: %w", err))
 	}
 
-	err = ipt.ClearChain("mangle", r.chainName)
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
-		errs = append(errs, fmt.Errorf("failed to clear chain: %w", err))
-	}
-
-	if ipt.Proto() == iptables.ProtocolIPv4 {
-		err = ipt.DeleteIfExists("mangle", "PREROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
-	} else {
-		err = ipt.DeleteIfExists("mangle", "PREROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_6", "dst", "-j", r.chainName)
-	}
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
+	err = ipt.Delete("mangle", "PREROUTING", "-j", r.chainName)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
 	}
 
-	err = ipt.DeleteChain("mangle", r.chainName)
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
+	/*
+		NAT Postrouting
+	*/
+
+	err = ipt.RegisterChainDelete("nat", r.chainName)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to delete chain: %w", err))
 	}
 
-	err = ipt.ClearChain("nat", r.chainName)
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
-		errs = append(errs, fmt.Errorf("failed to clear chain: %w", err))
-	}
-
-	if ipt.Proto() == iptables.ProtocolIPv4 {
-		err = ipt.DeleteIfExists("nat", "POSTROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_4", "dst", "-j", r.chainName)
-	} else {
-		err = ipt.DeleteIfExists("nat", "POSTROUTING", "-m", "set", "--match-set", r.ipset.ipsetName+"_6", "dst", "-j", r.chainName)
-	}
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
+	err = ipt.Delete("nat", "POSTROUTING", "-j", r.chainName)
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
 	}
 
-	err = ipt.DeleteChain("nat", r.chainName)
-	if err != nil && !(errors.As(err, iptErr) && (*iptErr).ExitStatus() == 2) {
-		errs = append(errs, fmt.Errorf("failed to delete chain: %w", err))
+	err = ipt.Commit()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to commit iptables rules: %w", err))
 	}
-
 	return errors.Join(errs...)
 }
 
@@ -425,32 +409,22 @@ func (r *IPSetToLink) enable() error {
 	}
 	r.mark, r.table = idx, int(idx)
 
-	err = r.deleteIPTablesRules(r.nh.IPTables4)
-	if err != nil {
-		return err
-	}
-
-	err = r.insertIPTablesRules(r.nh.IPTables4, "")
-	if err != nil {
-		return err
-	}
-
-	err = r.deleteIPTablesRules(r.nh.IPTables6)
-	if err != nil {
-		return err
-	}
-
-	err = r.insertIPTablesRules(r.nh.IPTables6, "")
-	if err != nil {
-		return err
-	}
-
 	err = r.insertIPRule()
 	if err != nil {
 		return err
 	}
 
 	err = r.insertIPRoute()
+	if err != nil {
+		return err
+	}
+
+	err = r.insertIPTablesRules(r.nh.IPTables4)
+	if err != nil {
+		return err
+	}
+
+	err = r.insertIPTablesRules(r.nh.IPTables6)
 	if err != nil {
 		return err
 	}
@@ -510,30 +484,6 @@ func (r *IPSetToLink) ClearIfDisabled() error {
 	errs = append(errs, r.deleteIPTablesRules(r.nh.IPTables4))
 	errs = append(errs, r.deleteIPTablesRules(r.nh.IPTables6))
 	return errors.Join(errs...)
-}
-
-func (r *IPSetToLink) NetfilterDHook(iptType, table string) error {
-	r.locker.Lock()
-	defer r.locker.Unlock()
-
-	if !r.enabled.Load() {
-		return nil
-	}
-
-	if iptType == "" || iptType == "iptables" {
-		err := r.insertIPTablesRules(r.nh.IPTables4, table)
-		if err != nil {
-			return err
-		}
-	}
-	if iptType == "" || iptType == "ip6tables" {
-		err := r.insertIPTablesRules(r.nh.IPTables6, table)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (r *IPSetToLink) LinkUpdateHook(event netlink.LinkUpdate) error {

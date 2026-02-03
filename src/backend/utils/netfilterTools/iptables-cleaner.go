@@ -5,44 +5,42 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/coreos/go-iptables/iptables"
+	"magitrickle/utils/iptables"
 )
 
 func (nh *Helper) cleanIPTables(ipt *iptables.IPTables) error {
 	if ipt == nil {
 		return nil
 	}
-	jumpToChainPrefix := fmt.Sprintf("-j %s", nh.ChainPrefix)
-	for _, table := range []string{"nat", "mangle"} {
+	jumpToChainPrefix := "-j " + nh.ChainPrefix
+
+	exists, err := ipt.GetCurrentRules()
+	if err != nil {
+		return fmt.Errorf("listing chains error: %w", err)
+	}
+
+	for table, chains := range exists {
 		chainListToDelete := make([]string, 0)
 
-		chains, err := ipt.ListChains(table)
-		if err != nil {
-			return fmt.Errorf("listing chains error: %w", err)
-		}
-
-		for _, chain := range chains {
+		for chain, rules := range chains {
 			if strings.HasPrefix(chain, nh.ChainPrefix) {
 				chainListToDelete = append(chainListToDelete, chain)
 				continue
 			}
 
-			rules, err := ipt.List(table, chain)
-			if err != nil {
-				return fmt.Errorf("listing rules error: %w", err)
-			}
-
-			for _, rule := range rules {
-				if !strings.Contains(rule, jumpToChainPrefix) {
+			for _, r := range rules {
+				if !r.Contains(jumpToChainPrefix) {
 					continue
 				}
 
-				ruleSlice := strings.Split(rule, " ")
-				if len(ruleSlice) < 2 || ruleSlice[0] != "-A" || ruleSlice[1] != chain {
-					continue
+				err = ipt.Delete(table, chain, r.Args()...)
+				if errors.Is(err, iptables.ErrChainNotInitialized) {
+					err = ipt.RegisterChainPatch(table, chain)
+					if err != nil {
+						return fmt.Errorf("chain register error: %w", err)
+					}
+					err = ipt.Delete(table, chain, r.Args()...)
 				}
-
-				err = ipt.Delete(table, chain, ruleSlice[2:]...)
 				if err != nil {
 					return fmt.Errorf("rule deletion error: %w", err)
 				}
@@ -50,13 +48,17 @@ func (nh *Helper) cleanIPTables(ipt *iptables.IPTables) error {
 		}
 
 		for _, chain := range chainListToDelete {
-			err = ipt.ClearAndDeleteChain(table, chain)
+			err = ipt.RegisterChainDelete(table, chain)
 			if err != nil {
 				return fmt.Errorf("deleting chain error: %w", err)
 			}
 		}
 	}
 
+	err = ipt.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit iptables rules: %w", err)
+	}
 	return nil
 }
 
