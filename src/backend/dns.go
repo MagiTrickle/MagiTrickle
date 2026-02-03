@@ -6,23 +6,11 @@ import (
 	"net"
 	"time"
 
-	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/netfilterTools"
-	"magitrickle/utils/recordsCache"
 
 	"github.com/miekg/dns"
 	"github.com/rs/zerolog/log"
 )
-
-func (a *App) initDNSMITM() {
-	a.dnsMITM = &dnsMITMProxy.DNSMITMProxy{
-		UpstreamDNSAddress: a.config.DNSProxy.Upstream.Address,
-		UpstreamDNSPort:    a.config.DNSProxy.Upstream.Port,
-		RequestHook:        a.dnsRequestHook,
-		ResponseHook:       a.dnsResponseHook,
-	}
-	a.recordsCache = recordsCache.New()
-}
 
 func (a *App) startDNSListeners(ctx context.Context, errChan chan error) {
 	go func() {
