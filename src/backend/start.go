@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 
 	"magitrickle/api"
+	"magitrickle/utils/iptables"
 	"magitrickle/utils/netfilterTools"
 
 	"github.com/rs/zerolog"
@@ -37,6 +38,16 @@ func (a *App) Start(ctx context.Context) (err error) {
 		return fmt.Errorf("netfilter helper init fail: %w", err)
 	}
 	a.nfHelper = nfh
+
+	for _, ipt := range []*iptables.IPTables{a.nfHelper.IPTables4, a.nfHelper.IPTables6} {
+		if ipt == nil {
+			continue
+		}
+		ipt.RegisterChainPatch("filter", "FORWARD")
+		ipt.RegisterChainPatch("mangle", "PREROUTING")
+		ipt.RegisterChainPatch("nat", "PREROUTING")
+		ipt.RegisterChainPatch("nat", "POSTROUTING")
+	}
 
 	if err := a.nfHelper.CleanIPTables(); err != nil {
 		return fmt.Errorf("failed to clear iptables: %w", err)
@@ -113,6 +124,28 @@ func (a *App) Start(ctx context.Context) (err error) {
 			return nil
 		}
 	}
+}
+
+func (a *App) ForceCommitIPTables() error {
+	if a.nfHelper == nil {
+		return nil
+	}
+
+	if a.nfHelper.IPTables4 != nil {
+		err := a.nfHelper.IPTables4.Commit()
+		if err != nil {
+			return fmt.Errorf("failed to commit iptables rules: %w", err)
+		}
+	}
+
+	if a.nfHelper.IPTables6 != nil {
+		err := a.nfHelper.IPTables6.Commit()
+		if err != nil {
+			return fmt.Errorf("failed to commit iptables rules: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (a *App) setupLogging() {
