@@ -8,6 +8,7 @@
 </script>
 
 <div
+  role="tooltip"
   data-value={value}
   bind:this={triggerEl}
   style:display="inline-flex"
