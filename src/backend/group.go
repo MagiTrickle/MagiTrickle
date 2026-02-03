@@ -237,7 +237,7 @@ func (g *Group) sync() error {
 			continue
 		}
 		switch domain.Type {
-		case "subnet":
+		case models.RuleTypeSubnet:
 			ip, ipNet, err := net.ParseCIDR(domain.Rule)
 			if err != nil {
 				ip = net.ParseIP(domain.Rule)
@@ -281,7 +281,7 @@ func (g *Group) sync() error {
 				}] = nil
 			}
 
-		case "subnet6":
+		case models.RuleTypeSubnet6:
 			ip, ipNet, err := net.ParseCIDR(domain.Rule)
 			if err != nil {
 				ip = net.ParseIP(domain.Rule)

@@ -6,7 +6,7 @@ import (
 
 func TestDomain_IsMatch_Domain(t *testing.T) {
 	rule := &Rule{
-		Type: "domain",
+		Type: RuleTypeDomain,
 		Rule: "example.com",
 	}
 	if !rule.IsMatch("example.com") {
@@ -19,7 +19,7 @@ func TestDomain_IsMatch_Domain(t *testing.T) {
 
 func TestDomain_IsMatch_Wildcard(t *testing.T) {
 	rule := &Rule{
-		Type: "wildcard",
+		Type: RuleTypeWildcard,
 		Rule: "ex*le.com",
 	}
 	if !rule.IsMatch("example.com") {
