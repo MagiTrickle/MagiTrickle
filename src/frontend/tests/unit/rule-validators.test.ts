@@ -6,7 +6,7 @@ import {
   isValidNamespace,
   isValidRegex,
   isValidWildcard,
-} from "../../src/utils/rule-validators.ts";
+} from "../../src/utils/rule-validators";
 
 describe("Rule validator", () => {
   it("should be valid regexp", () => {
