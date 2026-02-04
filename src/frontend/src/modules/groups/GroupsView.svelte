@@ -40,13 +40,15 @@
     groupIndex: null,
   });
 
-  let importConfigModal = $state<{ open: boolean; groups: Group[]; fileName: string }>({
+  let importConfigModal = $state<{ open: boolean; fileName: string }>({
     open: false,
-    groups: [],
     fileName: "",
   });
+  let importedGroups = $state<Group[]>([]);
+
   function resetImportConfigModal() {
-    importConfigModal = { open: false, groups: [], fileName: "" };
+    importConfigModal = { open: false, fileName: "" };
+    importedGroups = [];
   }
 
   function cloneGroupWithNewIds(group: Group): Group {
@@ -189,7 +191,6 @@
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", handleSaveShortcut);
     }
-
   });
 
   $effect(() => {
@@ -384,9 +385,9 @@
           return;
         }
 
+        importedGroups = groups;
         importConfigModal = {
           open: true,
-          groups,
           fileName: file.name,
         };
       } catch (error) {
@@ -488,7 +489,7 @@
 </script>
 
 <div class="groups-page" use:smoothReflow>
-  <div class="group-controls" use:smoothReflow>
+  <div class="group-controls" data-reflow-skip>
     <Search
       groups={data}
       {dataRevision}
@@ -612,12 +613,18 @@
 
 <ImportConfigDialog
   open={importConfigModal.open}
-  groups={importConfigModal.groups}
+  groups={importedGroups}
   fileName={importConfigModal.fileName}
-  on:close={resetImportConfigModal}
-  on:import={(e) => {
-    const imported = e.detail.groups.map(cloneGroupWithNewIds);
+  onclose={resetImportConfigModal}
+  onimport={(e) => {
+    const imported = e.groups.map(cloneGroupWithNewIds);
     if (!imported.length) return;
+
+    if (e.replace) {
+      data.splice(0, data.length);
+      open_state = {};
+    }
+
     for (let i = imported.length - 1; i >= 0; i--) {
       const group = imported[i];
       data.unshift(group);

@@ -64,7 +64,7 @@ test.describe("Import/Export", () => {
     await expect(page.getByText("Imported Group")).toBeVisible();
 
     // Ensure selection by clicking Select All (sometimes selection might default to empty depending on timing)
-    await page.getByRole("button", { name: "Select all", exact: true }).click();
+    await page.getByRole("button", { name: "All", exact: true }).click();
 
     // Click Import inside the dialog
     // The dialog has a footer with Import button
