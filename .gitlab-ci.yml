@@ -20,16 +20,30 @@ test_backend:
 
 test_frontend:
   stage: test
-  image: node:24-bookworm
+  image: mcr.microsoft.com/playwright:v1.58.1-noble
+  variables:
+    GIT_DEPTH: "1"
+    NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+    DENO_DIR: "$CI_PROJECT_DIR/.deno"
+  cache:
+    key:
+      files:
+        - src/frontend/package-lock.json
+        - src/frontend/deno.json
+    paths:
+      - .npm/
+      - .deno/
   rules:
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_MERGE_REQUEST_ID'
+  before_script:
+    - apt-get update
+    - apt-get install -y unzip ca-certificates
   script:
     - export PATH="$HOME/.deno/bin:$PATH"
     - curl -fsSL https://deno.land/install.sh | sh
     - cd ./src/frontend
-    - npm install
-    - npx playwright install --with-deps
+    - npm ci --prefer-offline
     - npm run test:unit
     - npm run test:e2e
 
