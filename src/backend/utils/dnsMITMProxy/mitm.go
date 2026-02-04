@@ -16,7 +16,9 @@ import (
 )
 
 const (
-	maxTCPMsgSize        = 65535
+	maxTCPMsgSize = 65535
+
+	// TODO: Вынести в конфиг
 	defaultMaxIdleConns  = 10
 	defaultMaxConcurrent = 100
 	defaultTimeout       = 5 * time.Second
