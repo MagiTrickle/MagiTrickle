@@ -81,7 +81,10 @@ func (d *Rule) IsMatch(domainName string) bool {
 		return domainName[domainLen-ruleLen-1] == '.' && domainName[domainLen-ruleLen:] == d.Rule
 
 	case RuleTypeWildcard, RuleTypeRegEx:
-		d.Compile()
+		err := d.Compile()
+		if err != nil {
+			return false
+		}
 		return d.compiled(domainName)
 
 	case RuleTypeSubnet, RuleTypeSubnet6:
