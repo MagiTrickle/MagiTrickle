@@ -4,6 +4,12 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
   let hasInitialized = false
   let lastClientWidth = document.documentElement.clientWidth
 
+  const shouldAnimate = (element: HTMLElement) => {
+    if (element.hasAttribute("data-reflow-skip")) return false
+    const position = getComputedStyle(element).position
+    return position !== "sticky" && position !== "fixed"
+  }
+
   const getPosition = (element: HTMLElement, parentRect: DOMRect) => {
     const rect = element.getBoundingClientRect()
     return {
@@ -17,7 +23,7 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
     const parentRect = node.getBoundingClientRect()
     positions = new Map(
       children
-        .filter((child) => child.getClientRects().length > 0)
+        .filter((child) => child.getClientRects().length > 0 && shouldAnimate(child))
         .map((child) => [child, getPosition(child, parentRect)]),
     )
   }
@@ -33,6 +39,7 @@ export function smoothReflow(node: HTMLElement, { duration = 200 } = {}) {
     const currentPositions = new Map<HTMLElement, { left: number; top: number }>()
 
     children.forEach((child) => {
+      if (!shouldAnimate(child)) return
       if (child.getClientRects().length === 0) return
 
       const startPos = positions.get(child)

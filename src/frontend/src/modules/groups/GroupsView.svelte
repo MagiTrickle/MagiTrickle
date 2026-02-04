@@ -44,7 +44,7 @@
     open: false,
     fileName: "",
   });
-  let importedGroups: Group[] = [];
+  let importedGroups = $state<Group[]>([]);
 
   function resetImportConfigModal() {
     importConfigModal = { open: false, fileName: "" };
@@ -191,7 +191,6 @@
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", handleSaveShortcut);
     }
-
   });
 
   $effect(() => {
@@ -490,7 +489,7 @@
 </script>
 
 <div class="groups-page" use:smoothReflow>
-  <div class="group-controls" use:smoothReflow>
+  <div class="group-controls" data-reflow-skip>
     <Search
       groups={data}
       {dataRevision}
