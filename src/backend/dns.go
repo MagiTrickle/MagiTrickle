@@ -6,22 +6,28 @@ import (
 	"net"
 	"time"
 
-	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/netfilterTools"
-	"magitrickle/utils/recordsCache"
 
 	"github.com/miekg/dns"
 	"github.com/rs/zerolog/log"
 )
 
-func (a *App) initDNSMITM() {
-	a.dnsMITM = &dnsMITMProxy.DNSMITMProxy{
-		UpstreamDNSAddress: a.config.DNSProxy.Upstream.Address,
-		UpstreamDNSPort:    a.config.DNSProxy.Upstream.Port,
-		RequestHook:        a.dnsRequestHook,
-		ResponseHook:       a.dnsResponseHook,
+var hexDigits = []byte("0123456789abcdef")
+
+func formatID(id uint16) string {
+	return string([]byte{
+		hexDigits[id>>12&0xf],
+		hexDigits[id>>8&0xf],
+		hexDigits[id>>4&0xf],
+		hexDigits[id&0xf],
+	})
+}
+
+func trimFQDN(name string) string {
+	if len(name) > 0 && name[len(name)-1] == '.' {
+		return name[:len(name)-1]
 	}
-	a.recordsCache = recordsCache.New()
+	return name
 }
 
 func (a *App) startDNSListeners(ctx context.Context, errChan chan error) {
@@ -54,7 +60,7 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 	if clientAddr != nil {
 		clientAddrStr = clientAddr.String()
 	}
-	idStr := fmt.Sprintf("%04x", reqMsg.Id)
+	idStr := formatID(reqMsg.Id)
 
 	log.Debug().
 		Str("id", idStr).
@@ -102,7 +108,7 @@ func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.M
 	}
 
 	// фильтрация записей AAAA
-	var filteredAnswers []dns.RR
+	filteredAnswers := make([]dns.RR, 0, len(respMsg.Answer))
 	for _, answer := range respMsg.Answer {
 		if answer.Header().Rrtype != dns.TypeAAAA {
 			filteredAnswers = append(filteredAnswers, answer)
@@ -115,13 +121,15 @@ func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.M
 
 // handleMessage обрабатывает полученное DNS-сообщение
 func (a *App) handleMessage(msg dns.Msg, clientAddr net.Addr, network string) {
+	idStr := formatID(msg.Id)
+	var clientAddrStr string
+	if clientAddr != nil {
+		clientAddrStr = clientAddr.String()
+	}
+
 	if msg.Rcode != dns.RcodeSuccess {
-		var clientAddrStr string
-		if clientAddr != nil {
-			clientAddrStr = clientAddr.String()
-		}
 		log.Warn().
-			Str("id", fmt.Sprintf("%04x", msg.Id)).
+			Str("id", idStr).
 			Str("clientAddr", clientAddrStr).
 			Str("network", network).
 			Msg("unprocessable response")
@@ -136,27 +144,24 @@ func (a *App) handleMessage(msg dns.Msg, clientAddr net.Addr, network string) {
 
 		switch v := rr.(type) {
 		case *dns.A:
-			a.processARecord(*v, msg.Id, clientAddr, network)
+			a.processARecord(*v, idStr, clientAddrStr, network)
 		case *dns.AAAA:
-			a.processAAAARecord(*v, msg.Id, clientAddr, network)
+			a.processAAAARecord(*v, idStr, clientAddrStr, network)
 		case *dns.CNAME:
-			a.processCNameRecord(*v, msg.Id, clientAddr, network)
+			a.processCNameRecord(*v, idStr, clientAddrStr, network)
 		}
 	}
 }
 
-func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, network string) {
-	var clientAddrStr string
-	if clientAddr != nil {
-		clientAddrStr = clientAddr.String()
-	}
-	idStr := fmt.Sprintf("%04x", id)
+func (a *App) processARecord(aRecord dns.A, idStr, clientAddrStr, network string) {
+	domainName := trimFQDN(aRecord.Hdr.Name)
+	addrStr := aRecord.A.String()
 
 	if len(aRecord.A) != 4 {
 		log.Warn().
 			Str("id", idStr).
-			Str("name", aRecord.Hdr.Name).
-			Str("address", aRecord.A.String()).
+			Str("name", domainName).
+			Str("address", addrStr).
 			Int("ttl", int(aRecord.Hdr.Ttl)).
 			Str("clientAddr", clientAddrStr).
 			Str("network", network).
@@ -166,8 +171,8 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 
 	log.Debug().
 		Str("id", idStr).
-		Str("name", aRecord.Hdr.Name).
-		Str("address", aRecord.A.String()).
+		Str("name", domainName).
+		Str("address", addrStr).
 		Int("ttl", int(aRecord.Hdr.Ttl)).
 		Str("clientAddr", clientAddrStr).
 		Str("network", network).
@@ -175,9 +180,9 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 
 	ttlDuration := aRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
 
-	a.recordsCache.AddAddress(aRecord.Hdr.Name[:len(aRecord.Hdr.Name)-1], aRecord.A, ttlDuration)
+	a.recordsCache.AddAddress(domainName, aRecord.A, ttlDuration)
 
-	names := a.recordsCache.GetAliases(aRecord.Hdr.Name[:len(aRecord.Hdr.Name)-1])
+	names := a.recordsCache.GetAliases(domainName)
 	for _, group := range a.groups {
 	Rule:
 		for _, domain := range group.Rules {
@@ -195,20 +200,20 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 					log.Error().
 						Err(err).
 						Str("subnet", subnet.String()).
-						Str("aRecordDomain", aRecord.Hdr.Name).
+						Str("aRecordDomain", domainName).
 						Str("cNameDomain", name).
 						Msg("failed to add subnet")
 				} else {
 					log.Debug().
 						Str("subnet", subnet.String()).
-						Str("aRecordDomain", aRecord.Hdr.Name).
+						Str("aRecordDomain", domainName).
 						Str("cNameDomain", name).
 						Msg("added subnet")
 				}
 
 				log.Info().
-					Str("name", aRecord.Hdr.Name).
-					Str("address", aRecord.A.String()).
+					Str("name", domainName).
+					Str("address", addrStr).
 					Str("group", group.Name).
 					Str("groupId", group.ID.String()).
 					Msg("added to routing")
@@ -219,18 +224,15 @@ func (a *App) processARecord(aRecord dns.A, id uint16, clientAddr net.Addr, netw
 	}
 }
 
-func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.Addr, network string) {
-	var clientAddrStr string
-	if clientAddr != nil {
-		clientAddrStr = clientAddr.String()
-	}
-	idStr := fmt.Sprintf("%04x", id)
+func (a *App) processAAAARecord(aaaaRecord dns.AAAA, idStr, clientAddrStr, network string) {
+	domainName := trimFQDN(aaaaRecord.Hdr.Name)
+	addrStr := aaaaRecord.AAAA.String()
 
 	if len(aaaaRecord.AAAA) != 16 {
 		log.Warn().
 			Str("id", idStr).
-			Str("name", aaaaRecord.Hdr.Name).
-			Str("address", aaaaRecord.AAAA.String()).
+			Str("name", domainName).
+			Str("address", addrStr).
 			Int("ttl", int(aaaaRecord.Hdr.Ttl)).
 			Str("clientAddr", clientAddrStr).
 			Str("network", network).
@@ -240,8 +242,8 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 
 	log.Debug().
 		Str("id", idStr).
-		Str("name", aaaaRecord.Hdr.Name).
-		Str("address", aaaaRecord.AAAA.String()).
+		Str("name", domainName).
+		Str("address", addrStr).
 		Int("ttl", int(aaaaRecord.Hdr.Ttl)).
 		Str("clientAddr", clientAddrStr).
 		Str("network", network).
@@ -249,9 +251,9 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 
 	ttlDuration := aaaaRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
 
-	a.recordsCache.AddAddress(aaaaRecord.Hdr.Name[:len(aaaaRecord.Hdr.Name)-1], aaaaRecord.AAAA, ttlDuration)
+	a.recordsCache.AddAddress(domainName, aaaaRecord.AAAA, ttlDuration)
 
-	names := a.recordsCache.GetAliases(aaaaRecord.Hdr.Name[:len(aaaaRecord.Hdr.Name)-1])
+	names := a.recordsCache.GetAliases(domainName)
 	for _, group := range a.groups {
 	Rule:
 		for _, domain := range group.Rules {
@@ -269,20 +271,20 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 					log.Error().
 						Err(err).
 						Str("subnet", subnet.String()).
-						Str("aaaaRecordDomain", aaaaRecord.Hdr.Name).
+						Str("aaaaRecordDomain", domainName).
 						Str("cNameDomain", name).
 						Msg("failed to add subnet")
 				} else {
 					log.Debug().
 						Str("subnet", subnet.String()).
-						Str("aaaaRecordDomain", aaaaRecord.Hdr.Name).
+						Str("aaaaRecordDomain", domainName).
 						Str("cNameDomain", name).
 						Msg("added subnet")
 				}
 
 				log.Info().
-					Str("name", aaaaRecord.Hdr.Name).
-					Str("address", aaaaRecord.AAAA.String()).
+					Str("name", domainName).
+					Str("address", addrStr).
 					Str("group", group.Name).
 					Str("groupId", group.ID.String()).
 					Msg("added to routing")
@@ -293,17 +295,14 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, id uint16, clientAddr net.A
 	}
 }
 
-func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr net.Addr, network string) {
-	var clientAddrStr string
-	if clientAddr != nil {
-		clientAddrStr = clientAddr.String()
-	}
-	idStr := fmt.Sprintf("%04x", id)
+func (a *App) processCNameRecord(cNameRecord dns.CNAME, idStr, clientAddrStr, network string) {
+	domainName := trimFQDN(cNameRecord.Hdr.Name)
+	targetName := trimFQDN(cNameRecord.Target)
 
 	log.Debug().
 		Str("id", idStr).
-		Str("name", cNameRecord.Hdr.Name).
-		Str("cname", cNameRecord.Target).
+		Str("name", domainName).
+		Str("cname", targetName).
 		Int("ttl", int(cNameRecord.Hdr.Ttl)).
 		Str("clientAddr", clientAddrStr).
 		Str("network", network).
@@ -311,13 +310,11 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr ne
 
 	ttlDuration := cNameRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
 
-	a.recordsCache.AddAlias(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1],
-		cNameRecord.Target[:len(cNameRecord.Target)-1],
-		ttlDuration)
+	a.recordsCache.AddAlias(domainName, targetName, ttlDuration)
 
 	now := time.Now()
-	addresses := a.recordsCache.GetAddresses(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1])
-	aliases := a.recordsCache.GetAliases(cNameRecord.Hdr.Name[:len(cNameRecord.Hdr.Name)-1])
+	addresses := a.recordsCache.GetAddresses(domainName)
+	aliases := a.recordsCache.GetAliases(domainName)
 	for _, group := range a.groups {
 	Rule:
 		for _, domain := range group.Rules {
@@ -330,8 +327,8 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, id uint16, clientAddr ne
 				}
 
 				log.Info().
-					Str("name", cNameRecord.Hdr.Name).
-					Str("cname", cNameRecord.Target).
+					Str("name", domainName).
+					Str("cname", targetName).
 					Str("group", group.Name).
 					Str("groupId", group.ID.String()).
 					Msg("added alias")

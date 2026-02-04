@@ -14,7 +14,7 @@ func (c *chainOverride) Compile(chainName []byte, existedRules []Rule) ([]comman
 	c.sync.RLock()
 	defer c.sync.RUnlock()
 
-	if len(existedRules) == len(c.rules) {
+	if existedRules != nil && len(existedRules) == len(c.rules) {
 		match := true
 		for idx, r := range c.rules {
 			if !ruleEqual(r, existedRules[idx]) {

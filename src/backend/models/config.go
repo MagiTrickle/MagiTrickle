@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type AppConfig struct {
 	HTTPWeb           AppConfigHTTPWeb
 	DNSProxy          AppConfigDNSProxy
@@ -31,6 +33,9 @@ type AppConfigDNSProxy struct {
 	DisableRemap53  bool
 	DisableFakePTR  bool
 	DisableDropAAAA bool
+	MaxIdleConns    uint
+	MaxConcurrent   uint
+	Timeout         time.Duration
 }
 
 type AppConfigDNSProxyServer struct {

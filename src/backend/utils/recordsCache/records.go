@@ -2,6 +2,7 @@ package recordsCache
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -18,8 +19,14 @@ type Alias struct {
 }
 
 type Records struct {
-	locker  sync.Mutex
-	records map[string]interface{}
+	locker sync.RWMutex
+
+	// Раздельные map'ы вместо map[string]interface{}
+	addresses map[string][]*Address
+	aliases   map[string]*Alias
+
+	// Обратный индекс: alias → []domains, которые на него ссылаются
+	reverseAliases map[string][]string
 }
 
 func (r *Records) AddAlias(domainName, alias string, ttl uint32) {
@@ -28,11 +35,37 @@ func (r *Records) AddAlias(domainName, alias string, ttl uint32) {
 	}
 
 	r.locker.Lock()
-	r.records[domainName] = &Alias{
-		Alias:    alias,
-		Deadline: time.Now().Add(time.Duration(ttl) * time.Second),
+	defer r.locker.Unlock()
+
+	deadline := time.Now().Add(time.Duration(ttl) * time.Second)
+
+	// Удаляем старый reverse alias если был
+	if oldAlias, ok := r.aliases[domainName]; ok {
+		r.removeReverseAlias(oldAlias.Alias, domainName)
 	}
-	r.locker.Unlock()
+
+	r.aliases[domainName] = &Alias{
+		Alias:    alias,
+		Deadline: deadline,
+	}
+
+	// Добавляем reverse alias
+	r.reverseAliases[alias] = append(r.reverseAliases[alias], domainName)
+}
+
+func (r *Records) removeReverseAlias(alias, domainName string) {
+	domains := r.reverseAliases[alias]
+	for i, d := range domains {
+		if d == domainName {
+			// Удаляем элемент без сохранения порядка
+			domains[i] = domains[len(domains)-1]
+			r.reverseAliases[alias] = domains[:len(domains)-1]
+			break
+		}
+	}
+	if len(r.reverseAliases[alias]) == 0 {
+		delete(r.reverseAliases, alias)
+	}
 }
 
 func (r *Records) AddAddress(domainName string, addr net.IP, ttl uint32) {
@@ -41,127 +74,158 @@ func (r *Records) AddAddress(domainName string, addr net.IP, ttl uint32) {
 
 	deadline := time.Now().Add(time.Duration(ttl) * time.Second)
 
-	address, _ := r.records[domainName].([]*Address)
-	for _, aRecord := range address {
-		if bytes.Compare(aRecord.Address, addr) != 0 {
-			continue
+	addresses := r.addresses[domainName]
+	for _, aRecord := range addresses {
+		if bytes.Equal(aRecord.Address, addr) {
+			aRecord.Deadline = deadline
+			return
 		}
-		aRecord.Deadline = deadline
-		return
 	}
 
-	r.records[domainName] = append(address, &Address{
+	r.addresses[domainName] = append(addresses, &Address{
 		Address:  addr,
 		Deadline: deadline,
 	})
 }
 
+// GetAliases возвращает все домены, которые ссылаются на данный (прямо или транзитивно)
 func (r *Records) GetAliases(domainName string) []string {
-	r.locker.Lock()
-	defer r.locker.Unlock()
-	r.cleanupRecords()
+	r.locker.RLock()
+	defer r.locker.RUnlock()
 
-	domains := make(map[string]struct{})
-	domains[domainName] = struct{}{}
+	result := []string{domainName}
+	queue := []string{domainName}
+	seen := make(map[string]struct{})
+	seen[domainName] = struct{}{}
 
-	for {
-		var addedNew bool
-		for name, record := range r.records {
-			if _, ok := domains[name]; ok {
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		for _, pointing := range r.reverseAliases[current] {
+			if _, ok := seen[pointing]; ok {
 				continue
 			}
-			cname, ok := record.(*Alias)
-			if !ok {
-				continue
-			}
-			if _, ok = domains[cname.Alias]; !ok {
-				continue
-			}
-
-			domains[name] = struct{}{}
-			addedNew = true
-		}
-		if !addedNew {
-			break
+			seen[pointing] = struct{}{}
+			result = append(result, pointing)
+			queue = append(queue, pointing)
 		}
 	}
 
-	domainList := make([]string, len(domains))
-	idx := 0
-	for name := range domains {
-		domainList[idx] = name
-		idx++
-	}
-
-	return domainList
+	return result
 }
 
 func (r *Records) GetAddresses(domainName string) []*Address {
-	r.locker.Lock()
-	defer r.locker.Unlock()
-	r.cleanupRecords()
+	r.locker.RLock()
+	defer r.locker.RUnlock()
 
-	loopDetect := make(map[string]struct{})
-	loopDetect[domainName] = struct{}{}
+	now := time.Now()
+	seen := make(map[string]struct{})
+	seen[domainName] = struct{}{}
+
 	for {
-		switch v := r.records[domainName].(type) {
-		case *Alias:
-			if _, ok := loopDetect[v.Alias]; ok {
-				return nil
+		if addresses, ok := r.addresses[domainName]; ok && len(addresses) > 0 {
+			// Фильтруем просроченные адреса (только чтение, без удаления)
+			var valid []*Address
+			for _, addr := range addresses {
+				if !now.After(addr.Deadline) {
+					valid = append(valid, addr)
+				}
 			}
-			domainName = v.Alias
-			loopDetect[v.Alias] = struct{}{}
-		case []*Address:
-			return v
-		default:
+			if len(valid) > 0 {
+				return valid
+			}
+		}
+
+		alias, ok := r.aliases[domainName]
+		if !ok || now.After(alias.Deadline) {
 			return nil
 		}
+
+		// Защита от циклов
+		if _, ok := seen[alias.Alias]; ok {
+			return nil
+		}
+		seen[alias.Alias] = struct{}{}
+		domainName = alias.Alias
 	}
 }
 
 func (r *Records) ListKnownDomains() []string {
-	r.locker.Lock()
-	defer r.locker.Unlock()
-	r.cleanupRecords()
+	r.locker.RLock()
+	defer r.locker.RUnlock()
 
-	domainsList := make([]string, len(r.records))
-	i := 0
-	for name := range r.records {
-		domainsList[i] = name
-		i++
+	// Собираем уникальные домены из обоих map'ов
+	domains := make(map[string]struct{}, len(r.addresses)+len(r.aliases))
+
+	for name := range r.addresses {
+		domains[name] = struct{}{}
 	}
-	return domainsList
+
+	for name := range r.aliases {
+		domains[name] = struct{}{}
+	}
+
+	result := make([]string, 0, len(domains))
+	for name := range domains {
+		result = append(result, name)
+	}
+	return result
 }
 
+// cleanupRecords удаляет истёкшие записи
 func (r *Records) cleanupRecords() {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+
 	now := time.Now()
-	for name, records := range r.records {
-		switch v := records.(type) {
-		case []*Address:
-			idx := 0
-			for _, aRecord := range v {
-				if now.After(aRecord.Deadline) {
-					continue
-				}
-				v[idx] = aRecord
+
+	// Очистка адресов
+	for name, addresses := range r.addresses {
+		idx := 0
+		for _, addr := range addresses {
+			if !now.After(addr.Deadline) {
+				addresses[idx] = addr
 				idx++
 			}
-			if idx == 0 {
-				delete(r.records, name)
-				break
-			}
-			r.records[name] = v[:idx]
-		case *Alias:
-			if !now.After(v.Deadline) {
-				continue
-			}
-			delete(r.records, name)
+		}
+		if idx == 0 {
+			delete(r.addresses, name)
+		} else {
+			r.addresses[name] = addresses[:idx]
+		}
+	}
+
+	// Очистка алиасов
+	for name, alias := range r.aliases {
+		if now.After(alias.Deadline) {
+			r.removeReverseAlias(alias.Alias, name)
+			delete(r.aliases, name)
 		}
 	}
 }
 
+// StartCleanup запускает фоновую очистку с заданным интервалом
+func (r *Records) StartCleanup(ctx context.Context, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				r.cleanupRecords()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
 func New() *Records {
 	return &Records{
-		records: make(map[string]interface{}),
+		addresses:      make(map[string][]*Address),
+		aliases:        make(map[string]*Alias),
+		reverseAliases: make(map[string][]string),
 	}
 }

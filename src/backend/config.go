@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"magitrickle/config"
 	"magitrickle/constant"
@@ -107,6 +108,15 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			}
 			if cfg.App.DNSProxy.DisableDropAAAA != nil {
 				a.config.DNSProxy.DisableDropAAAA = *cfg.App.DNSProxy.DisableDropAAAA
+			}
+			if cfg.App.DNSProxy.MaxIdleConns != nil {
+				a.config.DNSProxy.MaxIdleConns = *cfg.App.DNSProxy.MaxIdleConns
+			}
+			if cfg.App.DNSProxy.MaxConcurrent != nil {
+				a.config.DNSProxy.MaxConcurrent = *cfg.App.DNSProxy.MaxConcurrent
+			}
+			if cfg.App.DNSProxy.Timeout != nil {
+				a.config.DNSProxy.Timeout = time.Duration(*cfg.App.DNSProxy.Timeout) * time.Millisecond
 			}
 		}
 
@@ -243,6 +253,9 @@ func (a *App) ExportConfig() config.Config {
 				DisableRemap53:  &a.config.DNSProxy.DisableRemap53,
 				DisableFakePTR:  &a.config.DNSProxy.DisableFakePTR,
 				DisableDropAAAA: &a.config.DNSProxy.DisableDropAAAA,
+				MaxIdleConns:    &a.config.DNSProxy.MaxIdleConns,
+				MaxConcurrent:   &a.config.DNSProxy.MaxConcurrent,
+				Timeout:         func(u uint) *uint { return &u }(uint(a.config.DNSProxy.Timeout.Milliseconds())),
 			},
 			Netfilter: &config.Netfilter{
 				IPTables: &config.IPTables{

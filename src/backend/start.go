@@ -4,12 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime/debug"
+	"strconv"
+	"time"
 
 	"magitrickle/api"
+	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/iptables"
 	"magitrickle/utils/netfilterTools"
+	"magitrickle/utils/recordsCache"
 
 	"github.com/rs/zerolog"
 	"github.com/vishvananda/netlink"
@@ -31,7 +36,23 @@ func (a *App) Start(ctx context.Context) (err error) {
 	}()
 
 	a.setupLogging()
-	a.initDNSMITM()
+
+	a.dnsMITM = dnsMITMProxy.NewDNSMITMProxy(
+		net.JoinHostPort(a.config.DNSProxy.Upstream.Address, strconv.Itoa(int(a.config.DNSProxy.Upstream.Port))),
+		a.config.DNSProxy.MaxIdleConns,
+		a.config.DNSProxy.MaxConcurrent,
+		a.config.DNSProxy.Timeout,
+	)
+	a.dnsMITM.RequestHook = a.dnsRequestHook
+	a.dnsMITM.ResponseHook = a.dnsResponseHook
+	defer func() {
+		if a.dnsMITM != nil {
+			_ = a.dnsMITM.Close()
+		}
+	}()
+
+	a.recordsCache = recordsCache.New()
+	a.recordsCache.StartCleanup(ctx, 30*time.Second)
 
 	nfh, err := netfilterTools.New(a.config.Netfilter.IPTables.ChainPrefix, a.config.Netfilter.IPSet.TablePrefix, a.config.Netfilter.DisableIPv4, a.config.Netfilter.DisableIPv6, a.config.Netfilter.StartMarkTableIndex)
 	if err != nil {

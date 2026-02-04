@@ -1,6 +1,8 @@
 package constant
 
 import (
+	"time"
+
 	"magitrickle/models"
 )
 
@@ -11,6 +13,9 @@ var DefaultAppConfig = models.AppConfig{
 		DisableRemap53:  false,
 		DisableFakePTR:  false,
 		DisableDropAAAA: false,
+		MaxIdleConns:    10,
+		MaxConcurrent:   100,
+		Timeout:         5000 * time.Millisecond,
 	},
 	HTTPWeb: models.AppConfigHTTPWeb{
 		Enabled: true,

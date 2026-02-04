@@ -18,6 +18,9 @@ app:
     disableRemap53: false
     disableFakePTR: false
     disableDropAAAA: false
+    maxIdleConns: 10
+    maxConcurrent: 100
+    timeout: 5000
   netfilter:
     iptables:
       chainPrefix: MT_
