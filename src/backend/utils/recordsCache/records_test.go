@@ -168,6 +168,24 @@ func TestAliasUpdate(t *testing.T) {
 	}
 }
 
+func TestAliasesWithExpiredAddress(t *testing.T) {
+	r := New()
+	r.AddAddress("1", []byte{1, 2, 3, 4}, 0)
+	r.AddAlias("2", "1", 60)
+
+	time.Sleep(time.Second)
+	r.cleanupRecords()
+
+	aliases := r.GetAliases("1")
+	if aliases == nil {
+		t.Fatal("no aliases")
+	}
+	records := r.GetAddresses("2")
+	if records != nil {
+		t.Fatal("no addresses should be here")
+	}
+}
+
 func TestExpiredAliasInChain(t *testing.T) {
 	r := New()
 	r.AddAddress("target", []byte{1, 2, 3, 4}, 60)
@@ -255,6 +273,7 @@ func TestCleanup(t *testing.T) {
 	r.AddAddress("valid.com", []byte{2, 2, 2, 2}, 60)
 	r.AddAlias("expired-alias.com", "valid.com", 0)
 	r.AddAlias("valid-alias.com", "valid.com", 60)
+	r.AddAlias("valid-expired-alias.com", "expired.com", 60)
 
 	time.Sleep(time.Second)
 	r.cleanupRecords()
@@ -270,6 +289,9 @@ func TestCleanup(t *testing.T) {
 		t.Fatal("valid address should remain")
 	}
 	if !slices.Contains(domains, "valid-alias.com") {
+		t.Fatal("valid alias should remain")
+	}
+	if !slices.Contains(domains, "valid-expired-alias.com") {
 		t.Fatal("valid alias should remain")
 	}
 }
