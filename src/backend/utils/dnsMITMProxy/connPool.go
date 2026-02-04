@@ -12,12 +12,12 @@ type connPool struct {
 	network string
 	addr    string
 	pool    chan net.Conn
-	maxIdle int
+	maxIdle uint
 	mu      sync.Mutex
 	closed  bool
 }
 
-func newConnPool(network, addr string, maxIdle int) *connPool {
+func newConnPool(network, addr string, maxIdle uint) *connPool {
 	return &connPool{
 		network: network,
 		addr:    addr,

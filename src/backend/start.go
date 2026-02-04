@@ -37,7 +37,12 @@ func (a *App) Start(ctx context.Context) (err error) {
 
 	a.setupLogging()
 
-	a.dnsMITM = dnsMITMProxy.NewDNSMITMProxy(net.JoinHostPort(a.config.DNSProxy.Upstream.Address, strconv.Itoa(int(a.config.DNSProxy.Upstream.Port))))
+	a.dnsMITM = dnsMITMProxy.NewDNSMITMProxy(
+		net.JoinHostPort(a.config.DNSProxy.Upstream.Address, strconv.Itoa(int(a.config.DNSProxy.Upstream.Port))),
+		a.config.DNSProxy.MaxIdleConns,
+		a.config.DNSProxy.MaxConcurrent,
+		a.config.DNSProxy.Timeout,
+	)
 	a.dnsMITM.RequestHook = a.dnsRequestHook
 	a.dnsMITM.ResponseHook = a.dnsResponseHook
 	defer func() {

@@ -17,12 +17,7 @@ import (
 
 const (
 	maxTCPMsgSize = 65535
-
-	// TODO: Вынести в конфиг
-	defaultMaxIdleConns  = 10
-	defaultMaxConcurrent = 100
-	defaultTimeout       = 5 * time.Second
-	acceptTimeout        = 1 * time.Second
+	acceptTimeout = 1 * time.Second
 )
 
 type DNSMITMProxy struct {
@@ -34,9 +29,10 @@ type DNSMITMProxy struct {
 	tcpConnPool *connPool
 	udpConnPool *connPool
 	semaphore   chan struct{}
+	timeout     time.Duration
 }
 
-func NewDNSMITMProxy(addr string) *DNSMITMProxy {
+func NewDNSMITMProxy(addr string, maxIdleConns, maxConcurrent uint, timeout time.Duration) *DNSMITMProxy {
 	return &DNSMITMProxy{
 		bufferPool: &sync.Pool{
 			New: func() interface{} {
@@ -44,9 +40,10 @@ func NewDNSMITMProxy(addr string) *DNSMITMProxy {
 				return &buf
 			},
 		},
-		tcpConnPool: newConnPool("tcp", addr, defaultMaxIdleConns),
-		udpConnPool: newConnPool("udp", addr, defaultMaxIdleConns),
-		semaphore:   make(chan struct{}, defaultMaxConcurrent),
+		timeout:     timeout,
+		tcpConnPool: newConnPool("tcp", addr, maxIdleConns),
+		udpConnPool: newConnPool("udp", addr, maxIdleConns),
+		semaphore:   make(chan struct{}, maxConcurrent),
 	}
 }
 
@@ -77,7 +74,7 @@ func (p *DNSMITMProxy) requestUpstreamDNS(ctx context.Context, req []byte, netwo
 	// Set deadline based on context or default timeout
 	deadline, ok := ctx.Deadline()
 	if !ok {
-		deadline = time.Now().Add(defaultTimeout)
+		deadline = time.Now().Add(p.timeout)
 	}
 	err = upstreamConn.SetDeadline(deadline)
 	if err != nil {
@@ -214,7 +211,7 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 	defer func() { _ = clientConn.Close() }()
 
 	// Set read timeout for receiving the request (separate from processing timeout)
-	_ = clientConn.SetReadDeadline(time.Now().Add(defaultTimeout))
+	_ = clientConn.SetReadDeadline(time.Now().Add(p.timeout))
 
 	// Read length prefix directly with bytes
 	lenBuf := make([]byte, 2)
@@ -246,7 +243,7 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 	}
 
 	// Now that we have the request, create processing timeout context
-	reqCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
 	// Set deadline for processing and response
@@ -338,7 +335,7 @@ func (p *DNSMITMProxy) ListenTCP(ctx context.Context, addr *net.TCPAddr) error {
 
 func (p *DNSMITMProxy) handleUDPConnection(ctx context.Context, pconn4 *ipv4.PacketConn, pconn6 *ipv6.PacketConn, requestedAddr net.IP, clientAddr *net.UDPAddr, req []byte, isIPv4 bool, ifIndex int) {
 	// Create context with timeout for this request
-	reqCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
 	resp, err := p.processReq(reqCtx, clientAddr, req, "udp")

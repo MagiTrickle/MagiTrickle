@@ -31,6 +31,9 @@ type DNSProxy struct {
 	DisableRemap53  *bool           `yaml:"disableRemap53"`
 	DisableFakePTR  *bool           `yaml:"disableFakePTR"`
 	DisableDropAAAA *bool           `yaml:"disableDropAAAA"`
+	MaxIdleConns    *uint           `yaml:"maxIdleConns"`
+	MaxConcurrent   *uint           `yaml:"maxConcurrent"`
+	Timeout         *uint           `yaml:"timeout"`
 }
 
 type DNSProxyServer struct {
