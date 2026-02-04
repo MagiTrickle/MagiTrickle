@@ -26,8 +26,9 @@ type Rule struct {
 	Enable bool
 
 	compileOnce sync.Once
-	compiled    func(string) bool
+	compileWait sync.WaitGroup
 	compileErr  error
+	compiled    func(string) bool
 }
 
 func (d *Rule) IsEnabled() bool {
@@ -36,6 +37,9 @@ func (d *Rule) IsEnabled() bool {
 
 func (d *Rule) Compile() error {
 	d.compileOnce.Do(func() {
+		d.compileWait.Add(1)
+		defer d.compileWait.Done()
+
 		switch d.Type {
 		case RuleTypeRegEx:
 			re, err := regexp2.Compile(d.Rule, regexp2.IgnoreCase)
@@ -55,6 +59,7 @@ func (d *Rule) Compile() error {
 			}
 		}
 	})
+	d.compileWait.Wait()
 	return d.compileErr
 }
 
