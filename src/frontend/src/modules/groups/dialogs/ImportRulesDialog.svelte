@@ -10,7 +10,6 @@
 
   import { RULE_TYPES, type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
-  import { toast } from "../../../utils/events";
   import {
     isValidDomain,
     isValidNamespace,
@@ -221,7 +220,6 @@
 
   function finishImport(rules: Rule[]) {
     dispatch("import", { group_index, rules });
-    toast.success(t("Imported rules: " + rules.length));
     close();
   }
 

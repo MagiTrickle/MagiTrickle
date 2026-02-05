@@ -13,7 +13,7 @@
 
   import { Add, Export, Import, Save } from "../../components/ui/icons";
   import { droppable } from "../../lib/dnd";
-  import { overlay, toast } from "../../utils/events";
+  import { toast } from "../../utils/events";
   import { parseConfig, type Group, type Rule } from "../../types";
   import {
     GROUPS_STORE_CONTEXT,
@@ -43,6 +43,8 @@
 
   let importedGroups = $state<Group[]>([]);
   let isImportingConfig = $state(false);
+  let isImportingRules = $state(false);
+  let pendingToast = $state<string | null>(null);
 
   function resetImportConfigModal() {
     importConfigModal = { open: false, fileName: "" };
@@ -111,15 +113,16 @@
     const { group_index, rules } = event.detail;
     if (!rules.length) return;
 
-    overlay.show(t("Importing rules..."));
+    isImportingRules = true;
     await tick();
     try {
       await store.addRulesToGroup(group_index, rules);
+      pendingToast = t("Imported rules: " + rules.length);
     } catch (error) {
       console.error("Failed to import rules:", error);
       toast.error(t("Failed to import rules"));
     } finally {
-      overlay.hide();
+      isImportingRules = false;
     }
   }
 
@@ -135,7 +138,7 @@
       } else {
         await store.addGroups(cloned);
       }
-      toast.success(`${t("Config imported")}: ${cloned.length}`);
+      pendingToast = `${t("Config imported")}: ${cloned.length}`;
     } catch (error) {
       console.error("Failed to import config:", error);
       toast.error(t("Failed to import config"));
@@ -144,6 +147,31 @@
       resetImportConfigModal();
     }
   }
+
+  $effect(() => {
+    const message = pendingToast;
+    if (!message) return;
+    if (isImportingConfig || isImportingRules) return;
+    if (!store.isAllRendered) return;
+
+    let cancelled = false;
+    const fire = () => {
+      if (cancelled) return;
+      if (pendingToast !== message) return;
+      toast.success(message);
+      pendingToast = null;
+    };
+
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(fire);
+    } else {
+      setTimeout(fire, 0);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  });
 
   onMount(() => {
     void store.mount();
@@ -190,7 +218,7 @@
     <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
       {t("Failed to load groups")}
     </Placeholder>
-  {:else if isImportingConfig || !store.isAllRendered}
+  {:else if isImportingConfig || isImportingRules || !store.isAllRendered}
     <Placeholder variant="loading" minHeight="auto">
       {t("Loading groups...")}
     </Placeholder>
@@ -206,8 +234,8 @@
 
   <div
     class="group-list"
-    class:visible={store.isAllRendered && !isImportingConfig}
-    style={store.isAllRendered && !isImportingConfig ? "" : "display: none;"}
+    class:visible={store.isAllRendered && !isImportingConfig && !isImportingRules}
+    style={store.isAllRendered && !isImportingConfig && !isImportingRules ? "" : "display: none;"}
     oninput={store.markDataRevision}
     onchange={store.markDataRevision}
   >
