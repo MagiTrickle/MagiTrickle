@@ -250,8 +250,6 @@ export class GroupsStore {
     }
   };
 
-  markGroupOrderChanged() {}
-
   forceVisibleGroup(groupId: string) {
     if (!this.normalizedSearch) return;
     this.#forcedGroupIds.add(groupId);
@@ -400,12 +398,8 @@ export class GroupsStore {
     this.valid_rules = !document.querySelector(".rule input.invalid");
   };
 
-  bumpDataRevision() {
-    this.dataRevision += 1;
-  }
-
   markDataRevision = () => {
-    this.bumpDataRevision();
+    this.dataRevision += 1;
   };
 
   async addRuleToGroup(group_index: number, rule: Rule, focus = false) {
@@ -518,7 +512,6 @@ export class GroupsStore {
     if (target > this.data.length) target = this.data.length;
 
     this.data.splice(target, 0, group);
-    this.markGroupOrderChanged();
     this.markDataRevision();
   }
 
@@ -533,7 +526,6 @@ export class GroupsStore {
     const group = defaultGroup();
     this.data.unshift(group);
     this.open_state[group.id] = true;
-    this.markGroupOrderChanged();
     this.markDataRevision();
     if (this.searchActive) {
       this.forceVisibleGroup(group.id);
@@ -552,7 +544,6 @@ export class GroupsStore {
       this.removeForcedGroup(removed.id);
       delete this.open_state[removed.id];
     }
-    this.markGroupOrderChanged();
     this.markDataRevision();
   };
 
@@ -599,7 +590,6 @@ export class GroupsStore {
       () => this.#yieldToMain(),
       IMPORT_GROUPS_INSERT_CHUNK_SIZE,
     );
-    this.markGroupOrderChanged();
     this.markDataRevision();
   }
 
