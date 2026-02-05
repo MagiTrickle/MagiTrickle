@@ -13,6 +13,7 @@ export { default as ClipboardPaste } from "lucide-svelte/icons/clipboard-paste";
 export { default as Locale } from "lucide-svelte/icons/languages";
 export { default as User } from "lucide-svelte/icons/user";
 export { default as Gitlab } from "lucide-svelte/icons/gitlab";
+export { default as Sponsorship } from "lucide-svelte/icons/heart";
 export { default as Save } from "lucide-svelte/icons/save";
 export { default as ScrollToBottom } from "lucide-svelte/icons/arrow-down-to-line";
 export { default as Clear } from "lucide-svelte/icons/eraser";

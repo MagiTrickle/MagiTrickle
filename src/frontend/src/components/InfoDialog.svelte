@@ -3,7 +3,7 @@
   import GenericDialog from "./ui/GenericDialog.svelte";
   import GenericIcon from "./ui/GenericIcon.svelte";
 
-  import { Bug, Gitlab, Globe } from "./ui/icons";
+  import { Bug, Gitlab, Globe, Sponsorship } from "./ui/icons";
 
   const version = import.meta.env.VITE_PKG_VERSION || "0.0.0";
 
@@ -66,6 +66,17 @@
           <a target="_blank" rel="noopener noreferrer" href="https://t.me/MagiTrickleChat"
             >https://t.me/MagiTrickleChat</a
           >
+        </div>
+      </div>
+      <div class="block">
+        <div class="icon">
+          <Sponsorship size={22} />
+        </div>
+        <div class="text">
+           {t("Financial Contributions")}
+           <a target="_blank" rel="noopener noreferrer" href="https://boosty.to/magitrickle">
+             https://boosty.to/magitrickle
+           </a>
         </div>
       </div>
     </div>
