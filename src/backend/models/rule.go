@@ -52,11 +52,6 @@ func (d *Rule) Compile() error {
 				ok, _ := re.MatchString(s)
 				return ok
 			}
-		case RuleTypeWildcard:
-			pattern := d.Rule
-			d.compiled = func(s string) bool {
-				return wildcard.Match(pattern, s)
-			}
 		}
 	})
 	d.compileWait.Wait()
@@ -80,7 +75,10 @@ func (d *Rule) IsMatch(domainName string) bool {
 		}
 		return domainName[domainLen-ruleLen-1] == '.' && domainName[domainLen-ruleLen:] == d.Rule
 
-	case RuleTypeWildcard, RuleTypeRegEx:
+	case RuleTypeWildcard:
+		return wildcard.Match(d.Rule, domainName)
+
+	case RuleTypeRegEx:
 		err := d.Compile()
 		if err != nil {
 			return false
