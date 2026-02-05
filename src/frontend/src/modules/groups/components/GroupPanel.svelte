@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
-  import { getContext } from "svelte";
+  import { createEventDispatcher, getContext } from "svelte";
   import { slide } from "svelte/transition";
 
   import Pagination from "../../../components/Pagination.svelte";
@@ -28,7 +28,7 @@
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
-  import { sortRules, type SortDirection, type SortField } from "../../../utils/rule-sorter";
+  import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
 
   type Props = {
@@ -41,6 +41,7 @@
   if (!store) {
     throw new Error("GroupsStore context is missing");
   }
+  const dispatch = createEventDispatcher();
 
   const PAGE_SIZE = 50;
   let currentPage = $state(1);
@@ -182,11 +183,7 @@
       sortDirection = "asc";
 
       if (initialOrderIds) {
-        const ruleMap = new Map(group.rules.map((rule) => [rule.id, rule]));
-        const orderedRules = initialOrderIds
-          .map((id) => ruleMap.get(id))
-          .filter((rule): rule is Rule => Boolean(rule));
-        group.rules.splice(0, group.rules.length, ...orderedRules);
+        store.restoreGroupRulesOrder(group_index, initialOrderIds);
       }
       return;
     }
@@ -198,8 +195,7 @@
       sortDirection = "asc";
     }
 
-    const sorted = sortRules(group.rules, field, sortDirection);
-    group.rules.splice(0, group.rules.length, ...sorted);
+    store.sortGroupRules(group_index, field, sortDirection);
   }
 
   $effect(() => {
@@ -292,7 +288,7 @@
               </Button>
             </Tooltip>
             <Tooltip value={t("Import Rule List")}>
-              <Button small onclick={() => store.openImportRulesModal(group_index)}>
+              <Button small onclick={() => dispatch("importRules")}>
                 <ImportList size={20} />
               </Button>
             </Tooltip>
@@ -314,7 +310,7 @@
                 </Button>
               {/snippet}
               {#snippet item2()}
-                <Button general onclick={() => store.openImportRulesModal(group_index)}>
+                <Button general onclick={() => dispatch("importRules")}>
                   <div class="dd-icon"><ImportList size={20} /></div>
                   <div class="dd-label">{t("Import Rule List")}</div>
                 </Button>

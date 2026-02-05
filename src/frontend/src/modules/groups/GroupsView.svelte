@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, setContext } from "svelte";
+  import { onDestroy, onMount, setContext, tick } from "svelte";
 
   import Button from "../../components/ui/Button.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
@@ -13,6 +13,8 @@
 
   import { Add, Export, Import, Save } from "../../components/ui/icons";
   import { droppable } from "../../lib/dnd";
+  import { overlay, toast } from "../../utils/events";
+  import { parseConfig, type Group, type Rule } from "../../types";
   import {
     GROUPS_STORE_CONTEXT,
     GroupsStore,
@@ -26,8 +28,122 @@
 
   let { onRenderComplete }: Props = $props();
 
-  const store = new GroupsStore({ onRenderComplete });
+  const store = new GroupsStore({ onRenderComplete: () => onRenderComplete?.() });
   setContext(GROUPS_STORE_CONTEXT, store);
+
+  let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
+    open: false,
+    groupIndex: null,
+  });
+
+  let importConfigModal = $state<{ open: boolean; fileName: string }>({
+    open: false,
+    fileName: "",
+  });
+
+  let importedGroups = $state<Group[]>([]);
+  let isImportingConfig = $state(false);
+
+  function resetImportConfigModal() {
+    importConfigModal = { open: false, fileName: "" };
+    importedGroups = [];
+  }
+
+  function openImportRulesModal(groupIndex: number) {
+    importRulesModal = { open: true, groupIndex };
+  }
+
+  function closeImportRulesModal() {
+    importRulesModal = { open: false, groupIndex: null };
+  }
+
+  function exportConfig() {
+    const payload = store.toConfigPayload();
+    if (!payload.groups.length) {
+      toast.warning(t("Empty config exported"));
+    }
+    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "config.mtrickle";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function importConfig() {
+    const input = document.getElementById("import-config") as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) {
+      alert(t("Please select a CONFIG file to load."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const { groups } = parseConfig(event.target?.result as string);
+        if (!groups?.length) {
+          toast.error(t("Invalid config file"));
+          return;
+        }
+
+        importedGroups = groups;
+        importConfigModal = {
+          open: true,
+          fileName: file.name,
+        };
+      } catch (error) {
+        console.error("Error parsing CONFIG:", error);
+        toast.error(t("Invalid config file"));
+      }
+    };
+    reader.onerror = (event) => {
+      console.error("Error reading file:", event.target?.error);
+      toast.error(t("Invalid config file"));
+    };
+
+    reader.readAsText(file);
+    input.value = "";
+  }
+
+  async function handleImportRules(event: CustomEvent<{ group_index: number; rules: Rule[] }>) {
+    const { group_index, rules } = event.detail;
+    if (!rules.length) return;
+
+    overlay.show(t("Importing rules..."));
+    await tick();
+    try {
+      await store.addRulesToGroup(group_index, rules);
+    } catch (error) {
+      console.error("Failed to import rules:", error);
+      toast.error(t("Failed to import rules"));
+    } finally {
+      overlay.hide();
+    }
+  }
+
+  async function handleImportConfig(payload: { groups: Group[]; replace: boolean }) {
+    if (!payload.groups.length) return;
+
+    isImportingConfig = true;
+    await tick();
+    try {
+      const cloned = await store.cloneGroupsWithNewIds(payload.groups);
+      if (payload.replace) {
+        await store.overwriteGroups(cloned);
+      } else {
+        await store.addGroups(cloned);
+      }
+      toast.success(`${t("Config imported")}: ${cloned.length}`);
+    } catch (error) {
+      console.error("Failed to import config:", error);
+      toast.error(t("Failed to import config"));
+    } finally {
+      isImportingConfig = false;
+      resetImportConfigModal();
+    }
+  }
 
   onMount(() => {
     void store.mount();
@@ -54,13 +170,13 @@
         </Button>
       </Tooltip>
       <Tooltip value={t("Import Config")}>
-        <input type="file" id="import-config" hidden accept=".mtrickle" onchange={store.importConfig} />
+        <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
         <Button onclick={() => document.getElementById("import-config")!.click()}>
           <Import size={22} />
         </Button>
       </Tooltip>
       <Tooltip value={t("Export Config")}>
-        <Button onclick={() => store.exportConfig()}>
+        <Button onclick={exportConfig}>
           <Export size={22} />
         </Button>
       </Tooltip>
@@ -74,7 +190,7 @@
     <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
       {t("Failed to load groups")}
     </Placeholder>
-  {:else if !store.isAllRendered}
+  {:else if isImportingConfig || !store.isAllRendered}
     <Placeholder variant="loading" minHeight="auto">
       {t("Loading groups...")}
     </Placeholder>
@@ -90,8 +206,8 @@
 
   <div
     class="group-list"
-    class:visible={store.isAllRendered}
-    style={store.isAllRendered ? "" : "display: none;"}
+    class:visible={store.isAllRendered && !isImportingConfig}
+    style={store.isAllRendered && !isImportingConfig ? "" : "display: none;"}
     oninput={store.markDataRevision}
     onchange={store.markDataRevision}
   >
@@ -114,7 +230,7 @@
           ></div>
         {/if}
 
-        <GroupPanel {group_index} />
+        <GroupPanel {group_index} on:importRules={() => openImportRulesModal(group_index)} />
 
         <div
           class="group-drop-slot group-drop-slot--bottom"
@@ -133,18 +249,18 @@
 </div>
 
 <ImportRulesDialog
-  open={store.importRulesModal.open}
-  group_index={store.importRulesModal.groupIndex}
-  on:close={store.closeImportRulesModal}
-  on:import={(e) => store.handleImportRules(e.detail)}
+  open={importRulesModal.open}
+  group_index={importRulesModal.groupIndex}
+  on:close={closeImportRulesModal}
+  on:import={handleImportRules}
 />
 
 <ImportConfigDialog
-  open={store.importConfigModal.open}
-  groups={store.importedGroups}
-  fileName={store.importConfigModal.fileName}
-  onclose={store.resetImportConfigModal}
-  onimport={store.handleImportConfig}
+  open={importConfigModal.open}
+  groups={importedGroups}
+  fileName={importConfigModal.fileName}
+  onclose={resetImportConfigModal}
+  onimport={handleImportConfig}
 />
 
 <style>

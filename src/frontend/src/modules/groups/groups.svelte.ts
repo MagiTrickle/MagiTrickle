@@ -2,14 +2,27 @@ import { tick } from "svelte";
 
 import { t } from "../../data/locale.svelte";
 import { ChangeTracker } from "../../utils/change-tracker.svelte";
-import { defaultGroup, defaultRule, randomId } from "../../utils/defaults";
+import { defaultGroup, defaultRule } from "../../utils/defaults";
 import { overlay, toast } from "../../utils/events";
 import { fetcher } from "../../utils/fetcher";
-import { parseConfig, type Group, type Rule } from "../../types";
+import { type Group, type Rule } from "../../types";
+import { type SortDirection, type SortField } from "../../utils/rule-sorter";
+import {
+  cloneGroupWithNewIds as cloneGroupWithNewIdsData,
+  cloneGroupsWithNewIds as cloneGroupsWithNewIdsData,
+  prependGroups as prependGroupsData,
+  prependRules as prependRulesData,
+  restoreGroupRulesOrder as restoreGroupRulesOrderData,
+  sortGroupRules as sortGroupRulesData,
+  toConfigPayload as toConfigPayloadData,
+} from "./groups-data";
 
 export const GROUPS_STORE_CONTEXT = Symbol("groups-store");
 
 const SEARCH_DEBOUNCE_MS = 150 as const;
+const IMPORT_RULES_CHUNK_SIZE = 300 as const;
+const IMPORT_GROUPS_CLONE_CHUNK_SIZE = 20 as const;
+const IMPORT_GROUPS_INSERT_CHUNK_SIZE = 25 as const;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -46,18 +59,6 @@ export class GroupsStore {
 
   open_state = $state<Record<string, boolean>>({});
 
-  importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
-    open: false,
-    groupIndex: null,
-  });
-
-  importConfigModal = $state<{ open: boolean; fileName: string }>({
-    open: false,
-    fileName: "",
-  });
-
-  importedGroups = $state<Group[]>([]);
-
   searchValue = $state("");
   visibleGroups = $state<VisibleGroup[]>([]);
   searchPending = $state(false);
@@ -66,6 +67,7 @@ export class GroupsStore {
   searchActive = $derived(Boolean(this.normalizedSearch));
 
   searchIndex = $derived.by(() => {
+    if (!this.normalizedSearch) return [];
     this.dataRevision;
     return this.data.map((g) => ({
       id: g.id,
@@ -132,19 +134,31 @@ export class GroupsStore {
       });
 
       $effect(() => {
-        $state.snapshot(this.data);
+        this.dataRevision;
         if (typeof window === "undefined") return;
         setTimeout(() => this.checkRulesValidityState(), 10);
       });
 
       $effect(() => {
-        this.normalizedSearch;
-        this.searchIndex;
+        const query = this.normalizedSearch;
+        this.dataRevision;
+        this.data.length;
 
         if (this.#debounceTimer) {
           clearTimeout(this.#debounceTimer);
           this.#debounceTimer = null;
         }
+
+        if (!query) {
+          this.visibleGroups = this.data.map((_, index) => ({
+            group_index: index,
+            ruleIndices: null,
+          }));
+          this.searchPending = false;
+          return;
+        }
+
+        this.searchIndex;
 
         this.searchPending = true;
 
@@ -542,105 +556,75 @@ export class GroupsStore {
     this.markDataRevision();
   };
 
-  exportConfig() {
-    if (this.data.length === 0) {
-      toast.warning(t("Empty config exported"));
-    }
-    const blob = new Blob([JSON.stringify({ groups: this.data })], { type: "application/json" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "config.mtrickle";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  importConfig = () => {
-    const input = document.getElementById("import-config") as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) {
-      alert(t("Please select a CONFIG file to load."));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const { groups } = parseConfig(event.target?.result as string);
-
-        if (!groups?.length) {
-          toast.error(t("Invalid config file"));
-          return;
-        }
-
-        this.importedGroups = groups;
-        this.importConfigModal = {
-          open: true,
-          fileName: file.name,
-        };
-      } catch (error) {
-        console.error("Error parsing CONFIG:", error);
-        toast.error(t("Invalid config file"));
-      }
-    };
-    reader.onerror = (event) => {
-      console.error("Error reading file:", event.target?.error);
-      toast.error(t("Invalid config file"));
-    };
-    reader.readAsText(file);
-    input.value = "";
-  };
-
-  resetImportConfigModal = () => {
-    this.importConfigModal = { open: false, fileName: "" };
-    this.importedGroups = [];
-  };
-
   cloneGroupWithNewIds(group: Group): Group {
-    return {
-      ...group,
-      id: randomId(),
-      rules: group.rules.map((rule) => ({
-        ...rule,
-        id: randomId(),
-      })),
-    };
+    return cloneGroupWithNewIdsData(group);
   }
 
-  openImportRulesModal = (groupIndex: number) => {
-    this.importRulesModal = { open: true, groupIndex };
-  };
-
-  closeImportRulesModal = () => {
-    this.importRulesModal = { open: false, groupIndex: null };
-  };
-
-  handleImportRules = (payload: { group_index: number; rules: Rule[] }) => {
-    const { group_index, rules } = payload;
-    const group = this.data[group_index];
-    if (!group) return;
-    group.rules.unshift(...rules);
+  sortGroupRules(groupIndex: number, field: SortField, direction: SortDirection) {
+    const group = this.data[groupIndex];
+    if (!group) return false;
+    sortGroupRulesData(group, field, direction);
     this.markDataRevision();
-  };
+    return true;
+  }
 
-  handleImportConfig = (payload: { groups: Group[]; replace: boolean }) => {
-    const imported = payload.groups.map((group) => this.cloneGroupWithNewIds(group));
-    if (!imported.length) return;
+  restoreGroupRulesOrder(groupIndex: number, ruleIds: string[]) {
+    const group = this.data[groupIndex];
+    if (!group) return false;
 
-    if (payload.replace) {
-      this.data.splice(0, this.data.length);
-      this.open_state = {};
-    }
+    const restored = restoreGroupRulesOrderData(group, ruleIds);
+    if (!restored) return false;
+    this.markDataRevision();
+    return true;
+  }
 
-    for (let i = imported.length - 1; i >= 0; i--) {
-      const group = imported[i];
-      this.data.unshift(group);
-      this.open_state[group.id] = true;
-    }
+  toConfigPayload() {
+    return toConfigPayloadData(this.data);
+  }
+
+  async cloneGroupsWithNewIds(groups: Group[]) {
+    return cloneGroupsWithNewIdsData(
+      groups,
+      () => this.#yieldToMain(),
+      IMPORT_GROUPS_CLONE_CHUNK_SIZE,
+    );
+  }
+
+  async addGroups(groups: Group[]) {
+    if (!groups.length) return;
+    await prependGroupsData(
+      this.data,
+      this.open_state,
+      groups,
+      () => this.#yieldToMain(),
+      IMPORT_GROUPS_INSERT_CHUNK_SIZE,
+    );
     this.markGroupOrderChanged();
     this.markDataRevision();
-    toast.success(`${t("Config imported")}: ${imported.length}`);
-  };
+  }
+
+  async overwriteGroups(groups: Group[]) {
+    this.finishedGroupsCount = 0;
+    this.renderGroupsLimit = 1;
+    this.data.splice(0, this.data.length);
+    this.open_state = {};
+    await this.addGroups(groups);
+  }
+
+  async addRulesToGroup(groupIndex: number, rules: Rule[]) {
+    const group = this.data[groupIndex];
+    if (!group || !rules.length) return;
+
+    await prependRulesData(group, rules, () => this.#yieldToMain(), IMPORT_RULES_CHUNK_SIZE);
+    this.markDataRevision();
+  }
+
+  async #yieldToMain() {
+    if (typeof window === "undefined") return;
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
+  }
 
   handleGroupFinished = () => {
     this.finishedGroupsCount += 1;
