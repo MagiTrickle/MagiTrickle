@@ -44,6 +44,17 @@ export type GroupDropSlotData = {
   insert: "before" | "after";
 };
 
+type SearchIndexRule = {
+  id: string;
+  searchBlob: string;
+};
+
+type SearchIndexGroup = {
+  id: string;
+  nameLower: string;
+  rules: SearchIndexRule[];
+};
+
 type GroupsStoreOptions = {
   onRenderComplete?: () => void;
 };
@@ -66,18 +77,8 @@ export class GroupsStore {
   normalizedSearch = $derived(this.searchValue.trim().toLowerCase());
   searchActive = $derived(Boolean(this.normalizedSearch));
 
-  searchIndex = $derived.by(() => {
-    if (!this.normalizedSearch) return [];
-    this.dataRevision;
-    return this.data.map((g) => ({
-      id: g.id,
-      nameLower: (g.name || "").toLowerCase(),
-      rules: g.rules.map((r) => ({
-        id: r.id,
-        searchBlob: `${r.name || ""} ${r.rule || ""}`.toLowerCase(),
-      })),
-    }));
-  });
+  searchIndex = $state<SearchIndexGroup[]>([]);
+  searchIndexRevision = $state(-1);
 
   visibilityMap = $derived(new Map(this.visibleGroups.map((v) => [v.group_index, v.ruleIndices])));
 
@@ -113,6 +114,8 @@ export class GroupsStore {
   #forcedRuleIdsByGroup = new Map<string, Set<string>>();
   #forcedSearchKey = "";
   #debounceTimer: number | null = null;
+  #searchIndexBuildToken = 0;
+  #searchIndexBuilding = false;
   #dispose: (() => void) | null = null;
 
   constructor(options: GroupsStoreOptions = {}) {
@@ -150,6 +153,7 @@ export class GroupsStore {
         }
 
         if (!query) {
+          this.#cancelSearchIndexBuild();
           this.visibleGroups = this.data.map((_, index) => ({
             group_index: index,
             ruleIndices: null,
@@ -158,9 +162,11 @@ export class GroupsStore {
           return;
         }
 
-        this.searchIndex;
-
         this.searchPending = true;
+
+        if (this.searchIndexRevision !== this.dataRevision) {
+          this.#startSearchIndexBuild();
+        }
 
         if (typeof window === "undefined") {
           this.performSearch();
@@ -328,6 +334,109 @@ export class GroupsStore {
     }
   }
 
+  #cancelSearchIndexBuild() {
+    this.#searchIndexBuildToken += 1;
+  }
+
+  #startSearchIndexBuild(incrementToken = true) {
+    if (incrementToken) {
+      this.#searchIndexBuildToken += 1;
+    }
+
+    if (this.#searchIndexBuilding) return;
+    void this.#buildSearchIndex(this.#searchIndexBuildToken);
+  }
+
+  async #buildSearchIndex(token: number) {
+    if (!this.searchActive) return;
+
+    this.#searchIndexBuilding = true;
+    const revision = this.dataRevision;
+    const groups = this.data;
+    const total = groups.length;
+    const nextIndex = new Array<SearchIndexGroup>(total);
+
+    const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    let lastYield = now();
+
+    const maybeYield = async () => {
+      if (now() - lastYield < 8) return;
+      await this.#yieldToMain();
+      lastYield = now();
+    };
+
+    const abortIfStale = () => token !== this.#searchIndexBuildToken || !this.searchActive;
+
+    for (let i = 0; i < total; i++) {
+      if (abortIfStale()) {
+        this.#searchIndexBuilding = false;
+        if (this.searchActive && token !== this.#searchIndexBuildToken) {
+          this.#startSearchIndexBuild(false);
+        }
+        return;
+      }
+
+      const group = groups[i];
+      const rules = group.rules;
+      const rulesCount = rules.length;
+      const indexedRules = new Array<SearchIndexRule>(rulesCount);
+
+      for (let r = 0; r < rulesCount; r++) {
+        const rule = rules[r];
+        indexedRules[r] = {
+          id: rule.id,
+          searchBlob: `${rule.name || ""} ${rule.rule || ""}`.toLowerCase(),
+        };
+        if ((r & 31) === 0) {
+          await maybeYield();
+          if (abortIfStale()) {
+            this.#searchIndexBuilding = false;
+            if (this.searchActive && token !== this.#searchIndexBuildToken) {
+              this.#startSearchIndexBuild(false);
+            }
+            return;
+          }
+        }
+      }
+
+      nextIndex[i] = {
+        id: group.id,
+        nameLower: (group.name || "").toLowerCase(),
+        rules: indexedRules,
+      };
+
+      if ((i & 7) === 0) {
+        await maybeYield();
+      }
+    }
+
+    if (abortIfStale()) {
+      this.#searchIndexBuilding = false;
+      if (this.searchActive && token !== this.#searchIndexBuildToken) {
+        this.#startSearchIndexBuild(false);
+      }
+      return;
+    }
+
+    if (this.dataRevision !== revision) {
+      this.#searchIndexBuilding = false;
+      if (this.searchActive) {
+        this.#startSearchIndexBuild(false);
+      }
+      return;
+    }
+
+    this.searchIndex = nextIndex;
+    this.searchIndexRevision = revision;
+    this.#searchIndexBuilding = false;
+
+    if (this.normalizedSearch) {
+      this.performSearch();
+    } else {
+      this.searchPending = false;
+    }
+  }
+
   performSearch() {
     const query = this.normalizedSearch;
     this.#resetForcedVisibility(query);
@@ -338,6 +447,11 @@ export class GroupsStore {
         ruleIndices: null,
       }));
       this.searchPending = false;
+      return;
+    }
+
+    if (this.searchIndexRevision !== this.dataRevision) {
+      this.searchPending = true;
       return;
     }
 
