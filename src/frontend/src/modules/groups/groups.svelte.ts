@@ -684,7 +684,7 @@ export class GroupsStore {
   }
 
   toConfigPayload() {
-    return toConfigPayloadData(this.data);
+    return toConfigPayloadData($state.snapshot(this.data));
   }
 
   async cloneGroupsWithNewIds(groups: Group[]) {
