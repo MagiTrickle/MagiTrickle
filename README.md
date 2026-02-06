@@ -98,4 +98,4 @@ opkg update && opkg install magitrickle
 * [Форум на Keenetic Community](https://forum.keenetic.ru/topic/20125-magitrickle)
 * [Канал Telegram](https://t.me/MagiTrickle)
 * [Чат Telegram](https://t.me/MagiTrickleChat)
-* [Финансовая поддержка проекта](https://hipolink.net/magitrickle)
+* [Финансовая поддержка](https://boosty.to/magitrickle)
