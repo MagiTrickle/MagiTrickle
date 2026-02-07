@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getContext } from "svelte";
+
   import Button from "../../../components/ui/Button.svelte";
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
@@ -9,6 +11,7 @@
   import { dnd_state, draggable, droppable } from "../../../lib/dnd";
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
+  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
 
   type Props = {
     rule: Rule;
@@ -16,15 +19,6 @@
     group_index: number;
     rule_id: string;
     group_id: string;
-    onChangeIndex?: (
-      from_group_index: number,
-      from_rule_index: number,
-      to_group_index: number,
-      to_rule_index: number,
-      to_rule_id: string,
-      insert?: "before" | "after",
-    ) => void;
-    onDelete?: (from_group_index: number, from_rule_index: number) => void;
     [key: string]: any;
   };
 
@@ -34,10 +28,13 @@
     group_index,
     rule_id,
     group_id,
-    onChangeIndex,
-    onDelete,
     ...rest
   }: Props = $props();
+
+  const store = getContext<GroupsStore>(GROUPS_STORE_CONTEXT);
+  if (!store) {
+    throw new Error("GroupsStore context is missing");
+  }
 
   let input: HTMLInputElement;
 
@@ -106,7 +103,7 @@
       return;
     }
 
-    onChangeIndex?.(
+    store.changeRuleIndex(
       source.group_index,
       source.rule_index,
       target.group_index,
@@ -215,7 +212,7 @@
       <Tooltip value={t("Delete Rule")}>
         <Button
           small
-          onclick={() => onDelete?.(group_index, rule_index)}
+          onclick={() => store.deleteRuleFromGroup(group_index, rule_index)}
           data-index={rule_index}
           data-group-index={group_index}
         >

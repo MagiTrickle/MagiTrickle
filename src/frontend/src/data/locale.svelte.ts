@@ -1,6 +1,6 @@
 import { persistedState } from "../utils/persisted-state.svelte";
 
-import ru from "../locales/ru.json";
+import ru from "../locales/ru.json" with { type: "json" };
 
 export const locales: Record<string, Record<string, string>> = { en: {}, ru };
 

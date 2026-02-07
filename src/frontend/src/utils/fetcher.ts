@@ -3,8 +3,8 @@ import { t } from "../data/locale.svelte";
 
 import { toast } from "./events";
 
-// @ts-ignore: vite specific
-export const API_BASE = import.meta.env.DEV ? "http://localhost:6969/api/v1" : "/api/v1";
+const viteEnv = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env;
+export const API_BASE = viteEnv?.DEV ? "http://localhost:6969/api/v1" : "/api/v1";
 
 export async function fetcher<T>(...args: any[]): Promise<T> {
   const url = args.shift();

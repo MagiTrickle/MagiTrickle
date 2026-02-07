@@ -1,227 +1,25 @@
 <script lang="ts">
+  import { getContext } from "svelte";
+
   import { t } from "../../../data/locale.svelte";
-
   import { Search } from "../../../components/ui/icons";
-  import type { Group } from "../../../types";
+  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
 
-  type VisibleGroup = {
-    group_index: number;
-    ruleIndices: number[] | null;
-  };
-
-  type SearchControls = {
-    markGroupOrderChanged: () => void;
-    forceVisibleGroup: (groupId: string) => void;
-    forceVisibleRule: (groupId: string, ruleId: string) => void;
-    removeForcedGroup: (groupId: string) => void;
-    removeForcedRule: (groupId: string, ruleId: string) => void;
-    moveForcedRule: (sourceGroupId: string, targetGroupId: string, ruleId: string) => void;
-    syncRuleDeletion: (groupIndex: number, ruleIndex: number) => void;
-  };
-
-  type Props = {
-    value?: string;
-    groups: Group[];
-    dataRevision?: number;
-    visibleGroups?: VisibleGroup[];
-    searchActive?: boolean;
-    searchPending?: boolean;
-    controls?: SearchControls | null;
-    [key: string]: any;
-  };
-
-  let {
-    value = $bindable(""),
-    groups = [],
-    dataRevision = 0,
-    visibleGroups = $bindable([]),
-    searchActive = $bindable(false),
-    searchPending = $bindable(false),
-    controls = $bindable(null),
-    ...rest
-  }: Props = $props();
-
-  const SEARCH_DEBOUNCE_MS = 150 as const;
-
-  const forcedGroupIds = new Set<string>();
-  const forcedRuleIdsByGroup = new Map<string, Set<string>>();
-  let forcedSearchKey = "";
-
-  let normalizedSearch = $derived(value.trim().toLowerCase());
-
-  let searchIndex = $derived.by(() => {
-    dataRevision;
-    return groups.map((g) => ({
-      id: g.id,
-      nameLower: (g.name || "").toLowerCase(),
-      rules: g.rules.map((r) => ({
-        id: r.id,
-        searchBlob: `${r.name || ""} ${r.rule || ""}`.toLowerCase(),
-      })),
-    }));
-  });
+  const store = getContext<GroupsStore>(GROUPS_STORE_CONTEXT);
+  if (!store) {
+    throw new Error("GroupsStore context is missing");
+  }
 
   let isFocused = $state(false);
   let inputRef: HTMLInputElement;
-  let isActive = $derived(isFocused || value.length > 0);
-
-  $effect(() => {
-    searchActive = Boolean(normalizedSearch);
-  });
+  let isActive = $derived(isFocused || store.searchValue.length > 0);
 
   function handleContainerClick() {
     inputRef?.focus();
   }
-
-  function resetForcedVisibility(searchKey: string) {
-    if (!forcedSearchKey) return;
-    if (forcedSearchKey !== searchKey) {
-      forcedGroupIds.clear();
-      forcedRuleIdsByGroup.clear();
-      forcedSearchKey = "";
-    }
-  }
-
-  function markGroupOrderChanged() {}
-
-  function forceVisibleGroup(groupId: string) {
-    if (!normalizedSearch) return;
-    forcedGroupIds.add(groupId);
-    forcedSearchKey = normalizedSearch;
-  }
-
-  function forceVisibleRule(groupId: string, ruleId: string) {
-    if (!normalizedSearch) return;
-    let forced = forcedRuleIdsByGroup.get(groupId);
-    if (!forced) {
-      forced = new Set<string>();
-      forcedRuleIdsByGroup.set(groupId, forced);
-    }
-    forced.add(ruleId);
-    forcedSearchKey = normalizedSearch;
-  }
-
-  function removeForcedGroup(groupId: string) {
-    forcedGroupIds.delete(groupId);
-    forcedRuleIdsByGroup.delete(groupId);
-  }
-
-  function removeForcedRule(groupId: string, ruleId: string) {
-    const forced = forcedRuleIdsByGroup.get(groupId);
-    if (!forced) return;
-    forced.delete(ruleId);
-    if (!forced.size) forcedRuleIdsByGroup.delete(groupId);
-  }
-
-  function moveForcedRule(sourceGroupId: string, targetGroupId: string, ruleId: string) {
-    if (sourceGroupId === targetGroupId) return;
-    const forced = forcedRuleIdsByGroup.get(sourceGroupId);
-    if (!forced?.has(ruleId)) return;
-    forced.delete(ruleId);
-    if (!forced.size) forcedRuleIdsByGroup.delete(sourceGroupId);
-    let targetForced = forcedRuleIdsByGroup.get(targetGroupId);
-    if (!targetForced) {
-      targetForced = new Set<string>();
-      forcedRuleIdsByGroup.set(targetGroupId, targetForced);
-    }
-    targetForced.add(ruleId);
-  }
-
-  function syncRuleDeletion(groupIndex: number, ruleIndex: number) {
-    if (!searchActive) return;
-    const targetIndex = visibleGroups.findIndex((entry) => entry.group_index === groupIndex);
-    if (targetIndex === -1) return;
-    const target = visibleGroups[targetIndex];
-    if (!target?.ruleIndices) return;
-
-    const ruleIndices = target.ruleIndices;
-    let write = 0;
-    for (let i = 0; i < ruleIndices.length; i++) {
-      const index = ruleIndices[i];
-      if (index === ruleIndex) continue;
-      ruleIndices[write] = index > ruleIndex ? index - 1 : index;
-      write += 1;
-    }
-
-    if (write === 0) {
-      visibleGroups.splice(targetIndex, 1);
-      return;
-    }
-
-    ruleIndices.length = write;
-    target.ruleIndices = ruleIndices;
-    visibleGroups[targetIndex] = target;
-  }
-
-  function performSearch() {
-    const query = normalizedSearch;
-    resetForcedVisibility(query);
-
-    if (!query) {
-      visibleGroups = groups.map((_, index) => ({ group_index: index, ruleIndices: null }));
-      searchPending = false;
-      return;
-    }
-
-    const nextVisible: VisibleGroup[] = [];
-    const len = searchIndex.length;
-
-    for (let i = 0; i < len; i++) {
-      const indexedGroup = searchIndex[i];
-      const isForcedGroup = forcedGroupIds.has(indexedGroup.id);
-
-      if (isForcedGroup || indexedGroup.nameLower.includes(query)) {
-        nextVisible.push({ group_index: i, ruleIndices: null });
-        continue;
-      }
-
-      const matchedRuleIndices: number[] = [];
-      const forcedRules = forcedRuleIdsByGroup.get(indexedGroup.id);
-      const rules = indexedGroup.rules;
-      const rulesLen = rules.length;
-
-      for (let r = 0; r < rulesLen; r++) {
-        const indexedRule = rules[r];
-        if (forcedRules?.has(indexedRule.id) || indexedRule.searchBlob.includes(query)) {
-          matchedRuleIndices.push(r);
-        }
-      }
-
-      if (matchedRuleIndices.length > 0) {
-        nextVisible.push({ group_index: i, ruleIndices: matchedRuleIndices });
-      }
-    }
-
-    visibleGroups = nextVisible;
-    searchPending = false;
-  }
-
-  let debounceTimer: number;
-  $effect(() => {
-    normalizedSearch;
-    searchIndex;
-
-    clearTimeout(debounceTimer);
-    searchPending = true;
-    debounceTimer = window.setTimeout(performSearch, SEARCH_DEBOUNCE_MS);
-  });
-
-  const controlsImpl: SearchControls = {
-    markGroupOrderChanged,
-    forceVisibleGroup,
-    forceVisibleRule,
-    removeForcedGroup,
-    removeForcedRule,
-    moveForcedRule,
-    syncRuleDeletion,
-  };
-
-  $effect(() => {
-    controls = controlsImpl;
-  });
 </script>
 
-<div class="group-controls-search" {...rest}>
+<div class="group-controls-search">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="search-container" class:active={isActive} onclick={handleContainerClick}>
@@ -235,7 +33,7 @@
         type="search"
         class="search-input"
         placeholder={isActive ? t("Search groups and rules...") : ""}
-        bind:value
+        bind:value={store.searchValue}
         onfocus={() => (isFocused = true)}
         onblur={() => (isFocused = false)}
       />

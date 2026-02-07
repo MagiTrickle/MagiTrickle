@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, getContext } from "svelte";
   import { slide } from "svelte/transition";
 
   import Pagination from "../../../components/Pagination.svelte";
@@ -26,45 +26,21 @@
     SortNeutral,
   } from "../../../components/ui/icons";
   import { draggable, droppable } from "../../../lib/dnd";
-  import { type Group, type Rule } from "../../../types";
+  import { type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
-  import { sortRules, type SortDirection, type SortField } from "../../../utils/rule-sorter";
+  import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
+  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
 
   type Props = {
-    group: Group;
     group_index: number;
-    total_groups: number;
-    open: boolean;
-    deleteGroup: (index: number) => void;
-    addRuleToGroup: (group_index: number, rule: Rule, focus?: boolean) => void;
-    deleteRuleFromGroup: (group_index: number, rule_index: number) => void;
-    changeRuleIndex: (
-      from_group_index: number,
-      from_rule_index: number,
-      to_group_index: number,
-      to_rule_index: number,
-    ) => void;
-    searchActive?: boolean;
-    visibleRuleIndices?: number[] | null;
-    onFinished?: () => void;
-    [key: string]: any;
   };
 
-  let {
-    group = $bindable(),
-    group_index,
-    total_groups = $bindable(),
-    open = $bindable(),
-    deleteGroup,
-    addRuleToGroup,
-    deleteRuleFromGroup,
-    changeRuleIndex,
-    searchActive = false,
-    visibleRuleIndices = null,
-    onFinished,
-    ...rest
-  }: Props = $props();
+  let { group_index }: Props = $props();
 
+  const store = getContext<GroupsStore>(GROUPS_STORE_CONTEXT);
+  if (!store) {
+    throw new Error("GroupsStore context is missing");
+  }
   const dispatch = createEventDispatcher();
 
   const PAGE_SIZE = 50;
@@ -73,10 +49,14 @@
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
 
-  let effectiveOpen = $derived(open);
+  let group = $derived(store.data[group_index]);
+  let searchActive = $derived(store.searchActive);
+  let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
+  let effectiveOpen = $derived(group ? store.open_state[group.id] ?? false : false);
 
   function toggleOpen() {
-    open = !open;
+    if (!group) return;
+    store.open_state[group.id] = !effectiveOpen;
   }
 
   type GroupDnD = {
@@ -132,7 +112,7 @@
   let totalRulesCount = $derived(
     searchActive && Array.isArray(visibleRuleIndices)
       ? visibleRuleIndices.length
-      : group.rules.length,
+      : group?.rules.length ?? 0,
   );
 
   let usePagination = $derived(totalRulesCount > PAGE_SIZE);
@@ -151,6 +131,7 @@
   });
 
   let displayedRules = $derived.by(() => {
+    if (!group) return [];
     let rulesToRender: { rule: Rule; originalIndex: number }[] = [];
 
     let sourceIndices: number[] = [];
@@ -183,7 +164,7 @@
     if (searchActive) return;
     if (!reportedFinished && (totalRulesCount === 0 || displayedRules.length > 0)) {
       reportedFinished = true;
-      onFinished?.();
+      store.handleGroupFinished();
     }
   });
 
@@ -192,6 +173,7 @@
   let initialOrderIds = $state<string[] | null>(null);
 
   function handleSort(field: SortField) {
+    if (!group) return;
     if (!initialOrderIds) {
       initialOrderIds = group.rules.map((rule) => rule.id);
     }
@@ -201,11 +183,7 @@
       sortDirection = "asc";
 
       if (initialOrderIds) {
-        const ruleMap = new Map(group.rules.map((rule) => [rule.id, rule]));
-        const orderedRules = initialOrderIds
-          .map((id) => ruleMap.get(id))
-          .filter((rule): rule is Rule => Boolean(rule));
-        group.rules.splice(0, group.rules.length, ...orderedRules);
+        store.restoreGroupRulesOrder(group_index, initialOrderIds);
       }
       return;
     }
@@ -217,12 +195,11 @@
       sortDirection = "asc";
     }
 
-    const sorted = sortRules(group.rules, field, sortDirection);
-    group.rules.splice(0, group.rules.length, ...sorted);
+    store.sortGroupRules(group_index, field, sortDirection);
   }
 
   $effect(() => {
-    group.rules.length;
+    group?.rules.length;
     if (sortField === null) {
       initialOrderIds = null;
     }
@@ -231,198 +208,198 @@
 
 <svelte:window bind:innerWidth={client_width} />
 
-<div
-  class="group"
-  role="listitem"
-  data-uuid={group.id}
-  use:draggable={{
-    data: {
-      group_id: group.id,
-      group_index,
-      name: group.name,
-      color: group.color,
-      count: group.rules.length,
-    } as GroupDnD,
-    scope: "group",
-    handle: ".group-grip",
-    effects: { effectAllowed: "move", dropEffect: "move" },
-    dragImage: (node) =>
-      createGroupDragPreview(
-        (node.querySelector(".group-header") ?? node) as HTMLElement,
-        group.name,
-        group.color || "",
-        group.rules.length,
-      ),
-  }}
->
-  <Collapsible.Root open={effectiveOpen} onOpenChange={toggleOpen}>
-    <div
-      class="group-header"
-      data-group-index={group_index}
-      use:droppable={{
-        data: { rule_id: "", rule_index: 0, group_id: group.id, group_index },
-        scope: "rule",
-        canDrop: (src) => src.group_id === group.id,
-      }}
-    >
-      <div class="group-left">
-        <label class="group-color" style="background: {group.color}">
-          <input type="color" bind:value={group.color} />
-        </label>
+{#if group}
+  <div
+    class="group"
+    role="listitem"
+    data-uuid={group.id}
+    use:draggable={{
+      data: {
+        group_id: group.id,
+        group_index,
+        name: group.name,
+        color: group.color,
+        count: group.rules.length,
+      } as GroupDnD,
+      scope: "group",
+      handle: ".group-grip",
+      effects: { effectAllowed: "move", dropEffect: "move" },
+      dragImage: (node) =>
+        createGroupDragPreview(
+          (node.querySelector(".group-header") ?? node) as HTMLElement,
+          group.name,
+          group.color || "",
+          group.rules.length,
+        ),
+    }}
+  >
+    <Collapsible.Root open={effectiveOpen} onOpenChange={toggleOpen}>
+      <div
+        class="group-header"
+        data-group-index={group_index}
+        use:droppable={{
+          data: { rule_id: "", rule_index: 0, group_id: group.id, group_index },
+          scope: "rule",
+          canDrop: (src) => src.group_id === group.id,
+        }}
+      >
+        <div class="group-left">
+          <label class="group-color" style="background: {group.color}">
+            <input type="color" bind:value={group.color} />
+          </label>
 
-        <div class="group-grip" title={t("Drag Group")}>
-          <Grip />
+          <div class="group-grip" title={t("Drag Group")}>
+            <Grip />
+          </div>
+
+          <input
+            type="text"
+            placeholder={t("group name...")}
+            class="group-name"
+            bind:value={group.name}
+          />
         </div>
 
-        <input
-          type="text"
-          placeholder={t("group name...")}
-          class="group-name"
-          bind:value={group.name}
-        />
-      </div>
+        <div class="group-actions">
+          <Select
+            options={interfaces.list.map((item) => ({ value: item, label: item }))}
+            bind:selected={group.interface}
+          />
 
-      <div class="group-actions">
-        <Select
-          options={interfaces.list.map((item) => ({ value: item, label: item }))}
-          bind:selected={group.interface}
-        />
+          <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
+            <Switch class="enable-group" bind:checked={group.enable} />
+          </Tooltip>
 
-        <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
-          <Switch class="enable-group" bind:checked={group.enable} />
-        </Tooltip>
-
-        {#if is_desktop}
-          <Tooltip value={t("Delete Group")}>
-            <Button small onclick={() => deleteGroup(group_index)}>
-              <Delete size={20} />
-            </Button>
-          </Tooltip>
-          <Tooltip value={t("Add Rule")}>
-            <Button
-              small
-              onclick={() => {
-                addRuleToGroup(group_index, defaultRule(), true);
-                open = true;
-              }}
-            >
-              <Add size={20} />
-            </Button>
-          </Tooltip>
-          <Tooltip value={t("Import Rule List")}>
-            <Button small onclick={() => dispatch("importRules")}>
-              <ImportList size={20} />
-            </Button>
-          </Tooltip>
-        {:else}
-          <DropdownMenu>
-            {#snippet trigger()}
-              <Dots size={20} />
-            {/snippet}
-            {#snippet item1()}
+          {#if is_desktop}
+            <Tooltip value={t("Delete Group")}>
+              <Button small onclick={() => store.deleteGroup(group_index)}>
+                <Delete size={20} />
+              </Button>
+            </Tooltip>
+            <Tooltip value={t("Add Rule")}>
               <Button
-                general
+                small
                 onclick={() => {
-                  addRuleToGroup(group_index, defaultRule(), true);
-                  open = true;
+                  store.addRuleToGroup(group_index, defaultRule(), true);
+                  store.open_state[group.id] = true;
                 }}
               >
-                <div class="dd-icon"><Add size={20} /></div>
-                <div class="dd-label">{t("Add Rule")}</div>
+                <Add size={20} />
               </Button>
-            {/snippet}
-            {#snippet item2()}
-              <Button general onclick={() => dispatch("importRules")}>
-                <div class="dd-icon"><ImportList size={20} /></div>
-                <div class="dd-label">{t("Import Rule List")}</div>
+            </Tooltip>
+            <Tooltip value={t("Import Rule List")}>
+              <Button small onclick={() => dispatch("importRules")}>
+                <ImportList size={20} />
               </Button>
-            {/snippet}
-            {#snippet item3()}
-              <Button general onclick={() => deleteGroup(group_index)}>
-                <div class="dd-icon"><Delete size={20} /></div>
-                <div class="dd-label">{t("Delete Group")}</div>
-              </Button>
-            {/snippet}
-          </DropdownMenu>
-        {/if}
+            </Tooltip>
+          {:else}
+            <DropdownMenu>
+              {#snippet trigger()}
+                <Dots size={20} />
+              {/snippet}
+              {#snippet item1()}
+                <Button
+                  general
+                  onclick={() => {
+                    store.addRuleToGroup(group_index, defaultRule(), true);
+                    store.open_state[group.id] = true;
+                  }}
+                >
+                  <div class="dd-icon"><Add size={20} /></div>
+                  <div class="dd-label">{t("Add Rule")}</div>
+                </Button>
+              {/snippet}
+              {#snippet item2()}
+                <Button general onclick={() => dispatch("importRules")}>
+                  <div class="dd-icon"><ImportList size={20} /></div>
+                  <div class="dd-label">{t("Import Rule List")}</div>
+                </Button>
+              {/snippet}
+              {#snippet item3()}
+                <Button general onclick={() => store.deleteGroup(group_index)}>
+                  <div class="dd-icon"><Delete size={20} /></div>
+                  <div class="dd-label">{t("Delete Group")}</div>
+                </Button>
+              {/snippet}
+            </DropdownMenu>
+          {/if}
 
-        <Tooltip value={t(effectiveOpen ? "Collapse Group" : "Expand Group")}>
-          <Collapsible.Trigger>
-            {#if effectiveOpen}
-              <GroupCollapse size={20} />
-            {:else}
-              <GroupExpand size={20} />
-            {/if}
-          </Collapsible.Trigger>
-        </Tooltip>
+          <Tooltip value={t(effectiveOpen ? "Collapse Group" : "Expand Group")}>
+            <Collapsible.Trigger>
+              {#if effectiveOpen}
+                <GroupCollapse size={20} />
+              {:else}
+                <GroupExpand size={20} />
+              {/if}
+            </Collapsible.Trigger>
+          </Tooltip>
+        </div>
       </div>
-    </div>
 
-    <Collapsible.Content>
-      <div transition:slide={searchActive ? { duration: 0 } : {}}>
-        {#if totalRulesCount > 0}
-          <div class="group-rules-header">
-            <div class="group-rules-header-column total">
-              #{totalRulesCount}
-            </div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="group-rules-header-column clickable" onclick={() => handleSort("name")}>
-              {t("Name")}
-              <div class="sort-icon">
-                {#if sortField === "name" && sortDirection === "desc"}
-                  <SortAsc size={16} />
-                {:else if sortField === "name"}
-                  <SortDesc size={16} />
-                {:else}
-                  <SortNeutral size={16} />
-                {/if}
-              </div>
-            </div>
-            <div class="group-rules-header-column">{t("Type")}</div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="group-rules-header-column clickable" onclick={() => handleSort("pattern")}>
-              {t("Pattern")}
-              <div class="sort-icon">
-                {#if sortField === "pattern" && sortDirection === "desc"}
-                  <SortAsc size={16} />
-                {:else if sortField === "pattern"}
-                  <SortDesc size={16} />
-                {:else}
-                  <SortNeutral size={16} />
-                {/if}
-              </div>
-            </div>
-            <div class="group-rules-header-column">{t("Enabled")}</div>
-          </div>
-        {/if}
-        <div class="group-rules">
+      <Collapsible.Content>
+        <div transition:slide={searchActive ? { duration: 0 } : {}}>
           {#if totalRulesCount > 0}
-            {#each displayedRules as { rule, originalIndex }, i (rule.id)}
-              <RuleRow
-                key={rule.id}
-                bind:rule={group.rules[originalIndex]}
-                rule_index={originalIndex}
-                {group_index}
-                rule_id={rule.id}
-                group_id={group.id}
-                onChangeIndex={changeRuleIndex}
-                onDelete={deleteRuleFromGroup}
-                style={i % 2 ? "" : "background-color: var(--bg-light)"}
-              />
-            {/each}
+            <div class="group-rules-header">
+              <div class="group-rules-header-column total">
+                #{totalRulesCount}
+              </div>
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="group-rules-header-column clickable" onclick={() => handleSort("name")}>
+                {t("Name")}
+                <div class="sort-icon">
+                  {#if sortField === "name" && sortDirection === "desc"}
+                    <SortAsc size={16} />
+                  {:else if sortField === "name"}
+                    <SortDesc size={16} />
+                  {:else}
+                    <SortNeutral size={16} />
+                  {/if}
+                </div>
+              </div>
+              <div class="group-rules-header-column">{t("Type")}</div>
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="group-rules-header-column clickable" onclick={() => handleSort("pattern")}>
+                {t("Pattern")}
+                <div class="sort-icon">
+                  {#if sortField === "pattern" && sortDirection === "desc"}
+                    <SortAsc size={16} />
+                  {:else if sortField === "pattern"}
+                    <SortDesc size={16} />
+                  {:else}
+                    <SortNeutral size={16} />
+                  {/if}
+                </div>
+              </div>
+              <div class="group-rules-header-column">{t("Enabled")}</div>
+            </div>
+          {/if}
+          <div class="group-rules">
+            {#if totalRulesCount > 0}
+              {#each displayedRules as { rule, originalIndex }, i (rule.id)}
+                <RuleRow
+                  key={rule.id}
+                  bind:rule={group.rules[originalIndex]}
+                  rule_index={originalIndex}
+                  {group_index}
+                  rule_id={rule.id}
+                  group_id={group.id}
+                  style={i % 2 ? "" : "background-color: var(--bg-light)"}
+                />
+              {/each}
+            {/if}
+          </div>
+          {#if usePagination}
+            <Pagination totalItems={totalRulesCount} pageSize={PAGE_SIZE} bind:currentPage />
           {/if}
         </div>
-        {#if usePagination}
-          <Pagination totalItems={totalRulesCount} pageSize={PAGE_SIZE} bind:currentPage />
-        {/if}
-      </div>
-    </Collapsible.Content>
-  </Collapsible.Root>
-</div>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  </div>
+{/if}
 
 <style>
   .group {
