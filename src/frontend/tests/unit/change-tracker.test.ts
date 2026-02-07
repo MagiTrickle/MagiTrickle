@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { installSvelteRunesMocks } from "./setup-svelte-runes";
+import { installSvelteRunesMocks } from "../mocks/setup-svelte-runes";
 
 installSvelteRunesMocks();
 
