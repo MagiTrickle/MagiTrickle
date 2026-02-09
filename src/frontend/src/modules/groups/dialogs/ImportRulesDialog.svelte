@@ -30,17 +30,29 @@
   let isEditing = $state(true);
   let textAreaRef = $state<HTMLTextAreaElement | null>(null);
   let editorHeight = $state(200);
+  let editorMinHeight = $state(200);
+  let editorMaxHeight = $state(500);
 
   const MIN_EDITOR_HEIGHT = 200;
+  const ABSOLUTE_MIN_EDITOR_HEIGHT = 120;
   const DESKTOP_MAX_EDITOR_HEIGHT = 500;
   const ROWS_LIMIT = 500;
 
-  function getMaxEditorHeight() {
-    if (typeof window === "undefined") return DESKTOP_MAX_EDITOR_HEIGHT;
+  function getEditorHeightBounds() {
+    if (typeof window === "undefined") {
+      return { minHeight: MIN_EDITOR_HEIGHT, maxHeight: DESKTOP_MAX_EDITOR_HEIGHT };
+    }
     const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
     const isMobile = window.matchMedia("(max-width: 600px)").matches;
     const viewportHeight = window.visualViewport?.height || window.innerHeight;
-    return isMobile ? viewportHeight - 10 * rootFontSize : DESKTOP_MAX_EDITOR_HEIGHT;
+    const reservedHeight = (isMobile ? 10 : 14) * rootFontSize;
+    const viewportLimitedMax = viewportHeight - reservedHeight;
+    const maxHeight = Math.min(
+      DESKTOP_MAX_EDITOR_HEIGHT,
+      Math.max(ABSOLUTE_MIN_EDITOR_HEIGHT, viewportLimitedMax),
+    );
+    const minHeight = Math.min(MIN_EDITOR_HEIGHT, maxHeight);
+    return { minHeight, maxHeight };
   }
 
   function getTextMetrics() {
@@ -61,14 +73,16 @@
     if (!textAreaRef) return;
     requestAnimationFrame(() => {
       if (!textAreaRef) return;
+      const { minHeight, maxHeight } = getEditorHeightBounds();
+      editorMinHeight = minHeight;
+      editorMaxHeight = maxHeight;
       const tokens = import_rules_text.split(/[\n,]+/).filter((t) => t.trim().length > 0);
       const lineCount = Math.max(1, tokens.length);
       const { lineHeight, paddingY } = getTextMetrics();
-      const baseLines = Math.max(1, Math.floor((MIN_EDITOR_HEIGHT - paddingY) / lineHeight));
+      const baseLines = Math.max(1, Math.floor((minHeight - paddingY) / lineHeight));
       const extraLines = Math.max(0, lineCount - baseLines);
-      const maxHeight = getMaxEditorHeight();
-      const targetHeight = MIN_EDITOR_HEIGHT + extraLines * lineHeight;
-      editorHeight = Math.max(MIN_EDITOR_HEIGHT, Math.min(targetHeight, maxHeight));
+      const targetHeight = minHeight + extraLines * lineHeight;
+      editorHeight = Math.max(minHeight, Math.min(targetHeight, maxHeight));
     });
   }
 
@@ -265,7 +279,7 @@
     <div
       class="editor-container"
       class:parsing={isParsing}
-      style={`--editor-height: ${editorHeight}px`}
+      style={`--editor-height: ${editorHeight}px; --editor-min-height: ${editorMinHeight}px; --editor-max-height: ${editorMaxHeight}px`}
     >
       {#if isEditing || isParsing}
         <textarea
@@ -348,7 +362,7 @@
   .editor-container {
     position: relative;
     width: 100%;
-    min-height: 200px;
+    min-height: var(--editor-min-height, 200px);
     height: var(--editor-height, 200px);
     max-height: var(--editor-max-height, 500px);
     display: flex;
