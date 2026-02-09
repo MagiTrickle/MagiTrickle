@@ -296,7 +296,6 @@
   .group-list {
     min-height: 1px;
     opacity: 0;
-    transition: opacity 0.4s ease-in-out;
   }
 
   .group-list.visible {
@@ -330,22 +329,6 @@
     z-index: 1;
   }
 
-  @keyframes search-list-open {
-    from {
-      opacity: 0.85;
-      transform: translateY(8px);
-    }
-
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .groups-page:has(:global(.group-controls .search-container.active)) .group-list.visible {
-    animation: none;
-  }
-
   .group-wrapper:first-of-type {
     margin-top: 1rem;
   }
@@ -363,7 +346,6 @@
     background: color-mix(in oklab, var(--accent) 28%, transparent);
     box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 54%, transparent);
     opacity: 0;
-    transition: opacity 0.12s ease;
   }
 
   .group-drop-slot--top {
@@ -397,23 +379,46 @@
   }
 
   @media (max-width: 570px) {
-    .group-wrapper {
-      will-change: grid-template-rows, opacity, margin;
-      transition:
-        grid-template-rows 0.34s cubic-bezier(0.22, 0.9, 0.28, 1),
-        opacity 0.28s ease-out,
-        margin 0.34s cubic-bezier(0.22, 0.9, 0.28, 1);
-    }
-
-    .groups-page:has(:global(.group-controls .search-container.active)) .group-list.visible {
-      animation: search-list-open 0.32s cubic-bezier(0.22, 0.9, 0.28, 1);
-    }
-
     .group-controls {
-      flex-wrap: wrap;
+      display: block;
+      padding: 0.3rem 0;
+      padding-bottom: 0;
+      transition: padding-bottom 220ms cubic-bezier(0.2, 0, 0.2, 1);
+      --row-h: 48px;
+      --gap: 10px;
+      --actions-top: 0px;
+      --actions-reserve: 200px;
     }
+
+    .group-controls :global(.group-controls-search) {
+      padding-right: var(--actions-reserve);
+      transition: padding-right 220ms cubic-bezier(0.2, 0, 0.2, 1);
+    }
+
     .group-controls-actions {
-      justify-content: flex-start;
+      position: absolute;
+      right: 0;
+      top: var(--actions-top);
+      height: var(--row-h);
+      transition: top 220ms cubic-bezier(0.2, 0, 0.2, 1);
+    }
+
+    .group-controls:has(:global(.search-container:focus-within)),
+    .group-controls:has(:global(.search-input:not(:placeholder-shown))) {
+      padding-bottom: calc(var(--row-h) + var(--gap));
+      --actions-top: calc(var(--row-h) + var(--gap));
+      --actions-reserve: 0px;
+    }
+
+    .group-controls:has(:global(.search-container:focus-within)) :global(.search-container),
+    .group-controls:has(:global(.search-input:not(:placeholder-shown))) :global(.search-container) {
+      width: 100%;
+    }
+
+    .group-controls:has(:global(.search-container:focus-within)) :global(.search-container .input-wrapper),
+    .group-controls:has(:global(.search-input:not(:placeholder-shown)))
+      :global(.search-container .input-wrapper) {
+      width: 100%;
     }
   }
 

@@ -10,11 +10,18 @@
     throw new Error("GroupsStore context is missing");
   }
 
-  let isFocused = $state(false);
   let inputRef: HTMLInputElement;
-  let isActive = $derived(isFocused || store.searchValue.length > 0);
 
   function handleContainerClick() {
+    inputRef?.focus();
+  }
+
+  function handleContainerPointerDown(event: PointerEvent) {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) return;
+
+    // Keep focus on input to avoid blur->focus flicker that retriggers layout transitions.
+    event.preventDefault();
     inputRef?.focus();
   }
 </script>
@@ -22,7 +29,11 @@
 <div class="group-controls-search">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="search-container" class:active={isActive} onclick={handleContainerClick}>
+  <div
+    class="search-container"
+    onclick={handleContainerClick}
+    onpointerdown={handleContainerPointerDown}
+  >
     <span class="icon-wrapper">
       <Search />
     </span>
@@ -32,10 +43,8 @@
         bind:this={inputRef}
         type="search"
         class="search-input"
-        placeholder={isActive ? t("Search groups and rules...") : ""}
+        placeholder={t("Search groups and rules...")}
         bind:value={store.searchValue}
-        onfocus={() => (isFocused = true)}
-        onblur={() => (isFocused = false)}
       />
     </div>
   </div>
@@ -75,7 +84,8 @@
     color: var(--text);
   }
 
-  .search-container.active {
+  .search-container:focus-within,
+  .search-container:has(.search-input:not(:placeholder-shown)) {
     cursor: text;
     background-color: var(--bg-light);
     color: var(--text);
@@ -99,9 +109,10 @@
     transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   }
 
-  .search-container.active .input-wrapper {
+  .search-container:focus-within .input-wrapper,
+  .search-container:has(.search-input:not(:placeholder-shown)) .input-wrapper {
     margin-left: 0.3rem;
-    width: clamp(500px, 50vw, 700px);
+    width: min(700px, 50vw);
   }
 
   .search-input {
@@ -119,7 +130,25 @@
     transition: opacity 0.2s ease;
   }
 
-  .search-container.active .search-input {
+  .search-container:focus-within .search-input,
+  .search-container:has(.search-input:not(:placeholder-shown)) .search-input {
     opacity: 1;
+  }
+
+  @media (max-width: 570px) {
+    .group-controls-search {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .search-container:focus-within,
+    .search-container:has(.search-input:not(:placeholder-shown)) {
+      width: 100%;
+    }
+
+    .search-container:focus-within .input-wrapper,
+    .search-container:has(.search-input:not(:placeholder-shown)) .input-wrapper {
+      width: 100%;
+    }
   }
 </style>
