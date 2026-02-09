@@ -1,0 +1,5 @@
+#!/bin/sh
+
+/opt/etc/init.d/S99magitrickle restart
+
+exit 0
