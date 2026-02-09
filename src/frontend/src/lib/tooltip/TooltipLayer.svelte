@@ -28,4 +28,10 @@
     white-space: nowrap;
     transition: opacity 0.1s ease-out;
   }
+
+  @media (hover: none), (pointer: coarse) {
+    .tooltip-content {
+      display: none;
+    }
+  }
 </style>

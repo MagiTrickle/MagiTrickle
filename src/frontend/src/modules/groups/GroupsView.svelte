@@ -5,7 +5,6 @@
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import Tooltip from "../../components/ui/Tooltip.svelte";
   import { t } from "../../data/locale.svelte";
-  import { smoothReflow } from "../../lib/smooth-reflow.svelte";
   import GroupPanel from "./components/GroupPanel.svelte";
   import Search from "./components/Search.svelte";
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
@@ -182,8 +181,8 @@
   });
 </script>
 
-<div class="groups-page" use:smoothReflow>
-  <div class="group-controls" data-reflow-skip>
+<div class="groups-page">
+  <div class="group-controls">
     <Search />
 
     <div class="group-controls-actions">
@@ -242,35 +241,37 @@
     {#each store.data.slice(0, store.renderGroupsLimit) as group, group_index (group.id)}
       {@const isVisible = !store.searchActive || store.visibilityMap.has(group_index)}
 
-      <div class="group-wrapper" style={isVisible ? "" : "display: none"}>
-        {#if group_index === store.firstVisibleGroupIndex}
+      <div class="group-wrapper" class:is-hidden={!isVisible}>
+        <div class="group-wrapper-inner">
+          {#if group_index === store.firstVisibleGroupIndex}
+            <div
+              class="group-drop-slot group-drop-slot--top"
+              aria-hidden="true"
+              use:droppable={{
+                data: { group_index, insert: "before" } as GroupDropSlotData,
+                scope: "group",
+                canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
+                  source.group_index !== target.group_index,
+                dropEffect: "move",
+                onDrop: store.handleGroupSlotDrop,
+              }}
+            ></div>
+          {/if}
+
+          <GroupPanel {group_index} on:importRules={() => openImportRulesModal(group_index)} />
+
           <div
-            class="group-drop-slot group-drop-slot--top"
+            class="group-drop-slot group-drop-slot--bottom"
             aria-hidden="true"
             use:droppable={{
-              data: { group_index, insert: "before" } as GroupDropSlotData,
+              data: { group_index, insert: "after" } as GroupDropSlotData,
               scope: "group",
-              canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
-                source.group_index !== target.group_index,
+              canDrop: () => true,
               dropEffect: "move",
               onDrop: store.handleGroupSlotDrop,
             }}
           ></div>
-        {/if}
-
-        <GroupPanel {group_index} on:importRules={() => openImportRulesModal(group_index)} />
-
-        <div
-          class="group-drop-slot group-drop-slot--bottom"
-          aria-hidden="true"
-          use:droppable={{
-            data: { group_index, insert: "after" } as GroupDropSlotData,
-            scope: "group",
-            canDrop: () => true,
-            dropEffect: "move",
-            onDrop: store.handleGroupSlotDrop,
-          }}
-        ></div>
+        </div>
       </div>
     {/each}
   </div>
@@ -305,7 +306,23 @@
   .group-wrapper {
     position: relative;
     margin: 1rem 0;
-    animation: group-appear 0.15s ease-out forwards;
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: none;
+  }
+
+  .group-wrapper-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .group-wrapper.is-hidden {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    pointer-events: none;
   }
 
   .group-wrapper:has(:global([data-select-trigger][data-state="open"])),
@@ -313,13 +330,20 @@
     z-index: 1;
   }
 
-  @keyframes group-appear {
+  @keyframes search-list-open {
     from {
-      opacity: 0;
+      opacity: 0.85;
+      transform: translateY(8px);
     }
+
     to {
       opacity: 1;
+      transform: translateY(0);
     }
+  }
+
+  .groups-page:has(:global(.group-controls .search-container.active)) .group-list.visible {
+    animation: none;
   }
 
   .group-wrapper:first-of-type {
@@ -373,6 +397,18 @@
   }
 
   @media (max-width: 570px) {
+    .group-wrapper {
+      will-change: grid-template-rows, opacity, margin;
+      transition:
+        grid-template-rows 0.34s cubic-bezier(0.22, 0.9, 0.28, 1),
+        opacity 0.28s ease-out,
+        margin 0.34s cubic-bezier(0.22, 0.9, 0.28, 1);
+    }
+
+    .groups-page:has(:global(.group-controls .search-container.active)) .group-list.visible {
+      animation: search-list-open 0.32s cubic-bezier(0.22, 0.9, 0.28, 1);
+    }
+
     .group-controls {
       flex-wrap: wrap;
     }
