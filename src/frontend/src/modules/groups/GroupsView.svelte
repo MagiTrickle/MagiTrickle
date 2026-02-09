@@ -308,7 +308,8 @@
     animation: group-appear 0.15s ease-out forwards;
   }
 
-  .group-wrapper:has(:global([data-select-trigger][data-state="open"])) {
+  .group-wrapper:has(:global([data-select-trigger][data-state="open"])),
+  .group-wrapper:has(:global([data-dropdown-menu-trigger][data-state="open"])) {
     z-index: 1;
   }
 
