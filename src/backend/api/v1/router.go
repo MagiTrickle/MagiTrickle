@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"magitrickle/api/auth"
 	"magitrickle/api/utils"
 	"magitrickle/app"
-	"magitrickle/auth"
 	"magitrickle/utils/intID"
 
 	"github.com/go-chi/chi/v5"
