@@ -47,6 +47,7 @@
     } else {
       input.classList.remove("invalid");
     }
+    store.markDataRevision();
   }
 
   type DnDTransferData = {

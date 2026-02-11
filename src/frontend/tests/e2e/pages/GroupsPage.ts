@@ -68,6 +68,13 @@ export class GroupsPage {
     await rule.locator(".pattern input").fill(pattern);
   }
 
+  async setRuleType(groupIndex: number, ruleIndex: number, typeLabel: string) {
+    const rule = await this.getRule(groupIndex, ruleIndex);
+    const trigger = rule.locator(".type [data-select-trigger]");
+    await trigger.click();
+    await this.page.getByRole("option", { name: typeLabel }).click();
+  }
+
   async save() {
     await this.saveButton.click();
   }
