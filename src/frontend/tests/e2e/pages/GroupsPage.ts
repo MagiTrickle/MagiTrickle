@@ -14,8 +14,8 @@ export class GroupsPage {
     this.groupList = page.locator(".group-list");
     // Select the wrapper that contains the tooltip text "Add Group", then find the button inside it.
     this.addGroupButton = page.locator('[data-value="Add Group"]').locator("button");
-    this.searchContainer = page.locator(".search-container");
-    this.searchInput = page.locator(".search-input");
+    this.searchContainer = page.locator('[data-tabs-content][data-state="active"] .group-controls-search .search-container');
+    this.searchInput = page.locator('[data-tabs-content][data-state="active"] .group-controls-search .search-input');
   }
 
   async goto() {
