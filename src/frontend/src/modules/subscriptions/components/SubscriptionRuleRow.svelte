@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getContext, tick } from "svelte";
+
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
@@ -6,6 +8,10 @@
 
   import { RULE_TYPES, type SubscriptionRule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
+  import {
+    SUBSCRIPTIONS_STORE_CONTEXT,
+    type SubscriptionsStore,
+  } from "../subscriptions.svelte";
 
   type Props = {
     rule: SubscriptionRule;
@@ -15,11 +21,22 @@
   };
 
   let { rule = $bindable(), rule_index, subscription_index, ...rest }: Props = $props();
+  const store = getContext<SubscriptionsStore>(SUBSCRIPTIONS_STORE_CONTEXT);
+  if (!store) {
+    throw new Error("SubscriptionsStore context is missing");
+  }
 
   function isPatternInvalid() {
     return (
       rule.rule.length === 0 || (VALIDATOP_MAP[rule.type] && !VALIDATOP_MAP[rule.type](rule.rule))
     );
+  }
+
+  async function handleTypeChange(value: string) {
+    rule.type = value;
+    store.markDataRevision();
+    await tick();
+    store.checkRulesValidityState();
   }
 </script>
 
@@ -39,7 +56,7 @@
     </div>
     <div class="subscription-rule-type">
       <div class="label">{t("Type")}</div>
-      <Select options={RULE_TYPES} bind:selected={rule.type} />
+      <Select options={RULE_TYPES} bind:selected={rule.type} onValueChange={handleTypeChange} />
     </div>
     <div class="subscription-rule-actions">
       <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>

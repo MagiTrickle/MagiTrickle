@@ -8,6 +8,9 @@ import { initOverlayScrollbar } from "./utils/overlay-scrollbar";
 
 const app = mount(App, { target: document.getElementById("app")! });
 
-initOverlayScrollbar({ targetSelector: ".group-list" });
+initOverlayScrollbar({
+  targetSelector:
+    "[data-tabs-content][data-state='active'] .group-list, [data-tabs-content][data-state='active'] .subscription-list",
+});
 
 export default app;
