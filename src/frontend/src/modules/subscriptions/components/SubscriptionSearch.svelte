@@ -1,211 +1,39 @@
 <script lang="ts">
+  import { getContext } from "svelte";
+
   import { t } from "../../../data/locale.svelte";
+  import { SUBSCRIPTIONS_STORE_CONTEXT, type SubscriptionsStore } from "../subscriptions.svelte";
 
   import { Search } from "../../../components/ui/icons";
-  import type { Subscription } from "../../../types";
 
-  type VisibleSubscription = {
-    group_index: number;
-    ruleIndices: number[] | null;
-  };
+  const store = getContext<SubscriptionsStore>(SUBSCRIPTIONS_STORE_CONTEXT);
+  if (!store) {
+    throw new Error("SubscriptionsStore context is missing");
+  }
 
-  type SearchControls = {
-    markGroupOrderChanged: () => void;
-    forceVisibleGroup: (groupId: string) => void;
-    forceVisibleRule: (groupId: string, ruleId: string) => void;
-    removeForcedGroup: (groupId: string) => void;
-    removeForcedRule: (groupId: string, ruleId: string) => void;
-    moveForcedRule: (sourceGroupId: string, targetGroupId: string, ruleId: string) => void;
-  };
-
-  type Props = {
-    value?: string;
-    subscriptions: Subscription[];
-    dataRevision?: number;
-    visibleSubscriptions?: VisibleSubscription[];
-    searchActive?: boolean;
-    searchPending?: boolean;
-    controls?: SearchControls | null;
-    [key: string]: any;
-  };
-
-  let {
-    value = $bindable(""),
-    subscriptions = [],
-    dataRevision = 0,
-    visibleSubscriptions = $bindable([]),
-    searchActive = $bindable(false),
-    searchPending = $bindable(false),
-    controls = $bindable(null),
-    ...rest
-  }: Props = $props();
-
-  const SEARCH_DEBOUNCE_MS = 150 as const;
-
-  const forcedSubIds = new Set<string>();
-  const forcedRuleIdsBySub = new Map<string, Set<string>>();
-  let forcedSearchKey = "";
-
-  let normalizedSearch = $derived(value.trim().toLowerCase());
-
-  let searchIndex = $derived.by(() => {
-    dataRevision;
-    return subscriptions.map((s) => ({
-      id: s.id,
-      nameLower: (s.name || "").toLowerCase(),
-      urlLower: (s.url || "").toLowerCase(),
-      rules: s.rules.map((r) => ({
-        id: r.id,
-        // For subscriptions, rules don't have names, so we search only by rule pattern
-        searchBlob: (r.rule || "").toLowerCase(),
-      })),
-    }));
-  });
-
-  let isFocused = $state(false);
   let inputRef: HTMLInputElement;
-  let isActive = $derived(isFocused || value.length > 0);
-
-  $effect(() => {
-    searchActive = Boolean(normalizedSearch);
-  });
 
   function handleContainerClick() {
     inputRef?.focus();
   }
 
-  function resetForcedVisibility(searchKey: string) {
-    if (!forcedSearchKey) return;
-    if (forcedSearchKey !== searchKey) {
-      forcedSubIds.clear();
-      forcedRuleIdsBySub.clear();
-      forcedSearchKey = "";
-    }
+  function handleContainerPointerDown(event: PointerEvent) {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) return;
+
+    event.preventDefault();
+    inputRef?.focus();
   }
-
-  function markGroupOrderChanged() {}
-
-  function forceVisibleGroup(groupId: string) {
-    if (!normalizedSearch) return;
-    forcedSubIds.add(groupId);
-    forcedSearchKey = normalizedSearch;
-  }
-
-  function forceVisibleRule(groupId: string, ruleId: string) {
-    if (!normalizedSearch) return;
-    let forced = forcedRuleIdsBySub.get(groupId);
-    if (!forced) {
-      forced = new Set<string>();
-      forcedRuleIdsBySub.set(groupId, forced);
-    }
-    forced.add(ruleId);
-    forcedSearchKey = normalizedSearch;
-  }
-
-  function removeForcedGroup(groupId: string) {
-    forcedSubIds.delete(groupId);
-    forcedRuleIdsBySub.delete(groupId);
-  }
-
-  function removeForcedRule(groupId: string, ruleId: string) {
-    const forced = forcedRuleIdsBySub.get(groupId);
-    if (!forced) return;
-    forced.delete(ruleId);
-    if (!forced.size) forcedRuleIdsBySub.delete(groupId);
-  }
-
-  function moveForcedRule(sourceGroupId: string, targetGroupId: string, ruleId: string) {
-    if (sourceGroupId === targetGroupId) return;
-    const forced = forcedRuleIdsBySub.get(sourceGroupId);
-    if (!forced?.has(ruleId)) return;
-    forced.delete(ruleId);
-    if (!forced.size) forcedRuleIdsBySub.delete(sourceGroupId);
-    let targetForced = forcedRuleIdsBySub.get(targetGroupId);
-    if (!targetForced) {
-      targetForced = new Set<string>();
-      forcedRuleIdsBySub.set(targetGroupId, targetForced);
-    }
-    targetForced.add(ruleId);
-  }
-
-  function performSearch() {
-    const query = normalizedSearch;
-    resetForcedVisibility(query);
-
-    if (!query) {
-      visibleSubscriptions = subscriptions.map((_, index) => ({
-        group_index: index,
-        ruleIndices: null,
-      }));
-      searchPending = false;
-      return;
-    }
-
-    const nextVisible: VisibleSubscription[] = [];
-    const len = searchIndex.length;
-
-    for (let i = 0; i < len; i++) {
-      const indexedSub = searchIndex[i];
-      const isForcedSub = forcedSubIds.has(indexedSub.id);
-
-      if (
-        isForcedSub ||
-        indexedSub.nameLower.includes(query) ||
-        indexedSub.urlLower.includes(query)
-      ) {
-        nextVisible.push({ group_index: i, ruleIndices: null });
-        continue;
-      }
-
-      const matchedRuleIndices: number[] = [];
-      const forcedRules = forcedRuleIdsBySub.get(indexedSub.id);
-      const rules = indexedSub.rules;
-      const rulesLen = rules.length;
-
-      for (let r = 0; r < rulesLen; r++) {
-        const indexedRule = rules[r];
-        if (forcedRules?.has(indexedRule.id) || indexedRule.searchBlob.includes(query)) {
-          matchedRuleIndices.push(r);
-        }
-      }
-
-      if (matchedRuleIndices.length > 0) {
-        nextVisible.push({ group_index: i, ruleIndices: matchedRuleIndices });
-      }
-    }
-
-    visibleSubscriptions = nextVisible;
-    searchPending = false;
-  }
-
-  let debounceTimer: number;
-  $effect(() => {
-    normalizedSearch;
-    searchIndex;
-
-    clearTimeout(debounceTimer);
-    searchPending = true;
-    debounceTimer = window.setTimeout(performSearch, SEARCH_DEBOUNCE_MS);
-  });
-
-  const controlsImpl: SearchControls = {
-    markGroupOrderChanged,
-    forceVisibleGroup,
-    forceVisibleRule,
-    removeForcedGroup,
-    removeForcedRule,
-    moveForcedRule,
-  };
-
-  $effect(() => {
-    controls = controlsImpl;
-  });
 </script>
 
-<div class="subscription-controls-search" {...rest}>
+<div class="subscription-controls-search">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="subscription-search-container" class:active={isActive} onclick={handleContainerClick}>
+  <div
+    class="search-container"
+    onclick={handleContainerClick}
+    onpointerdown={handleContainerPointerDown}
+  >
     <span class="icon-wrapper">
       <Search />
     </span>
@@ -214,11 +42,9 @@
       <input
         bind:this={inputRef}
         type="search"
-        class="subscription-search-input"
-        placeholder={isActive ? t("Search subscriptions and rules...") : ""}
-        bind:value
-        onfocus={() => (isFocused = true)}
-        onblur={() => (isFocused = false)}
+        class="search-input"
+        placeholder={t("Search subscriptions and rules...")}
+        bind:value={store.searchValue}
       />
     </div>
   </div>
@@ -233,7 +59,9 @@
     min-width: 0;
   }
 
-  .subscription-search-container {
+  .search-container {
+    --search-icon-size: 1.5rem;
+    --search-collapsed-width: calc(var(--search-icon-size) + 1.2rem + 2px);
     background-color: var(--bg-light);
     padding: 0.6rem;
     border: 1px solid var(--bg-light-extra);
@@ -250,15 +78,17 @@
       background-color 0.1s ease-in-out,
       border-color 0.1s ease-in-out,
       box-shadow 0.1s ease-in-out,
-      color 0.1s ease-in-out;
+      color 0.1s ease-in-out,
+      width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   }
 
-  .subscription-search-container:hover {
+  .search-container:hover {
     background-color: var(--bg-light-extra);
     color: var(--text);
   }
 
-  .subscription-search-container.active {
+  .search-container:focus-within,
+  .search-container:has(.search-input:not(:placeholder-shown)) {
     cursor: text;
     background-color: var(--bg-light);
     color: var(--text);
@@ -276,18 +106,27 @@
     flex-shrink: 0;
   }
 
+  .icon-wrapper :global(svg) {
+    width: var(--search-icon-size);
+    height: var(--search-icon-size);
+  }
+
   .input-wrapper {
     width: 0;
+    margin-left: 0;
     overflow: hidden;
-    transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    transition:
+      width 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+      margin-left 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   }
 
-  .subscription-search-container.active .input-wrapper {
+  .search-container:focus-within .input-wrapper,
+  .search-container:has(.search-input:not(:placeholder-shown)) .input-wrapper {
     margin-left: 0.3rem;
-    width: clamp(500px, 50vw, 700px);
+    width: min(700px, 50vw);
   }
 
-  .subscription-search-input {
+  .search-input {
     appearance: none;
     border: none;
     background: transparent;
@@ -302,7 +141,29 @@
     transition: opacity 0.2s ease;
   }
 
-  .subscription-search-container.active .subscription-search-input {
+  .search-container:focus-within .search-input,
+  .search-container:has(.search-input:not(:placeholder-shown)) .search-input {
     opacity: 1;
+  }
+
+  @media (max-width: 570px) {
+    .subscription-controls-search {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .search-container {
+      width: var(--search-collapsed-width);
+    }
+
+    .search-container:focus-within,
+    .search-container:has(.search-input:not(:placeholder-shown)) {
+      width: 100%;
+    }
+
+    .search-container:focus-within .input-wrapper,
+    .search-container:has(.search-input:not(:placeholder-shown)) .input-wrapper {
+      width: 100%;
+    }
   }
 </style>

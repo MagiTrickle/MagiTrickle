@@ -21,6 +21,7 @@
 
 <script lang="ts">
   import { Collapsible } from "bits-ui";
+  import { getContext } from "svelte";
   import { slide } from "svelte/transition";
 
   import Pagination from "../../../components/Pagination.svelte";
@@ -31,6 +32,7 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
+  import { SUBSCRIPTIONS_STORE_CONTEXT, type SubscriptionsStore } from "../subscriptions.svelte";
   import SubscriptionRuleRow from "./SubscriptionRuleRow.svelte";
 
   import {
@@ -44,31 +46,18 @@
     Refresh,
   } from "../../../components/ui/icons";
   import { draggable } from "../../../lib/dnd";
-  import { type Subscription, type SubscriptionRule } from "../../../types";
+  import { type SubscriptionRule } from "../../../types";
 
   type Props = {
-    subscription: Subscription;
     subscription_index: number;
-    open: boolean;
-    deleteSubscription: (index: number) => void;
-    syncSubscription: (index: number) => void;
-    searchActive?: boolean;
-    visibleRuleIndices?: number[] | null;
-    onFinished?: () => void;
-    [key: string]: any;
   };
 
-  let {
-    subscription = $bindable(),
-    subscription_index,
-    open = $bindable(),
-    deleteSubscription,
-    syncSubscription,
-    searchActive = false,
-    visibleRuleIndices = null,
-    onFinished,
-    ...rest
-  }: Props = $props();
+  let { subscription_index }: Props = $props();
+
+  const store = getContext<SubscriptionsStore>(SUBSCRIPTIONS_STORE_CONTEXT);
+  if (!store) {
+    throw new Error("SubscriptionsStore context is missing");
+  }
 
   const PAGE_SIZE = 50;
   let currentPage = $state(1);
@@ -76,16 +65,20 @@
   let client_width = $state<number>(Infinity);
   let is_desktop = $derived(client_width > 668);
 
-  let effectiveOpen = $derived(open);
+  let subscription = $derived(store.data[subscription_index]);
+  let searchActive = $derived(store.searchActive);
+  let visibleRuleIndices = $derived(store.visibilityMap.get(subscription_index));
+  let effectiveOpen = $derived(subscription ? (store.open_state[subscription.id] ?? false) : false);
 
   function toggleOpen() {
-    open = !open;
+    if (!subscription) return;
+    store.open_state[subscription.id] = !effectiveOpen;
   }
 
   let totalRulesCount = $derived(
-    searchActive && Array.isArray(visibleRuleIndices)
+    subscription && searchActive && Array.isArray(visibleRuleIndices)
       ? visibleRuleIndices.length
-      : subscription.rules.length,
+      : (subscription?.rules.length ?? 0),
   );
 
   let usePagination = $derived(totalRulesCount > PAGE_SIZE);
@@ -104,6 +97,8 @@
   });
 
   let displayedRules = $derived.by(() => {
+    if (!subscription) return [];
+
     let rulesToRender: { rule: SubscriptionRule; originalIndex: number }[] = [];
 
     let sourceIndices: number[] = [];
@@ -136,7 +131,7 @@
     if (searchActive) return;
     if (!reportedFinished && (totalRulesCount === 0 || displayedRules.length > 0)) {
       reportedFinished = true;
-      onFinished?.();
+      store.handleSubscriptionFinished();
     }
   });
 
@@ -189,172 +184,175 @@
 
 <svelte:window bind:innerWidth={client_width} />
 
-<div
-  class="subscription-panel"
-  role="listitem"
-  data-uuid={subscription.id}
-  {...rest}
-  use:draggable={{
-    data: {
-      group_id: subscription.id,
-      group_index: subscription_index,
-      name: subscription.name,
-      count: subscription.rules.length,
-    } as SubscriptionDnD,
-    scope: "subscription",
-    handle: ".subscription-grip",
-    effects: { effectAllowed: "move", dropEffect: "move" },
-    dragImage: (node) =>
-      createSubscriptionDragPreview(
-        (node.querySelector(".subscription-header") ?? node) as HTMLElement,
-        subscription.name,
-        subscription.rules.length,
-      ),
-  }}
->
-  <Collapsible.Root open={effectiveOpen} onOpenChange={toggleOpen}>
-    <div class="subscription-header">
-      <div class="subscription-left">
-        <div class="subscription-grip" title={t("Drag Subscription")}>
-          <Grip />
-        </div>
-        <div class="subscription-info">
-          <input
-            type="text"
-            placeholder={t("subscription name...")}
-            class="subscription-name"
-            bind:value={subscription.name}
-          />
-          <div class="subscription-url" title={subscription.url}>
-            <span class="url-line">
-              <span class="icon-wrap"><Link size={14} /></span>
-              <span class="url-text">{subscription.url}</span>
-            </span>
-            <span class="update-line">
-              <span class="icon-wrap"><History size={14} /></span>
-              <span class="update-text">{formatTime(subscription.last_update)}</span>
-              <span class="update-sep">•</span>
-              <span class="update-interval">
-                <span class="interval-label">{t("Update every")}</span>
-                <Select
-                  options={intervals.map((item) => ({
-                    value: String(item.value),
-                    label: t(item.labelKey),
-                  }))}
-                  selected={String(subscription.interval ?? 86400)}
-                  onValueChange={(value) =>
-                    handleIntervalChange(value, (next) => {
-                      subscription.interval = next;
-                    })}
-                  class="subscription-interval"
-                  ariaLabel={t("Update every")}
-                />
+{#if subscription}
+  <div
+    class="subscription-panel"
+    role="listitem"
+    data-uuid={subscription.id}
+    use:draggable={{
+      data: {
+        group_id: subscription.id,
+        group_index: subscription_index,
+        name: subscription.name,
+        count: subscription.rules.length,
+      } as SubscriptionDnD,
+      scope: "subscription",
+      handle: ".subscription-grip",
+      effects: { effectAllowed: "move", dropEffect: "move" },
+      dragImage: (node) =>
+        createSubscriptionDragPreview(
+          (node.querySelector(".subscription-header") ?? node) as HTMLElement,
+          subscription.name,
+          subscription.rules.length,
+        ),
+    }}
+  >
+    <Collapsible.Root open={effectiveOpen} onOpenChange={toggleOpen}>
+      <div class="subscription-header">
+        <div class="subscription-left">
+          <div class="subscription-grip" title={t("Drag Subscription")}>
+            <Grip />
+          </div>
+          <div class="subscription-info">
+            <input
+              type="text"
+              placeholder={t("subscription name...")}
+              class="subscription-name"
+              bind:value={subscription.name}
+            />
+            <div class="subscription-url" title={subscription.url}>
+              <span class="url-line">
+                <span class="icon-wrap"><Link size={14} /></span>
+                <span class="url-text">{subscription.url}</span>
               </span>
-            </span>
+              <span class="update-line">
+                <span class="icon-wrap"><History size={14} /></span>
+                <span class="update-text">{formatTime(subscription.last_update)}</span>
+                <span class="update-sep">•</span>
+                <span class="update-interval">
+                  <span class="interval-label">{t("Update every")}</span>
+                  <Select
+                    options={intervals.map((item) => ({
+                      value: String(item.value),
+                      label: t(item.labelKey),
+                    }))}
+                    selected={String(subscription.interval ?? 86400)}
+                    onValueChange={(value) =>
+                      handleIntervalChange(value, (next) => {
+                        subscription.interval = next;
+                      })}
+                    class="subscription-interval"
+                    ariaLabel={t("Update every")}
+                  />
+                </span>
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="subscription-actions">
-        <div class="action interface">
-          <Select
-            options={interfaces.list.map((item) => ({ value: item, label: item }))}
-            bind:selected={subscription.interface}
-            class="subscription-interface"
-          />
-        </div>
+        <div class="subscription-actions">
+          <div class="action interface">
+            <Select
+              options={interfaces.list.map((item) => ({ value: item, label: item }))}
+              bind:selected={subscription.interface}
+              class="subscription-interface"
+            />
+          </div>
 
-        <div class="action toggle">
-          <Tooltip value={t(subscription.enable ? "Disable Subscription" : "Enable Subscription")}>
-            <Switch class="enable-subscription" bind:checked={subscription.enable} />
-          </Tooltip>
-        </div>
+          <div class="action toggle">
+            <Tooltip
+              value={t(subscription.enable ? "Disable Subscription" : "Enable Subscription")}
+            >
+              <Switch class="enable-subscription" bind:checked={subscription.enable} />
+            </Tooltip>
+          </div>
 
-        <div class="action sync">
-          <Tooltip value={t("Sync Subscription")}>
-            <Button small onclick={() => syncSubscription(subscription_index)}>
-              <Refresh size={20} />
-            </Button>
-          </Tooltip>
-        </div>
-
-        <div class="action delete">
-          {#if is_desktop}
-            <Tooltip value={t("Delete Subscription")}>
-              <Button small onclick={() => deleteSubscription(subscription_index)}>
-                <Delete size={20} />
+          <div class="action sync">
+            <Tooltip value={t("Sync Subscription")}>
+              <Button small onclick={() => store.syncSubscription(subscription_index)}>
+                <Refresh size={20} />
               </Button>
             </Tooltip>
-          {:else}
-            <DropdownMenu>
-              {#snippet trigger()}
-                <Dots size={20} />
-              {/snippet}
-              {#snippet item1()}
-                <Button general onclick={() => syncSubscription(subscription_index)}>
-                  <div class="dd-icon"><Refresh size={20} /></div>
-                  <div class="dd-label">{t("Sync")}</div>
-                </Button>
-              {/snippet}
-              {#snippet item2()}
-                <Button general onclick={() => deleteSubscription(subscription_index)}>
-                  <div class="dd-icon"><Delete size={20} /></div>
-                  <div class="dd-label">{t("Delete Subscription")}</div>
-                </Button>
-              {/snippet}
-            </DropdownMenu>
-          {/if}
-        </div>
-
-        <div class="action collapse">
-          <Tooltip value={t(effectiveOpen ? "Collapse" : "Expand")}>
-            <Collapsible.Trigger>
-              {#if effectiveOpen}
-                <GroupCollapse size={20} />
-              {:else}
-                <GroupExpand size={20} />
-              {/if}
-            </Collapsible.Trigger>
-          </Tooltip>
-        </div>
-      </div>
-    </div>
-
-    <Collapsible.Content>
-      <div transition:slide={searchActive ? { duration: 0 } : {}}>
-        {#if totalRulesCount > 0}
-          <div class="subscription-rules-header">
-            <div class="subscription-rules-header-column total">
-              #{totalRulesCount}
-            </div>
-            <div class="subscription-rules-header-column pattern">
-              {t("Pattern")}
-            </div>
-            <div class="subscription-rules-header-column">{t("Type")}</div>
-
-            <div class="subscription-rules-header-column">{t("Enabled")}</div>
           </div>
-        {/if}
-        <div class="subscription-rules">
+
+          <div class="action delete">
+            {#if is_desktop}
+              <Tooltip value={t("Delete Subscription")}>
+                <Button small onclick={() => store.deleteSubscription(subscription_index)}>
+                  <Delete size={20} />
+                </Button>
+              </Tooltip>
+            {:else}
+              <DropdownMenu>
+                {#snippet trigger()}
+                  <Dots size={20} />
+                {/snippet}
+                {#snippet item1()}
+                  <Button general onclick={() => store.syncSubscription(subscription_index)}>
+                    <div class="dd-icon"><Refresh size={20} /></div>
+                    <div class="dd-label">{t("Sync")}</div>
+                  </Button>
+                {/snippet}
+                {#snippet item2()}
+                  <Button general onclick={() => store.deleteSubscription(subscription_index)}>
+                    <div class="dd-icon"><Delete size={20} /></div>
+                    <div class="dd-label">{t("Delete Subscription")}</div>
+                  </Button>
+                {/snippet}
+              </DropdownMenu>
+            {/if}
+          </div>
+
+          <div class="action collapse">
+            <Tooltip value={t(effectiveOpen ? "Collapse" : "Expand")}>
+              <Collapsible.Trigger>
+                {#if effectiveOpen}
+                  <GroupCollapse size={20} />
+                {:else}
+                  <GroupExpand size={20} />
+                {/if}
+              </Collapsible.Trigger>
+            </Tooltip>
+          </div>
+        </div>
+      </div>
+
+      <Collapsible.Content>
+        <div transition:slide={searchActive ? { duration: 0 } : {}}>
           {#if totalRulesCount > 0}
-            {#each displayedRules as { rule, originalIndex }, i (rule.id)}
-              <SubscriptionRuleRow
-                key={rule.id}
-                bind:rule={subscription.rules[originalIndex]}
-                rule_index={originalIndex}
-                {subscription_index}
-                style={i % 2 ? "" : "background-color: var(--bg-light)"}
-              />
-            {/each}
+            <div class="subscription-rules-header">
+              <div class="subscription-rules-header-column total">
+                #{totalRulesCount}
+              </div>
+              <div class="subscription-rules-header-column pattern">
+                {t("Pattern")}
+              </div>
+              <div class="subscription-rules-header-column">{t("Type")}</div>
+
+              <div class="subscription-rules-header-column">{t("Enabled")}</div>
+            </div>
+          {/if}
+          <div class="subscription-rules">
+            {#if totalRulesCount > 0}
+              {#each displayedRules as { rule, originalIndex }, i (rule.id)}
+                <SubscriptionRuleRow
+                  key={rule.id}
+                  bind:rule={subscription.rules[originalIndex]}
+                  rule_index={originalIndex}
+                  {subscription_index}
+                  style={i % 2 ? "" : "background-color: var(--bg-light)"}
+                />
+              {/each}
+            {/if}
+          </div>
+          {#if usePagination}
+            <Pagination totalItems={totalRulesCount} pageSize={PAGE_SIZE} bind:currentPage />
           {/if}
         </div>
-        {#if usePagination}
-          <Pagination totalItems={totalRulesCount} pageSize={PAGE_SIZE} bind:currentPage />
-        {/if}
-      </div>
-    </Collapsible.Content>
-  </Collapsible.Root>
-</div>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  </div>
+{/if}
 
 <style>
   .subscription-panel {
