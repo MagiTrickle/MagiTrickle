@@ -1,45 +1,27 @@
-package magitrickle
+package subscriptions
 
 import (
 	"fmt"
 
 	"magitrickle/models"
 	"magitrickle/utils/intID"
-
-	"github.com/rs/zerolog/log"
 )
 
-func (a *App) SyncSubscriptionGroups() {
-	a.syncSubscriptionGroups()
-}
-
-func (a *App) syncSubscriptionGroups() {
-	kept := make([]*Group, 0, len(a.groups))
-	for _, group := range a.groups {
-		if group.Internal {
-			_ = group.Disable()
+func BuildSubscriptionGroups(subs []*models.Subscription, usedIDs map[[4]byte]struct{}) []*models.Group {
+	groups := make([]*models.Group, 0, len(subs))
+	for _, sub := range subs {
+		if sub == nil {
 			continue
 		}
-		kept = append(kept, group)
-	}
-	a.groups = kept
 
-	usedIDs := make(map[[4]byte]struct{}, len(a.groups))
-	for _, group := range a.groups {
-		usedIDs[group.ID] = struct{}{}
-	}
-
-	for _, sub := range a.subscriptions {
 		if isZeroID(sub.GroupID) || idInUse(sub.GroupID, usedIDs) {
 			sub.GroupID = nextUniqueID(usedIDs)
 		}
 		usedIDs[sub.GroupID] = struct{}{}
 
-		groupModel := subscriptionAsGroup(sub)
-		if err := a.AddGroup(groupModel); err != nil {
-			log.Error().Err(err).Str("subscription", sub.ID.String()).Msg("failed to add subscription group")
-		}
+		groups = append(groups, subscriptionAsGroup(sub))
 	}
+	return groups
 }
 
 func subscriptionAsGroup(sub *models.Subscription) *models.Group {

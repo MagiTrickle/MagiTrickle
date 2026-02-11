@@ -91,7 +91,6 @@ func (a *App) Start(ctx context.Context) (err error) {
 	defer unixServer.Close()
 
 	a.startDNSListeners(newCtx, errChan)
-	go a.StartSubscriptionAutoUpdate(newCtx)
 
 	var interfaceAddrs []netlink.Addr
 	for _, linkName := range a.config.Link {
@@ -129,6 +128,8 @@ func (a *App) Start(ctx context.Context) (err error) {
 			_ = group.Disable()
 		}
 	}()
+
+	go a.StartSubscriptionAutoUpdate(newCtx)
 
 	linkUpdateChannel, linkUpdateDone, err := subscribeLinkUpdates()
 	if err != nil {
