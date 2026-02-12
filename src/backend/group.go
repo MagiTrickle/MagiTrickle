@@ -266,6 +266,7 @@ func (g *Group) sync() error {
 			cidr := uint8(ones)
 
 			if addr == ([4]byte{}) && cidr == 0 {
+				// TODO: Fix (remove dirty hack) after resolving https://github.com/vishvananda/netlink/issues/1091
 				newIPv4SubnetList[netfilterTools.IPv4Subnet{
 					Address: [4]byte{0x00},
 					CIDR:    1,
