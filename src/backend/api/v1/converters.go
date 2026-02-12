@@ -35,7 +35,6 @@ func GroupFromReq(req types.GroupReq, existing *models.Group) (*models.Group, er
 	}
 	group.Interface = req.Interface
 	group.Enable = true
-	// TODO: Make required after 1.0.0
 	if req.Enable != nil {
 		group.Enable = *req.Enable
 	}

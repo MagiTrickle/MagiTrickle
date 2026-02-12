@@ -182,7 +182,6 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			} else {
 				group.Color = strings.ToLower(group.Color)
 			}
-			// TODO: Make required after 1.0.0
 			enable := true
 			if group.Enable != nil {
 				enable = *group.Enable
