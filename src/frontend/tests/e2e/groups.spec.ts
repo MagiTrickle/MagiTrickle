@@ -96,6 +96,23 @@ test.describe("Groups Management", () => {
     expect(saveRequestReceived).toBe(true);
   });
 
+  test("should enable save after switching rule type to IPv6 for IPv6 pattern", async ({ page }) => {
+    await groupsPage.createGroup();
+
+    await groupsPage.setGroupName(0, "IPv6 Group");
+    await groupsPage.setRuleName(0, 0, "IPv6 Rule");
+    await groupsPage.setRulePattern(0, 0, "2001:db8::1");
+
+    await expect(groupsPage.saveButton).toHaveClass(/inactive/);
+
+    await groupsPage.setRuleType(0, 0, "IPv6 subnet");
+
+    await expect((await groupsPage.getRule(0, 0)).locator(".pattern input")).not.toHaveClass(
+      /invalid/,
+    );
+    await expect(groupsPage.saveButton).not.toHaveClass(/inactive/);
+  });
+
   test("should delete a rule", async ({ page }) => {
     await groupsPage.createGroup();
     // Initially 1 rule (default)
