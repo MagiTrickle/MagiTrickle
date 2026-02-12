@@ -31,8 +31,8 @@ type IPSetToLink struct {
 	table     int
 	ip4Rule   *netlink.Rule
 	ip6Rule   *netlink.Rule
-	ip4Route  [3]*netlink.Route
-	ip6Route  [3]*netlink.Route
+	ip4Route  [2]*netlink.Route
+	ip6Route  [2]*netlink.Route
 }
 
 func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
@@ -230,10 +230,11 @@ func (r *IPSetToLink) insertIPRoute() error {
 
 	if r.nh.IPTables4 != nil {
 		route = &netlink.Route{
-			Dst:    &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
-			Table:  r.table,
-			Type:   unix.RTN_BLACKHOLE,
-			Family: nl.FAMILY_V4,
+			Priority: 20,
+			Dst:      &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
+			Table:    r.table,
+			Type:     unix.RTN_BLACKHOLE,
+			Family:   nl.FAMILY_V4,
 		}
 		err := netlink.RouteAdd(route)
 		if err != nil && !errors.Is(err, unix.EEXIST) {
@@ -256,35 +257,26 @@ func (r *IPSetToLink) insertIPRoute() error {
 			}
 
 			route = &netlink.Route{
+				Priority:  10,
 				LinkIndex: iface.Attrs().Index,
 				Table:     r.table,
-				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{128, 0, 0, 0}},
+				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
 			}
 			err = netlink.RouteAdd(route)
 			if err != nil && !errors.Is(err, unix.EEXIST) {
 				return fmt.Errorf("error while adding route: %w", err)
 			}
 			r.ip4Route[1] = route
-
-			route = &netlink.Route{
-				LinkIndex: iface.Attrs().Index,
-				Table:     r.table,
-				Dst:       &net.IPNet{IP: []byte{128, 0, 0, 0}, Mask: []byte{128, 0, 0, 0}},
-			}
-			err = netlink.RouteAdd(route)
-			if err != nil && !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("error while adding route: %w", err)
-			}
-			r.ip4Route[2] = route
 		}
 	}
 
 	if r.nh.IPTables6 != nil {
 		route = &netlink.Route{
-			Dst:    &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
-			Table:  r.table,
-			Type:   unix.RTN_BLACKHOLE,
-			Family: nl.FAMILY_V6,
+			Priority: 20,
+			Dst:      &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+			Table:    r.table,
+			Type:     unix.RTN_BLACKHOLE,
+			Family:   nl.FAMILY_V6,
 		}
 		err := netlink.RouteAdd(route)
 		if err != nil && !errors.Is(err, unix.EEXIST) {
@@ -307,9 +299,10 @@ func (r *IPSetToLink) insertIPRoute() error {
 			}
 
 			route = &netlink.Route{
+				Priority:  10,
 				LinkIndex: iface.Attrs().Index,
 				Table:     r.table,
-				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 				Family:    nl.FAMILY_V6,
 			}
 			err = netlink.RouteAdd(route)
@@ -317,18 +310,6 @@ func (r *IPSetToLink) insertIPRoute() error {
 				return fmt.Errorf("error while adding route: %w", err)
 			}
 			r.ip6Route[1] = route
-
-			route = &netlink.Route{
-				LinkIndex: iface.Attrs().Index,
-				Table:     r.table,
-				Dst:       &net.IPNet{IP: []byte{128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
-				Family:    nl.FAMILY_V6,
-			}
-			err = netlink.RouteAdd(route)
-			if err != nil && !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("error while adding route: %w", err)
-			}
-			r.ip6Route[2] = route
 		}
 	}
 
@@ -338,7 +319,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 func (r *IPSetToLink) deleteIPRoute() error {
 	errs := make([]error, 0)
 
-	for i := 2; i >= 0; i-- {
+	for i := 1; i >= 0; i-- {
 		if r.ip4Route[i] == nil {
 			continue
 		}
@@ -349,7 +330,7 @@ func (r *IPSetToLink) deleteIPRoute() error {
 		r.ip4Route[i] = nil
 	}
 
-	for i := 2; i >= 0; i-- {
+	for i := 1; i >= 0; i-- {
 		if r.ip6Route[i] == nil {
 			continue
 		}
