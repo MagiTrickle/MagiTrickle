@@ -36,11 +36,11 @@
   </div>
 
   <div class="info">
-    <Tooltip value={t("Info about this app")}>
+    <Tooltip value={t("About this app")}>
       <Button small onclick={() => (infoIsOpen = true)}>
         <div class="info-content">
           <Info size={16} />
-          {t("Info")}
+          {t("About")}
         </div>
       </Button>
     </Tooltip>

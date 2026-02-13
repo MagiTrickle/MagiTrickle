@@ -83,7 +83,7 @@
         </div>
         <div class="actions">
           <div class="helper-text visible">
-            <Info size={16} /><span> {t("entware credentials")}</span>
+            <Info size={16} /><span> {t("Entware account credentials")}</span>
           </div>
           <div class="button-container">
             <Button
