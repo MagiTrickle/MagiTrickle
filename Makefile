@@ -3,7 +3,7 @@
 PKG_NAME := magitrickle
 PKG_DESCRIPTION := DNS-based routing application
 PKG_MAINTAINER := Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
-PKG_RELEASE ?= 1
+PKG_RELEASE ?= 2
 
 ifeq ($(strip $(PKG_VERSION)),)
 	PKG_VERSION := $(shell git describe --tags --abbrev=0 2> /dev/null || echo "0.0.0")
