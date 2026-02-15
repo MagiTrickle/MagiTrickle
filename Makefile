@@ -3,12 +3,15 @@
 PKG_NAME := magitrickle
 PKG_DESCRIPTION := DNS-based routing application
 PKG_MAINTAINER := Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
-PKG_RELEASE ?= 1
 
 ifeq ($(strip $(PKG_VERSION)),)
-	PKG_VERSION := $(shell git describe --tags --abbrev=0 2> /dev/null || echo "0.0.0")
-
 	TAG := $(shell git describe --tags --abbrev=0 2> /dev/null)
+	PKG_VERSION := $(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//' 2> /dev/null || echo "0.0.0")
+	TAG_RELEASE := $(shell echo "$(TAG)" | grep -oE 'rev[0-9]+$$' | sed 's/rev//')
+	ifneq ($(strip $(TAG_RELEASE)),)
+		PKG_REVISION ?= $(TAG_RELEASE)
+	endif
+
 	COMMITS_SINCE_TAG := $(shell [ -n "$(TAG)" ] && git rev-list $(TAG)..HEAD --count 2>/dev/null || echo 0)
 	ifneq ($(or $(COMMITS_SINCE_TAG),$(if $(TAG),,1)),0)
 		PKG_VERSION_PRERELEASE := $(shell v=$(PKG_VERSION); echo $${v%.*}.$$(( $${v##*.} + 1 )) )
@@ -18,6 +21,8 @@ ifeq ($(strip $(PKG_VERSION)),)
 		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
 	endif
 endif
+
+PKG_REVISION ?= 1
 
 BUILDS_DIR := ./.build
 
@@ -104,7 +109,7 @@ package_ipk:
 
 	mkdir -p $(BUILD_DIR)/control
 	echo 'Package: $(PKG_NAME)' > $(BUILD_DIR)/control/control
-	echo 'Version: $(PKG_VERSION)-$(PKG_RELEASE)' >> $(BUILD_DIR)/control/control
+	echo 'Version: $(PKG_VERSION)-$(PKG_REVISION)' >> $(BUILD_DIR)/control/control
 	echo 'Architecture: $(TARGET)' >> $(BUILD_DIR)/control/control
 	echo 'Maintainer: $(PKG_MAINTAINER)' >> $(BUILD_DIR)/control/control
 	echo 'Description: $(PKG_DESCRIPTION)' >> $(BUILD_DIR)/control/control
@@ -136,4 +141,4 @@ endif
 
 	tar -C "$(BUILD_DIR)/control" -czvf "$(BUILD_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(BUILD_DIR)/data" -czvf "$(BUILD_DIR)/data.tar.gz" --owner=0 --group=0 .
-	tar -C "$(BUILD_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_RELEASE)_$(PLATFORM)_$(TARGET).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
+	tar -C "$(BUILD_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_REVISION)_$(PLATFORM)_$(TARGET).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
