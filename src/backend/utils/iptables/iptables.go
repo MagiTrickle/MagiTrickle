@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -204,7 +205,7 @@ func splitFields(data []byte) [][]byte {
 	return fields
 }
 
-func (ipt *IPTables) Commit() error {
+func (ipt *IPTables) Commit() (err error) {
 	ipt.sync.RLock()
 	defer ipt.sync.RUnlock()
 
@@ -216,7 +217,13 @@ func (ipt *IPTables) Commit() error {
 		if ipt.Proto() == ProtocolIPv6 {
 			iptType = "ip6tables"
 		}
-		log.Trace().Dur("elapsed_ms", elapsed).Str("type", iptType).Bytes("buf", buf.Bytes()).Msg("iptables commit")
+		var logEvent *zerolog.Event
+		if err != nil {
+			logEvent = log.Error().Err(err)
+		} else {
+			logEvent = log.Trace()
+		}
+		logEvent.Dur("elapsed_ms", elapsed).Str("type", iptType).Bytes("buf", buf.Bytes()).Msg("iptables commit")
 	}()
 
 	curRules, err := ipt.GetCurrentRules()
