@@ -503,6 +503,10 @@
     color: var(--text-2);
   }
 
+  .update-interval :global([data-select-content]) {
+    z-index: 1;
+  }
+
   .update-interval :global(.selected-value) {
     padding-left: 0;
   }

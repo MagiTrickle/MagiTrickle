@@ -184,6 +184,7 @@
     align-items: center;
     gap: 0.35rem;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.3s ease-in-out;
   }
   .helper-text.visible {
