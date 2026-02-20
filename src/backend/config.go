@@ -160,10 +160,11 @@ func (a *App) ImportConfig(cfg config.Config) error {
 
 	if cfg.Groups != nil {
 		// отключаем старые группы и очищаем срез
-		for _, group := range a.groups {
+		for _, group := range *a.groups.Load() {
 			_ = group.Disable()
 		}
-		a.groups = a.groups[:0]
+		emptyGroups := make([]*Group, 0)
+		a.groups.Store(&emptyGroups)
 
 		// импортируем новые группы
 		for _, group := range *cfg.Groups {
@@ -204,8 +205,9 @@ func (a *App) ImportConfig(cfg config.Config) error {
 }
 
 func (a *App) ExportConfig() config.Config {
-	groups := make([]config.Group, len(a.groups))
-	for idx, group := range a.groups {
+	gs := *a.groups.Load()
+	groups := make([]config.Group, len(gs))
+	for idx, group := range gs {
 		groupCfg := config.Group{
 			ID:        group.ID,
 			Name:      group.Name,
