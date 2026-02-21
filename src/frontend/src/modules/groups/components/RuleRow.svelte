@@ -7,7 +7,7 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { t } from "../../../data/locale.svelte";
 
-  import { Delete, Grip } from "../../../components/ui/icons";
+  import { Delete, Grip, TriangleAlert } from "../../../components/ui/icons";
   import { dnd_state, draggable, droppable } from "../../../lib/dnd";
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
@@ -19,6 +19,7 @@
     group_index: number;
     rule_id: string;
     group_id: string;
+    isDuplicate?: boolean;
     [key: string]: any;
   };
 
@@ -28,6 +29,7 @@
     group_index,
     rule_id,
     group_id,
+    isDuplicate = false,
     ...rest
   }: Props = $props();
 
@@ -205,6 +207,13 @@
         oninput={patternValidation}
         onfocusout={patternValidation}
       />
+      {#if isDuplicate}
+        <Tooltip value={t("Duplicate rule")}>
+          <div class="duplicate-indicator">
+            <TriangleAlert size={18} />
+          </div>
+        </Tooltip>
+      {/if}
     </div>
     <div class="actions">
       <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
@@ -290,6 +299,15 @@
     color: var(--text);
   }
 
+  .duplicate-indicator {
+    color: var(--yellow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.5rem;
+    cursor: help;
+  }
+
   :global(.pattern-input.invalid),
   :global(.pattern-input.invalid:focus-visible) {
     border-bottom: 1px solid var(--red);
@@ -330,10 +348,17 @@
       display: block;
     }
     .name,
-    .type,
-    .pattern {
+    .type {
       display: grid;
       grid-template-columns: 3.2rem minmax(0, 1fr);
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.05rem 0;
+      grid-column: 1;
+    }
+    .pattern {
+      display: grid;
+      grid-template-columns: 3.2rem minmax(0, 1fr) auto;
       align-items: center;
       gap: 0.35rem;
       padding: 0.05rem 0;
