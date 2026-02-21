@@ -520,7 +520,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-left: 0.5rem;
+    padding: 0.4rem;
     cursor: help;
     flex: 0 0 auto;
   }
