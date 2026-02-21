@@ -207,6 +207,8 @@
         oninput={patternValidation}
         onfocusout={patternValidation}
       />
+    </div>
+    <div class="actions">
       {#if isDuplicate}
         <Tooltip value={t("Duplicate rule")}>
           <div class="duplicate-indicator">
@@ -214,8 +216,6 @@
           </div>
         </Tooltip>
       {/if}
-    </div>
-    <div class="actions">
       <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
         <Switch bind:checked={rule.enable} />
       </Tooltip>
@@ -304,7 +304,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: 0.5rem;
     cursor: help;
   }
 
@@ -348,17 +347,10 @@
       display: block;
     }
     .name,
-    .type {
-      display: grid;
-      grid-template-columns: 3.2rem minmax(0, 1fr);
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.05rem 0;
-      grid-column: 1;
-    }
+    .type,
     .pattern {
       display: grid;
-      grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+      grid-template-columns: 3.2rem minmax(0, 1fr);
       align-items: center;
       gap: 0.35rem;
       padding: 0.05rem 0;

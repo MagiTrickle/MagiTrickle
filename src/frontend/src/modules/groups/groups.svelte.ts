@@ -106,6 +106,7 @@ export class GroupsStore {
       !this.searchPending &&
       this.data.length === 0,
   );
+  duplicateRuleIds = $state<Set<string>>(new Set());
 
   renderGroupsLimit = $state(1);
   renderGroupsTimeout: number | null = null;
@@ -114,6 +115,7 @@ export class GroupsStore {
   #forcedRuleIdsByGroup = new Map<string, Set<string>>();
   #forcedSearchKey = "";
   #debounceTimer: number | null = null;
+  #duplicateRuleIdsTimer: number | null = null;
   #searchIndexBuildToken = 0;
   #searchIndexBuilding = false;
   #dispose: (() => void) | null = null;
@@ -205,6 +207,11 @@ export class GroupsStore {
           this.#debounceTimer = null;
         }
 
+        if (this.#duplicateRuleIdsTimer) {
+          clearTimeout(this.#duplicateRuleIdsTimer);
+          this.#duplicateRuleIdsTimer = null;
+        }
+
         if (this.renderGroupsTimeout) {
           clearTimeout(this.renderGroupsTimeout);
           this.renderGroupsTimeout = null;
@@ -239,6 +246,7 @@ export class GroupsStore {
       this.fetchError = true;
       console.error("Failed to load groups:", error);
     } finally {
+      this.refreshDuplicateRuleIds();
       this.dataLoaded = true;
     }
 
@@ -512,8 +520,53 @@ export class GroupsStore {
     this.valid_rules = !document.querySelector(".rule input.invalid");
   };
 
+  #computeDuplicateRuleIds() {
+    const seen = new Map<string, string>();
+    const duplicates = new Set<string>();
+    for (const group of this.data) {
+      for (const rule of group.rules) {
+        const key = `${rule.type}:${rule.rule}`;
+        const firstRuleId = seen.get(key);
+        if (firstRuleId) {
+          duplicates.add(rule.id);
+          duplicates.add(firstRuleId);
+        } else {
+          seen.set(key, rule.id);
+        }
+      }
+    }
+    return duplicates;
+  }
+
+  refreshDuplicateRuleIds = () => {
+    if (this.#duplicateRuleIdsTimer) {
+      clearTimeout(this.#duplicateRuleIdsTimer);
+      this.#duplicateRuleIdsTimer = null;
+    }
+    this.duplicateRuleIds = this.#computeDuplicateRuleIds();
+  };
+
+  scheduleDuplicateRuleIdsRefresh = (delayMs = 120) => {
+    if (typeof window === "undefined") {
+      this.refreshDuplicateRuleIds();
+      return;
+    }
+
+    if (this.#duplicateRuleIdsTimer) {
+      clearTimeout(this.#duplicateRuleIdsTimer);
+    }
+
+    this.#duplicateRuleIdsTimer = window.setTimeout(() => {
+      this.#duplicateRuleIdsTimer = null;
+      this.duplicateRuleIds = this.#computeDuplicateRuleIds();
+    }, delayMs);
+  };
+
+  isRuleDuplicate = (ruleId: string) => this.duplicateRuleIds.has(ruleId);
+
   markDataRevision = () => {
     this.dataRevision += 1;
+    this.scheduleDuplicateRuleIdsRefresh();
   };
 
   async addRuleToGroup(group_index: number, rule: Rule, focus = false) {
@@ -713,6 +766,9 @@ export class GroupsStore {
     this.data.splice(0, this.data.length);
     this.open_state = {};
     await this.addGroups(groups);
+    if (!groups.length) {
+      this.markDataRevision();
+    }
   }
 
   async addRulesToGroup(groupIndex: number, rules: Rule[]) {
