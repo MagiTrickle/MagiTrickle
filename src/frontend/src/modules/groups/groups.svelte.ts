@@ -561,6 +561,9 @@ export class GroupsStore {
 
   #sortDuplicateConflicts(conflicts: GroupDuplicateConflict[]) {
     conflicts.sort((a, b) => {
+      const byKey = a.duplicateKey.localeCompare(b.duplicateKey);
+      if (byKey !== 0) return byKey;
+
       if (a.inCurrentGroup !== b.inCurrentGroup) {
         return a.inCurrentGroup ? 1 : -1;
       }

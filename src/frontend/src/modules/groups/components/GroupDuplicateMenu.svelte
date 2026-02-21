@@ -48,38 +48,24 @@
             onclick={() => onConflictClick(conflict.groupId, conflict.ruleId)}
           >
             <div class="dd-label duplicate-conflict-label">
-              {#if conflict.ruleName.trim()}
-                <div class="duplicate-conflict-title">
-                  <span class="duplicate-conflict-name">{conflict.ruleName.trim()}</span>
-                </div>
-                <div class="duplicate-conflict-subtitle">
-                  <span class="duplicate-conflict-group">
-                    <span
-                      class="group-color-dot"
-                      style="background-color: {duplicateConflictGroupColor(conflict)}"
-                    ></span>
-                    {duplicateConflictGroupTitle(conflict)}
-                  </span>
-                  <span class="duplicate-conflict-type">{conflict.ruleType}</span>
-                  <span class="duplicate-conflict-pattern">{conflict.rulePattern}</span>
-                </div>
-              {:else}
-                <div class="duplicate-conflict-title">
-                  <span class="duplicate-conflict-type">{conflict.ruleType}</span>
-                  <span class="duplicate-conflict-pattern-title"
-                    >{conflict.rulePattern || t("Unnamed rule")}</span
-                  >
-                </div>
-                <div class="duplicate-conflict-subtitle">
-                  <span class="duplicate-conflict-group">
-                    <span
-                      class="group-color-dot"
-                      style="background-color: {duplicateConflictGroupColor(conflict)}"
-                    ></span>
-                    {duplicateConflictGroupTitle(conflict)}
-                  </span>
-                </div>
-              {/if}
+              <div class="duplicate-conflict-title">
+                <span class="duplicate-conflict-type">{conflict.ruleType}</span>
+                <span class="duplicate-conflict-pattern-title"
+                  >{conflict.rulePattern || t("Unnamed rule")}</span
+                >
+              </div>
+              <div class="duplicate-conflict-subtitle">
+                <span class="duplicate-conflict-group">
+                  <span
+                    class="group-color-dot"
+                    style="background-color: {duplicateConflictGroupColor(conflict)}"
+                  ></span>
+                  {duplicateConflictGroupTitle(conflict)}
+                </span>
+                {#if conflict.ruleName.trim()}
+                  <span class="duplicate-conflict-rule-name">{conflict.ruleName.trim()}</span>
+                {/if}
+              </div>
             </div>
             <div class="duplicate-conflict-count">
               x{conflict.totalRulesWithSameKey}
@@ -147,13 +133,6 @@
     gap: 0.4rem;
   }
 
-  :global(.duplicate-conflict-name) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex-shrink: 1;
-  }
-
   :global(.duplicate-conflict-pattern-title) {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -166,6 +145,7 @@
     align-items: center;
     gap: 0.4rem;
     width: 100%;
+    min-width: 0;
   }
 
   :global(.duplicate-conflict-group) {
@@ -199,13 +179,14 @@
     flex-shrink: 0;
   }
 
-  :global(.duplicate-conflict-pattern) {
-    font-size: 0.85rem;
+  :global(.duplicate-conflict-rule-name) {
+    font-size: 0.78rem;
     color: var(--text-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     flex-shrink: 1;
+    min-width: 0;
   }
 
   :global(.duplicate-conflict-count) {
