@@ -173,17 +173,17 @@
   let initialOrderIds = $state<string[] | null>(null);
 
   let duplicateRuleIds = $derived.by(() => {
-    if (!group) return new Set<string>();
     const seen = new Map<string, string>();
     const duplicates = new Set<string>();
-    for (const rule of group.rules) {
-      const key = `${rule.type}:${rule.rule}`;
-      if (seen.has(key)) {
-        duplicates.add(rule.id);
-        duplicates.add(seen.get(key)!);
-      } else {
-        seen.set(key, rule.id);
-      }
+    for (const group of store.data)
+      for (const rule of group.rules) {
+        const key = `${rule.type}:${rule.rule}`;
+        if (seen.has(key)) {
+          duplicates.add(rule.id);
+          duplicates.add(seen.get(key)!);
+        } else {
+          seen.set(key, rule.id);
+        }
     }
     return duplicates;
   });
