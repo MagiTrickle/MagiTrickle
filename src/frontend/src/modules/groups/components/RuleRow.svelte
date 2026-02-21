@@ -7,7 +7,7 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { t } from "../../../data/locale.svelte";
 
-  import { Delete, Grip } from "../../../components/ui/icons";
+  import { Delete, Grip, TriangleAlert } from "../../../components/ui/icons";
   import { dnd_state, draggable, droppable } from "../../../lib/dnd";
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
@@ -19,6 +19,8 @@
     group_index: number;
     rule_id: string;
     group_id: string;
+    isDuplicate?: boolean;
+    isHighlighted?: boolean;
     [key: string]: any;
   };
 
@@ -28,6 +30,8 @@
     group_index,
     rule_id,
     group_id,
+    isDuplicate = false,
+    isHighlighted = false,
     ...rest
   }: Props = $props();
 
@@ -144,6 +148,7 @@
     document.body.appendChild(badge);
     return badge;
   }
+
 </script>
 
 <div
@@ -153,6 +158,7 @@
   data-uuid={rule_id}
   data-group-uuid={group_id}
   data-drop-edge={dropEdge}
+  data-duplicate-highlighted={isHighlighted ? "true" : undefined}
   {...rest}
   use:draggable={{
     data: { rule_id, rule_index, group_id, group_index, name: rule.name } as DnDTransferData,
@@ -207,6 +213,13 @@
       />
     </div>
     <div class="actions">
+      {#if isDuplicate}
+        <Tooltip value={t("Duplicate rule")}>
+          <div class="duplicate-indicator">
+            <TriangleAlert size={18} />
+          </div>
+        </Tooltip>
+      {/if}
       <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
         <Switch bind:checked={rule.enable} />
       </Tooltip>
@@ -236,6 +249,53 @@
     padding: 0.1rem;
     background: inherit;
     border-radius: inherit;
+  }
+
+  .rule[data-duplicate-highlighted="true"] .rule-row {
+    background-color: color-mix(in oklab, var(--yellow) 10%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--yellow) 56%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--yellow) 24%, transparent),
+      0 12px 28px -24px color-mix(in oklab, var(--yellow) 56%, transparent);
+    animation: duplicate-focus-apple 2.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes duplicate-focus-apple {
+    0% {
+      background-color: color-mix(in oklab, var(--yellow) 2%, transparent);
+      box-shadow:
+        inset 0 0 0 0 color-mix(in oklab, var(--yellow) 68%, transparent),
+        0 0 0 0 color-mix(in oklab, var(--yellow) 22%, transparent),
+        0 0 0 0 color-mix(in oklab, var(--yellow) 58%, transparent);
+    }
+    18% {
+      background-color: color-mix(in oklab, var(--yellow) 15%, transparent);
+      box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--yellow) 66%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--yellow) 30%, transparent),
+        0 16px 34px -20px color-mix(in oklab, var(--yellow) 62%, transparent);
+    }
+    48% {
+      background-color: color-mix(in oklab, var(--yellow) 10%, transparent);
+      box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--yellow) 56%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--yellow) 24%, transparent),
+        0 12px 28px -24px color-mix(in oklab, var(--yellow) 56%, transparent);
+    }
+    78% {
+      background-color: color-mix(in oklab, var(--yellow) 7%, transparent);
+      box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--yellow) 48%, transparent),
+        0 0 0 1px color-mix(in oklab, var(--yellow) 16%, transparent),
+        0 8px 16px -24px color-mix(in oklab, var(--yellow) 40%, transparent);
+    }
+    100% {
+      background-color: color-mix(in oklab, var(--yellow) 0%, transparent);
+      box-shadow:
+        inset 0 0 0 0 color-mix(in oklab, var(--yellow) 0%, transparent),
+        0 0 0 0 color-mix(in oklab, var(--yellow) 0%, transparent),
+        0 0 0 0 color-mix(in oklab, var(--yellow) 0%, transparent);
+    }
   }
 
   .rule:global(.dragover) {
@@ -288,6 +348,19 @@
   }
   .grip:hover {
     color: var(--text);
+  }
+
+  .duplicate-indicator {
+    color: var(--yellow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem;
+    border-radius: 8px;
+    cursor: help;
+    transition:
+      background-color 0.12s ease,
+      box-shadow 0.12s ease;
   }
 
   :global(.pattern-input.invalid),

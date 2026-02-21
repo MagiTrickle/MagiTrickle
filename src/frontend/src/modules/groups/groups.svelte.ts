@@ -44,6 +44,32 @@ export type GroupDropSlotData = {
   insert: "before" | "after";
 };
 
+export type GroupDuplicateConflict = {
+  ruleId: string;
+  ruleName: string;
+  rulePattern: string;
+  ruleType: string;
+  groupId: string;
+  groupName: string;
+  groupColor: string;
+  inCurrentGroup: boolean;
+  duplicateKey: string;
+  totalRulesWithSameKey: number;
+};
+
+export type DuplicateRuleFocusRequest = {
+  groupId: string;
+  ruleId: string;
+  nonce: number;
+};
+
+type DuplicateComputationResult = {
+  duplicateRules: Set<string>;
+  duplicateGroups: Set<string>;
+  duplicateRuleKeys: Map<string, string>;
+  duplicateConflictsByGroup: Map<string, GroupDuplicateConflict[]>;
+};
+
 type SearchIndexRule = {
   id: string;
   searchBlob: string;
@@ -106,6 +132,14 @@ export class GroupsStore {
       !this.searchPending &&
       this.data.length === 0,
   );
+  duplicateRuleIds = $state<Set<string>>(new Set());
+  duplicateGroupIds = $state<Set<string>>(new Set());
+  duplicateRuleKeys = $state<Map<string, string>>(new Map());
+  duplicateConflictsByGroup = $state<Map<string, GroupDuplicateConflict[]>>(new Map());
+  activeDuplicateKey = $state<string | null>(null);
+  duplicateHighlightPinned = $state(false);
+  highlightedRuleId = $state<string | null>(null);
+  duplicateFocusRequest = $state<DuplicateRuleFocusRequest | null>(null);
 
   renderGroupsLimit = $state(1);
   renderGroupsTimeout: number | null = null;
@@ -114,6 +148,8 @@ export class GroupsStore {
   #forcedRuleIdsByGroup = new Map<string, Set<string>>();
   #forcedSearchKey = "";
   #debounceTimer: number | null = null;
+  #duplicateRuleIdsTimer: number | null = null;
+  #highlightedRuleTimer: number | null = null;
   #searchIndexBuildToken = 0;
   #searchIndexBuilding = false;
   #dispose: (() => void) | null = null;
@@ -205,6 +241,16 @@ export class GroupsStore {
           this.#debounceTimer = null;
         }
 
+        if (this.#duplicateRuleIdsTimer) {
+          clearTimeout(this.#duplicateRuleIdsTimer);
+          this.#duplicateRuleIdsTimer = null;
+        }
+
+        if (this.#highlightedRuleTimer) {
+          clearTimeout(this.#highlightedRuleTimer);
+          this.#highlightedRuleTimer = null;
+        }
+
         if (this.renderGroupsTimeout) {
           clearTimeout(this.renderGroupsTimeout);
           this.renderGroupsTimeout = null;
@@ -239,6 +285,7 @@ export class GroupsStore {
       this.fetchError = true;
       console.error("Failed to load groups:", error);
     } finally {
+      this.refreshDuplicateRuleIds();
       this.dataLoaded = true;
     }
 
@@ -512,8 +559,289 @@ export class GroupsStore {
     this.valid_rules = !document.querySelector(".rule input.invalid");
   };
 
+  #sortDuplicateConflicts(conflicts: GroupDuplicateConflict[]) {
+    conflicts.sort((a, b) => {
+      const byKey = a.duplicateKey.localeCompare(b.duplicateKey);
+      if (byKey !== 0) return byKey;
+
+      if (a.inCurrentGroup !== b.inCurrentGroup) {
+        return a.inCurrentGroup ? 1 : -1;
+      }
+      const byGroup = (a.groupName || "").localeCompare(b.groupName || "");
+      if (byGroup !== 0) return byGroup;
+      const byName = (a.ruleName || "").localeCompare(b.ruleName || "");
+      if (byName !== 0) return byName;
+      const byPattern = (a.rulePattern || "").localeCompare(b.rulePattern || "");
+      if (byPattern !== 0) return byPattern;
+      return a.ruleId.localeCompare(b.ruleId);
+    });
+  }
+
+  #computeDuplicates(): DuplicateComputationResult {
+    const duplicateRules = new Set<string>();
+    const duplicateGroups = new Set<string>();
+    const duplicateRuleKeys = new Map<string, string>();
+    const rulesByKey = new Map<
+      string,
+      { rule: Rule; groupId: string; groupName: string; groupColor: string }[]
+    >();
+
+    for (const group of this.data) {
+      for (const rule of group.rules) {
+        const normalizedPattern = rule.rule.trim();
+        if (!normalizedPattern) continue;
+
+        const key = `${rule.type}:${rule.rule}`;
+        duplicateRuleKeys.set(rule.id, key);
+        let rules = rulesByKey.get(key);
+        if (!rules) {
+          rules = [];
+          rulesByKey.set(key, rules);
+        }
+        rules.push({
+          rule,
+          groupId: group.id,
+          groupName: group.name,
+          groupColor: group.color || "#ffffff",
+        });
+      }
+    }
+
+    const conflictsByKey = new Map<string, GroupDuplicateConflict[]>();
+    const duplicateKeysByGroup = new Map<string, Set<string>>();
+
+    for (const [key, rules] of rulesByKey) {
+      if (rules.length < 2) continue;
+
+      for (const entry of rules) {
+        duplicateRules.add(entry.rule.id);
+        duplicateGroups.add(entry.groupId);
+        let keys = duplicateKeysByGroup.get(entry.groupId);
+        if (!keys) {
+          keys = new Set<string>();
+          duplicateKeysByGroup.set(entry.groupId, keys);
+        }
+        keys.add(key);
+      }
+
+      conflictsByKey.set(
+        key,
+        rules.map((entry) => ({
+          ruleId: entry.rule.id,
+          ruleName: entry.rule.name,
+          rulePattern: entry.rule.rule,
+          ruleType: entry.rule.type,
+          groupId: entry.groupId,
+          groupName: entry.groupName,
+          groupColor: entry.groupColor,
+          inCurrentGroup: false,
+          duplicateKey: key,
+          totalRulesWithSameKey: rules.length,
+        })),
+      );
+    }
+
+    const duplicateConflictsByGroup = new Map<string, GroupDuplicateConflict[]>();
+
+    for (const [groupId, keys] of duplicateKeysByGroup) {
+      const conflicts: GroupDuplicateConflict[] = [];
+      for (const key of keys) {
+        const sameKeyConflicts = conflictsByKey.get(key);
+        if (!sameKeyConflicts) continue;
+        for (const conflict of sameKeyConflicts) {
+          conflicts.push({
+            ...conflict,
+            inCurrentGroup: conflict.groupId === groupId,
+          });
+        }
+      }
+      this.#sortDuplicateConflicts(conflicts);
+      duplicateConflictsByGroup.set(groupId, conflicts);
+    }
+
+    return { duplicateRules, duplicateGroups, duplicateRuleKeys, duplicateConflictsByGroup };
+  }
+
+  #applyDuplicateComputation(result: DuplicateComputationResult) {
+    this.duplicateRuleIds = result.duplicateRules;
+    this.duplicateGroupIds = result.duplicateGroups;
+    this.duplicateRuleKeys = result.duplicateRuleKeys;
+    this.duplicateConflictsByGroup = result.duplicateConflictsByGroup;
+    this.#syncActiveDuplicateKey();
+  }
+
+  #syncActiveDuplicateKey() {
+    if (this.highlightedRuleId && !this.duplicateRuleIds.has(this.highlightedRuleId)) {
+      this.highlightedRuleId = null;
+    }
+
+    if (!this.activeDuplicateKey) return;
+
+    for (const ruleId of this.duplicateRuleIds) {
+      if (this.duplicateRuleKeys.get(ruleId) === this.activeDuplicateKey) {
+        return;
+      }
+    }
+
+    this.activeDuplicateKey = null;
+    this.duplicateHighlightPinned = false;
+  }
+
+  #resolveDuplicateKey(ruleId: string) {
+    const key = this.duplicateRuleKeys.get(ruleId);
+    if (!key || !this.duplicateRuleIds.has(ruleId)) {
+      return null;
+    }
+    return key;
+  }
+
+  refreshDuplicateRuleIds = () => {
+    if (this.#duplicateRuleIdsTimer) {
+      clearTimeout(this.#duplicateRuleIdsTimer);
+      this.#duplicateRuleIdsTimer = null;
+    }
+    this.#applyDuplicateComputation(this.#computeDuplicates());
+  };
+
+  scheduleDuplicateRuleIdsRefresh = (delayMs = 120) => {
+    if (typeof window === "undefined") {
+      this.refreshDuplicateRuleIds();
+      return;
+    }
+
+    if (this.#duplicateRuleIdsTimer) {
+      clearTimeout(this.#duplicateRuleIdsTimer);
+    }
+
+    this.#duplicateRuleIdsTimer = window.setTimeout(() => {
+      this.#duplicateRuleIdsTimer = null;
+      this.#applyDuplicateComputation(this.#computeDuplicates());
+    }, delayMs);
+  };
+
+  isRuleDuplicate = (ruleId: string) => this.duplicateRuleIds.has(ruleId);
+
+  pinDuplicateByRuleId = (ruleId: string) => {
+    const key = this.#resolveDuplicateKey(ruleId);
+    if (!key) {
+      this.activeDuplicateKey = null;
+      this.duplicateHighlightPinned = false;
+      return false;
+    }
+    this.activeDuplicateKey = key;
+    this.duplicateHighlightPinned = true;
+    return true;
+  };
+
+  setActiveDuplicateByRuleId = (ruleId: string) => {
+    if (this.duplicateHighlightPinned) return;
+    const key = this.#resolveDuplicateKey(ruleId);
+    if (!key) {
+      this.activeDuplicateKey = null;
+      return;
+    }
+    this.activeDuplicateKey = key;
+  };
+
+  clearActiveDuplicateByRuleId = (ruleId: string) => {
+    if (this.duplicateHighlightPinned || !this.activeDuplicateKey) return;
+    const key = this.#resolveDuplicateKey(ruleId);
+    if (!key || key === this.activeDuplicateKey) {
+      this.activeDuplicateKey = null;
+    }
+  };
+
+  togglePinnedDuplicateByRuleId = (ruleId: string) => {
+    const key = this.#resolveDuplicateKey(ruleId);
+    if (!key) {
+      this.activeDuplicateKey = null;
+      this.duplicateHighlightPinned = false;
+      return;
+    }
+    if (this.duplicateHighlightPinned && this.activeDuplicateKey === key) {
+      this.activeDuplicateKey = null;
+      this.duplicateHighlightPinned = false;
+      return;
+    }
+    this.pinDuplicateByRuleId(ruleId);
+  };
+
+  clearPinnedDuplicateHighlight = () => {
+    if (!this.duplicateHighlightPinned) return;
+    this.activeDuplicateKey = null;
+    this.duplicateHighlightPinned = false;
+  };
+
+  highlightRuleTemporarily = (ruleId: string, durationMs = 2200) => {
+    if (!this.duplicateRuleIds.has(ruleId)) return false;
+
+    if (this.#highlightedRuleTimer) {
+      clearTimeout(this.#highlightedRuleTimer);
+      this.#highlightedRuleTimer = null;
+    }
+
+    const applyHighlight = () => {
+      this.highlightedRuleId = ruleId;
+
+      if (typeof window === "undefined") return;
+
+      this.#highlightedRuleTimer = window.setTimeout(() => {
+        this.#highlightedRuleTimer = null;
+        if (this.highlightedRuleId === ruleId) {
+          this.highlightedRuleId = null;
+        }
+      }, durationMs);
+    };
+
+    if (this.highlightedRuleId === ruleId) {
+      this.highlightedRuleId = null;
+      if (typeof window !== "undefined") {
+        requestAnimationFrame(() => applyHighlight());
+      } else {
+        applyHighlight();
+      }
+      return true;
+    }
+
+    applyHighlight();
+
+    return true;
+  };
+
+  isRuleHighlighted = (ruleId: string) => this.highlightedRuleId === ruleId;
+
+  isRuleHighlightPinned = (ruleId: string) => this.isRuleHighlighted(ruleId);
+
+  requestDuplicateRuleFocus = (groupId: string, ruleId: string) => {
+    const groupIndex = this.data.findIndex((group) => group.id === groupId);
+    if (groupIndex < 0) return false;
+
+    if (this.searchActive) {
+      this.forceVisibleRule(groupId, ruleId);
+      this.performSearch();
+    }
+
+    this.renderGroupsLimit = Math.max(this.renderGroupsLimit, groupIndex + 1);
+    this.open_state[groupId] = true;
+
+    const nonce = (this.duplicateFocusRequest?.nonce ?? 0) + 1;
+    this.duplicateFocusRequest = { groupId, ruleId, nonce };
+    return true;
+  };
+
+  consumeDuplicateRuleFocus = (groupId: string, ruleId: string, nonce: number) => {
+    const request = this.duplicateFocusRequest;
+    if (!request) return;
+    if (request.groupId !== groupId || request.ruleId !== ruleId || request.nonce !== nonce) return;
+    this.duplicateFocusRequest = null;
+  };
+
+  getDuplicateConflictsForGroup = (groupId: string): GroupDuplicateConflict[] =>
+    this.duplicateConflictsByGroup.get(groupId) ?? [];
+
   markDataRevision = () => {
     this.dataRevision += 1;
+    this.scheduleDuplicateRuleIdsRefresh();
   };
 
   async addRuleToGroup(group_index: number, rule: Rule, focus = false) {
@@ -713,6 +1041,9 @@ export class GroupsStore {
     this.data.splice(0, this.data.length);
     this.open_state = {};
     await this.addGroups(groups);
+    if (!groups.length) {
+      this.markDataRevision();
+    }
   }
 
   async addRulesToGroup(groupIndex: number, rules: Rule[]) {

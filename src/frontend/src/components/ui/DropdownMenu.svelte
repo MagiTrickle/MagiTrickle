@@ -17,7 +17,7 @@
 
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>{@render trigger()}</DropdownMenu.Trigger>
-  <DropdownMenu.Content alignOffset={0} align="end">
+  <DropdownMenu.Content alignOffset={0} align="end" collisionPadding={{ left: 10, right: 10 }}>
     {#each items as item, index}
       <DropdownMenu.Item>
         {@render item()}
