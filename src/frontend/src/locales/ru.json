@@ -33,6 +33,8 @@
   "Disable Rule": "Отключить правило",
   "Add Rule": "Добавить правило",
   "Delete Rule": "Удалить правило",
+  "Duplicate rule": "Дублирующееся правило",
+  "Contains duplicate rules": "Содержит дублирующиеся правила",
   "Collapse Group": "Свернуть группу",
   "Expand Group": "Развернуть группу",
   "Groups": "Группы",

@@ -24,6 +24,7 @@
     SortAsc,
     SortDesc,
     SortNeutral,
+    TriangleAlert,
   } from "../../../components/ui/icons";
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
@@ -252,12 +253,21 @@
             <Grip />
           </div>
 
-          <input
-            type="text"
-            placeholder={t("group name...")}
-            class="group-name"
-            bind:value={group.name}
-          />
+          <div class="group-name-wrap">
+            <input
+              type="text"
+              placeholder={t("group name...")}
+              class="group-name"
+              bind:value={group.name}
+            />
+            {#if store.duplicateGroupIds.has(group.id)}
+              <Tooltip value={t("Contains duplicate rules")}>
+                <div class="group-duplicate-indicator">
+                  <TriangleAlert size={18} />
+                </div>
+              </Tooltip>
+            {/if}
+          </div>
         </div>
 
         <div class="group-actions">
@@ -436,6 +446,8 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .group-color {
@@ -483,13 +495,34 @@
       border-bottom: 1px solid transparent;
       position: relative;
       top: 0.1rem;
-      margin-left: 0.4rem;
+      min-width: 0;
+      width: 100%;
     }
 
     &:focus-visible {
       outline: none;
       border-bottom: 1px solid var(--accent);
     }
+  }
+
+  .group-name-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.2rem;
+    margin-left: 0.4rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .group-duplicate-indicator {
+    color: var(--yellow);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.5rem;
+    cursor: help;
+    flex: 0 0 auto;
   }
 
   .group-actions {
@@ -596,13 +629,13 @@
     }
 
     .group-left {
-      & {
-        width: 100%;
-      }
-      & input[type="text"] {
-        width: calc(100% - 2rem);
-        margin-left: 2rem;
-      }
+      flex: none;
+      width: 100%;
+    }
+
+    .group-name-wrap {
+      width: calc(100% - 2rem);
+      margin-left: 2rem;
     }
 
     .group-grip {

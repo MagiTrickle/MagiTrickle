@@ -107,6 +107,7 @@ export class GroupsStore {
       this.data.length === 0,
   );
   duplicateRuleIds = $state<Set<string>>(new Set());
+  duplicateGroupIds = $state<Set<string>>(new Set());
 
   renderGroupsLimit = $state(1);
   renderGroupsTimeout: number | null = null;
@@ -520,22 +521,25 @@ export class GroupsStore {
     this.valid_rules = !document.querySelector(".rule input.invalid");
   };
 
-  #computeDuplicateRuleIds() {
-    const seen = new Map<string, string>();
-    const duplicates = new Set<string>();
+  #computeDuplicates() {
+    const seen = new Map<string, { ruleId: string; groupId: string }>();
+    const duplicateRules = new Set<string>();
+    const duplicateGroups = new Set<string>();
     for (const group of this.data) {
       for (const rule of group.rules) {
         const key = `${rule.type}:${rule.rule}`;
-        const firstRuleId = seen.get(key);
-        if (firstRuleId) {
-          duplicates.add(rule.id);
-          duplicates.add(firstRuleId);
+        const firstSeen = seen.get(key);
+        if (firstSeen) {
+          duplicateRules.add(rule.id);
+          duplicateRules.add(firstSeen.ruleId);
+          duplicateGroups.add(group.id);
+          duplicateGroups.add(firstSeen.groupId);
         } else {
-          seen.set(key, rule.id);
+          seen.set(key, { ruleId: rule.id, groupId: group.id });
         }
       }
     }
-    return duplicates;
+    return { duplicateRules, duplicateGroups };
   }
 
   refreshDuplicateRuleIds = () => {
@@ -543,7 +547,9 @@ export class GroupsStore {
       clearTimeout(this.#duplicateRuleIdsTimer);
       this.#duplicateRuleIdsTimer = null;
     }
-    this.duplicateRuleIds = this.#computeDuplicateRuleIds();
+    const { duplicateRules, duplicateGroups } = this.#computeDuplicates();
+    this.duplicateRuleIds = duplicateRules;
+    this.duplicateGroupIds = duplicateGroups;
   };
 
   scheduleDuplicateRuleIdsRefresh = (delayMs = 120) => {
@@ -558,7 +564,9 @@ export class GroupsStore {
 
     this.#duplicateRuleIdsTimer = window.setTimeout(() => {
       this.#duplicateRuleIdsTimer = null;
-      this.duplicateRuleIds = this.#computeDuplicateRuleIds();
+      const { duplicateRules, duplicateGroups } = this.#computeDuplicates();
+      this.duplicateRuleIds = duplicateRules;
+      this.duplicateGroupIds = duplicateGroups;
     }, delayMs);
   };
 
