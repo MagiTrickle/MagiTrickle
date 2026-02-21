@@ -94,11 +94,15 @@
   }
 
   :global(.group-duplicate-menu-list) {
+    --duplicate-menu-available-width: max(
+      0px,
+      calc(var(--bits-floating-available-width, calc(100vw - 20px)) - 0.4rem - 2px)
+    );
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
-    min-width: 360px;
-    max-width: min(560px, calc(100vw - 1.2rem));
+    min-width: min(360px, var(--duplicate-menu-available-width));
+    max-width: min(560px, var(--duplicate-menu-available-width));
     max-height: min(70vh, 460px);
     overflow: auto;
   }
@@ -138,6 +142,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     flex-shrink: 1;
+    min-width: 0;
   }
 
   :global(.duplicate-conflict-subtitle) {
