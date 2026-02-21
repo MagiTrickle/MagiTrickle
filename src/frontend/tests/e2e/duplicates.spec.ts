@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { GroupsPage } from "./pages/GroupsPage";
 
@@ -14,19 +14,23 @@ function buildLargeGroupRules() {
   }));
 }
 
+async function mockBaseRoutes(page: Page) {
+  await page.route("**/auth", async (route) => {
+    await route.fulfill({ json: { enabled: false } });
+  });
+
+  await page.route("**/interfaces", async (route) => {
+    await route.fulfill({ json: { interfaces: [] } });
+  });
+}
+
 test.describe("Duplicate Indicators", () => {
   let groupsPage: GroupsPage;
 
   test.beforeEach(async ({ page }) => {
     groupsPage = new GroupsPage(page);
 
-    await page.route("**/auth", async (route) => {
-      await route.fulfill({ json: { enabled: false } });
-    });
-
-    await page.route("**/interfaces", async (route) => {
-      await route.fulfill({ json: { interfaces: [] } });
-    });
+    await mockBaseRoutes(page);
 
     await page.route("**/groups?with_rules=true", async (route) => {
       await route.fulfill({
@@ -117,5 +121,103 @@ test.describe("Duplicate Indicators", () => {
     await expect(
       secondGroup.locator('.rule[data-group-index="1"][data-index="0"] .duplicate-indicator'),
     ).toBeVisible();
+  });
+
+  test("should render duplicate conflict menu and focus selected conflict", async ({ page }) => {
+    const firstGroupHeader = page.locator(".group-header").nth(0);
+    await firstGroupHeader.locator(".group-duplicate-indicator").click();
+
+    const duplicateMenu = page.locator(".group-duplicate-menu-list");
+    await expect(duplicateMenu).toBeVisible();
+
+    const conflictButtons = duplicateMenu.locator(".duplicate-conflict-button");
+    await expect(conflictButtons).toHaveCount(3);
+    await expect(conflictButtons.filter({ hasText: "Second Duplicate" })).toHaveCount(1);
+
+    await conflictButtons.filter({ hasText: "Second Duplicate" }).click();
+
+    const focusedRule = page.locator('.rule[data-group-uuid="g-second"][data-uuid="81000001"]');
+    await expect(focusedRule).toBeVisible();
+    await expect(focusedRule).toHaveAttribute("data-duplicate-highlighted", "true");
+  });
+});
+
+test.describe("Duplicate Indicators - empty patterns", () => {
+  let groupsPage: GroupsPage;
+
+  test.beforeEach(async ({ page }) => {
+    groupsPage = new GroupsPage(page);
+
+    await mockBaseRoutes(page);
+
+    await page.route("**/groups?with_rules=true", async (route) => {
+      await route.fulfill({
+        json: {
+          groups: [
+            {
+              id: "g-empty-a",
+              name: "Empty Group A",
+              rules: [
+                {
+                  id: "91000001",
+                  name: "Empty Rule A",
+                  rule: "",
+                  type: "namespace",
+                  enable: true,
+                },
+                {
+                  id: "91000002",
+                  name: "Whitespace Rule A",
+                  rule: "   ",
+                  type: "namespace",
+                  enable: true,
+                },
+              ],
+              color: "#333333",
+              enable: true,
+              interface: "",
+            },
+            {
+              id: "g-empty-b",
+              name: "Empty Group B",
+              rules: [
+                {
+                  id: "92000001",
+                  name: "Empty Rule B",
+                  rule: "",
+                  type: "namespace",
+                  enable: true,
+                },
+                {
+                  id: "92000002",
+                  name: "Whitespace Rule B",
+                  rule: "   ",
+                  type: "namespace",
+                  enable: true,
+                },
+              ],
+              color: "#444444",
+              enable: true,
+              interface: "",
+            },
+          ],
+        },
+      });
+    });
+
+    await groupsPage.goto();
+  });
+
+  test("should ignore empty and whitespace-only patterns in duplicate detection", async ({ page }) => {
+    const groupHeaders = page.locator(".group-header");
+    await expect(groupHeaders).toHaveCount(2);
+
+    await expect(groupHeaders.nth(0).locator(".group-duplicate-indicator")).toHaveCount(0);
+    await expect(groupHeaders.nth(1).locator(".group-duplicate-indicator")).toHaveCount(0);
+
+    await groupHeaders.nth(0).locator("[data-collapsible-trigger]").click();
+    await groupHeaders.nth(1).locator("[data-collapsible-trigger]").click();
+
+    await expect(page.locator(".duplicate-indicator")).toHaveCount(0);
   });
 });

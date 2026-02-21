@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
-  import { createEventDispatcher, getContext } from "svelte";
+  import { createEventDispatcher, getContext, tick } from "svelte";
   import { slide } from "svelte/transition";
 
   import Pagination from "../../../components/Pagination.svelte";
@@ -24,13 +24,13 @@
     SortAsc,
     SortDesc,
     SortNeutral,
-    TriangleAlert,
   } from "../../../components/ui/icons";
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
+  import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
 
   type Props = {
     group_index: number;
@@ -54,6 +54,7 @@
   let searchActive = $derived(store.searchActive);
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
   let effectiveOpen = $derived(group ? store.open_state[group.id] ?? false : false);
+  let duplicateConflicts = $derived(group ? store.getDuplicateConflictsForGroup(group.id) : []);
 
   function toggleOpen() {
     if (!group) return;
@@ -199,6 +200,64 @@
     store.sortGroupRules(group_index, field, sortDirection);
   }
 
+  function findRulePosition(ruleId: string) {
+    if (!group) return -1;
+    if (searchActive && Array.isArray(visibleRuleIndices)) {
+      const visibleIndex = visibleRuleIndices.findIndex((idx) => group.rules[idx]?.id === ruleId);
+      if (visibleIndex >= 0) return visibleIndex;
+    }
+    return group.rules.findIndex((rule) => rule.id === ruleId);
+  }
+
+  function handleDuplicateConflictClick(groupId: string, ruleId: string) {
+    const highlighted = store.highlightRuleTemporarily(ruleId);
+    if (!highlighted) return;
+    store.requestDuplicateRuleFocus(groupId, ruleId);
+  }
+
+  $effect(() => {
+    if (!group) return;
+    const request = store.duplicateFocusRequest;
+    if (!request || request.groupId !== group.id) return;
+
+    void (async () => {
+      const rulePosition = findRulePosition(request.ruleId);
+      if (rulePosition >= 0) {
+        currentPage = Math.floor(rulePosition / PAGE_SIZE) + 1;
+      }
+
+      store.open_state[group.id] = true;
+
+      await tick();
+
+      if (typeof window !== "undefined") {
+        requestAnimationFrame(() => {
+          const row = document.querySelector<HTMLElement>(
+            `.rule[data-group-uuid="${group.id}"][data-uuid="${request.ruleId}"]`,
+          );
+          if (row) {
+            const rect = row.getBoundingClientRect();
+            const inView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+            if (!inView) {
+              row.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          } else {
+            const targetGroup = document.querySelector<HTMLElement>(`.group[data-uuid="${group.id}"]`);
+            if (targetGroup) {
+              const rect = targetGroup.getBoundingClientRect();
+              const inView = rect.top >= 0 && rect.bottom <= window.innerHeight;
+              if (!inView) {
+                targetGroup.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            }
+          }
+        });
+      }
+
+      store.consumeDuplicateRuleFocus(request.groupId, request.ruleId, request.nonce);
+    })();
+  });
+
   $effect(() => {
     group?.rules.length;
     if (sortField === null) {
@@ -260,12 +319,12 @@
               class="group-name"
               bind:value={group.name}
             />
-            {#if store.duplicateGroupIds.has(group.id)}
-              <Tooltip value={t("Contains duplicate rules")}>
-                <div class="group-duplicate-indicator">
-                  <TriangleAlert size={18} />
-                </div>
-              </Tooltip>
+            {#if duplicateConflicts.length > 0}
+              <GroupDuplicateMenu
+                conflicts={duplicateConflicts}
+                isRuleHighlighted={store.isRuleHighlighted}
+                onConflictClick={handleDuplicateConflictClick}
+              />
             {/if}
           </div>
         </div>
@@ -398,6 +457,7 @@
                   rule_id={rule.id}
                   group_id={group.id}
                   isDuplicate={store.isRuleDuplicate(rule.id)}
+                  isHighlighted={store.isRuleHighlighted(rule.id)}
                   style={i % 2 ? "" : "background-color: var(--bg-light)"}
                 />
               {/each}
@@ -513,16 +573,6 @@
     margin-left: 0.4rem;
     min-width: 0;
     flex: 1 1 auto;
-  }
-
-  .group-duplicate-indicator {
-    color: var(--yellow);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.4rem;
-    cursor: help;
-    flex: 0 0 auto;
   }
 
   .group-actions {
