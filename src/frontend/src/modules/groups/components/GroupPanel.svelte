@@ -52,8 +52,12 @@
 
   let group = $derived(store.data[group_index]);
   let searchActive = $derived(store.searchActive);
+  let searchQuery = $derived(store.normalizedSearch);
+  let isGroupSearchMatched = $derived(group ? store.searchMatchedGroupIds.has(group.id) : false);
   let groupNameHighlightParts = $derived(
-    group ? store.getGroupSearchHighlightParts(group.id, group.name ?? "") : null,
+    group && isGroupSearchMatched
+      ? store.getSearchHighlightParts(group.name ?? "", searchQuery)
+      : undefined,
   );
   let hasGroupNameSearchHighlight = $derived(Boolean(groupNameHighlightParts));
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));

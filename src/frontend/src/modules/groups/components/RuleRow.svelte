@@ -11,7 +11,12 @@
   import { dnd_state, draggable, droppable } from "../../../lib/dnd";
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
-  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
+  import {
+    GROUPS_STORE_CONTEXT,
+    RULE_SEARCH_MATCH_NAME,
+    RULE_SEARCH_MATCH_PATTERN,
+    type GroupsStore,
+  } from "../groups.svelte";
 
   type Props = {
     rule: Rule;
@@ -73,9 +78,17 @@
     drop_position: dropEdge,
   });
 
-  const nameHighlightParts = $derived(store.getRuleSearchHighlightParts(rule_id, rule.name ?? ""));
+  const searchQuery = $derived(store.normalizedSearch);
+  const ruleSearchMatchMask = $derived(store.searchRuleMatchMaskById.get(rule_id) ?? 0);
+  const nameHighlightParts = $derived(
+    ruleSearchMatchMask & RULE_SEARCH_MATCH_NAME
+      ? store.getSearchHighlightParts(rule.name ?? "", searchQuery)
+      : undefined,
+  );
   const patternHighlightParts = $derived(
-    store.getRuleSearchHighlightParts(rule_id, rule.rule ?? ""),
+    ruleSearchMatchMask & RULE_SEARCH_MATCH_PATTERN
+      ? store.getSearchHighlightParts(rule.rule ?? "", searchQuery)
+      : undefined,
   );
   const hasNameSearchHighlight = $derived(Boolean(nameHighlightParts));
   const hasPatternSearchHighlight = $derived(Boolean(patternHighlightParts));

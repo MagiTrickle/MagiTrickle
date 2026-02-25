@@ -23,6 +23,8 @@ const SEARCH_DEBOUNCE_MS = 150 as const;
 const IMPORT_RULES_CHUNK_SIZE = 300 as const;
 const IMPORT_GROUPS_CLONE_CHUNK_SIZE = 20 as const;
 const IMPORT_GROUPS_INSERT_CHUNK_SIZE = 25 as const;
+export const RULE_SEARCH_MATCH_NAME = 1 << 0;
+export const RULE_SEARCH_MATCH_PATTERN = 1 << 1;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -72,7 +74,8 @@ type DuplicateComputationResult = {
 
 type SearchIndexRule = {
   id: string;
-  searchBlob: string;
+  nameLower: string;
+  patternLower: string;
 };
 
 type SearchIndexGroup = {
@@ -105,7 +108,7 @@ export class GroupsStore {
   visibleGroups = $state<VisibleGroup[]>([]);
   searchPending = $state(false);
   searchMatchedGroupIds = $state<Set<string>>(new Set());
-  searchMatchedRuleIds = $state<Set<string>>(new Set());
+  searchRuleMatchMaskById = $state<Map<string, number>>(new Map());
 
   normalizedSearch = $derived(this.searchValue.trim().toLowerCase());
   searchActive = $derived(Boolean(this.normalizedSearch));
@@ -391,22 +394,22 @@ export class GroupsStore {
 
   #clearSearchMatches() {
     this.searchMatchedGroupIds = new Set();
-    this.searchMatchedRuleIds = new Set();
+    this.searchRuleMatchMaskById = new Map();
   }
 
-  #splitSearchHighlightSegments(value: string, query: string): SearchHighlightSegment[] | null {
-    if (!value || !query) return null;
+  #splitSearchHighlightSegments(value: string, query: string): SearchHighlightSegment[] | undefined {
+    if (!value || !query) return undefined;
 
     const source = `${value}`;
     const needle = query.trim().toLowerCase();
-    if (!needle) return null;
+    if (!needle) return undefined;
 
     const haystack = source.toLowerCase();
     const needleLength = needle.length;
 
     let cursor = 0;
     let matchIndex = haystack.indexOf(needle, cursor);
-    if (matchIndex === -1) return null;
+    if (matchIndex === -1) return undefined;
 
     const segments: SearchHighlightSegment[] = [];
 
@@ -480,7 +483,8 @@ export class GroupsStore {
         const rule = rules[r];
         indexedRules[r] = {
           id: rule.id,
-          searchBlob: `${rule.name || ""} ${rule.rule || ""}`.toLowerCase(),
+          nameLower: (rule.name || "").toLowerCase(),
+          patternLower: (rule.rule || "").toLowerCase(),
         };
         if ((r & 31) === 0) {
           await maybeYield();
@@ -554,7 +558,7 @@ export class GroupsStore {
 
     const nextVisible: VisibleGroup[] = [];
     const matchedGroupIds = new Set<string>();
-    const matchedRuleIds = new Set<string>();
+    const ruleMatchMaskById = new Map<string, number>();
     const searchIndex = this.searchIndex;
     const len = searchIndex.length;
 
@@ -578,11 +582,18 @@ export class GroupsStore {
 
       for (let r = 0; r < rulesLen; r++) {
         const indexedRule = rules[r];
-        const isMatchedBySearch = indexedRule.searchBlob.includes(query);
-        if (forcedRules?.has(indexedRule.id) || isMatchedBySearch) {
+        let matchMask = 0;
+        if (indexedRule.nameLower.includes(query)) {
+          matchMask |= RULE_SEARCH_MATCH_NAME;
+        }
+        if (indexedRule.patternLower.includes(query)) {
+          matchMask |= RULE_SEARCH_MATCH_PATTERN;
+        }
+
+        if (forcedRules?.has(indexedRule.id) || matchMask !== 0) {
           matchedRuleIndices.push(r);
-          if (isMatchedBySearch) {
-            matchedRuleIds.add(indexedRule.id);
+          if (matchMask !== 0) {
+            ruleMatchMaskById.set(indexedRule.id, matchMask);
           }
         }
       }
@@ -594,7 +605,7 @@ export class GroupsStore {
 
     this.visibleGroups = nextVisible;
     this.searchMatchedGroupIds = matchedGroupIds;
-    this.searchMatchedRuleIds = matchedRuleIds;
+    this.searchRuleMatchMaskById = ruleMatchMaskById;
     this.searchPending = false;
   }
 
@@ -782,19 +793,11 @@ export class GroupsStore {
   };
 
   isRuleDuplicate = (ruleId: string) => this.duplicateRuleIds.has(ruleId);
-  isRuleSearchMatched = (ruleId: string) => this.searchMatchedRuleIds.has(ruleId);
-  isGroupSearchMatched = (groupId: string) => this.searchMatchedGroupIds.has(groupId);
-  getRuleSearchHighlightParts = (ruleId: string, value: string): SearchHighlightSegment[] | null => {
-    if (!this.searchMatchedRuleIds.has(ruleId)) return null;
-    return this.#splitSearchHighlightSegments(value, this.normalizedSearch);
-  };
-  getGroupSearchHighlightParts = (
-    groupId: string,
+  getRuleSearchMatchMask = (ruleId: string) => this.searchRuleMatchMaskById.get(ruleId) ?? 0;
+  getSearchHighlightParts = (
     value: string,
-  ): SearchHighlightSegment[] | null => {
-    if (!this.searchMatchedGroupIds.has(groupId)) return null;
-    return this.#splitSearchHighlightSegments(value, this.normalizedSearch);
-  };
+    query: string,
+  ): SearchHighlightSegment[] | undefined => this.#splitSearchHighlightSegments(value, query);
 
   pinDuplicateByRuleId = (ruleId: string) => {
     const key = this.#resolveDuplicateKey(ruleId);
