@@ -12,7 +12,6 @@
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
-  import { splitSearchHighlightSegments } from "../search-highlight";
 
   type Props = {
     rule: Rule;
@@ -74,13 +73,9 @@
     drop_position: dropEdge,
   });
 
-  const searchQuery = $derived(store.normalizedSearch);
-  const isSearchMatched = $derived(store.isRuleSearchMatched(rule_id));
-  const nameHighlightParts = $derived(
-    isSearchMatched ? splitSearchHighlightSegments(rule.name ?? "", searchQuery) : null,
-  );
+  const nameHighlightParts = $derived(store.getRuleSearchHighlightParts(rule_id, rule.name ?? ""));
   const patternHighlightParts = $derived(
-    isSearchMatched ? splitSearchHighlightSegments(rule.rule ?? "", searchQuery) : null,
+    store.getRuleSearchHighlightParts(rule_id, rule.rule ?? ""),
   );
   const hasNameSearchHighlight = $derived(Boolean(nameHighlightParts));
   const hasPatternSearchHighlight = $derived(Boolean(patternHighlightParts));

@@ -30,7 +30,6 @@
   import { defaultRule } from "../../../utils/defaults";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
-  import { splitSearchHighlightSegments } from "../search-highlight";
   import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
 
   type Props = {
@@ -53,12 +52,8 @@
 
   let group = $derived(store.data[group_index]);
   let searchActive = $derived(store.searchActive);
-  let searchQuery = $derived(store.normalizedSearch);
-  let isGroupSearchMatched = $derived(group ? store.isGroupSearchMatched(group.id) : false);
   let groupNameHighlightParts = $derived(
-    group && isGroupSearchMatched
-      ? splitSearchHighlightSegments(group.name ?? "", searchQuery)
-      : null,
+    group ? store.getGroupSearchHighlightParts(group.id, group.name ?? "") : null,
   );
   let hasGroupNameSearchHighlight = $derived(Boolean(groupNameHighlightParts));
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
