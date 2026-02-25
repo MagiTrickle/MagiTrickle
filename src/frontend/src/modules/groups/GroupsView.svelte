@@ -367,15 +367,14 @@
       padding: 0.3rem 0;
       padding-bottom: 0;
       transition: padding-bottom 220ms cubic-bezier(0.2, 0, 0.2, 1);
-      --row-h: 48px;
+      --row-h: 43px;
       --gap: 10px;
-      --actions-top: 0px;
-      --actions-reserve: 200px;
+      --actions-top: 0.3rem;
     }
 
     .group-controls :global(.group-controls-search) {
-      padding-right: var(--actions-reserve);
-      transition: padding-right 220ms cubic-bezier(0.2, 0, 0.2, 1);
+      width: max-content;
+      transition: width 220ms cubic-bezier(0.2, 0, 0.2, 1);
     }
 
     .group-controls-actions {
@@ -388,7 +387,13 @@
 
     .group-controls:has(:global(.search-container:focus-within)),
     .group-controls:has(:global(.search-input:not(:placeholder-shown))) {
-      --actions-reserve: 200px;
+      padding-bottom: calc(var(--row-h) + var(--gap));
+      --actions-top: calc(0.3rem + var(--row-h) + var(--gap));
+    }
+
+    .group-controls:has(:global(.search-container:focus-within)) :global(.group-controls-search),
+    .group-controls:has(:global(.search-input:not(:placeholder-shown))) :global(.group-controls-search) {
+      width: 100%;
     }
 
     .group-controls:has(:global(.search-container:focus-within)) :global(.search-container),
