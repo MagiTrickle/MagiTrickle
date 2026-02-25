@@ -317,24 +317,12 @@
   }
 
   .group-wrapper.is-hidden {
-    grid-template-rows: 0fr;
-    opacity: 0;
-    margin-top: 0;
-    margin-bottom: 0;
-    pointer-events: none;
+    display: none;
   }
 
   .group-wrapper:has(:global([data-select-trigger][data-state="open"])),
   .group-wrapper:has(:global([data-dropdown-menu-trigger][data-state="open"])) {
     z-index: 1;
-  }
-
-  .group-wrapper:first-of-type {
-    margin-top: 1rem;
-  }
-
-  .group-wrapper:last-of-type {
-    margin-bottom: 1rem;
   }
 
   .group-drop-slot {
@@ -405,9 +393,7 @@
 
     .group-controls:has(:global(.search-container:focus-within)),
     .group-controls:has(:global(.search-input:not(:placeholder-shown))) {
-      padding-bottom: calc(var(--row-h) + var(--gap));
-      --actions-top: calc(var(--row-h) + var(--gap));
-      --actions-reserve: 0px;
+      --actions-reserve: 200px;
     }
 
     .group-controls:has(:global(.search-container:focus-within)) :global(.search-container),
