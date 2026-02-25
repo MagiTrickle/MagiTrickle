@@ -99,6 +99,8 @@ export class GroupsStore {
   searchValue = $state("");
   visibleGroups = $state<VisibleGroup[]>([]);
   searchPending = $state(false);
+  searchMatchedGroupIds = $state<Set<string>>(new Set());
+  searchMatchedRuleIds = $state<Set<string>>(new Set());
 
   normalizedSearch = $derived(this.searchValue.trim().toLowerCase());
   searchActive = $derived(Boolean(this.normalizedSearch));
@@ -194,6 +196,7 @@ export class GroupsStore {
             group_index: index,
             ruleIndices: null,
           }));
+          this.#clearSearchMatches();
           this.searchPending = false;
           return;
         }
@@ -381,6 +384,11 @@ export class GroupsStore {
     }
   }
 
+  #clearSearchMatches() {
+    this.searchMatchedGroupIds = new Set();
+    this.searchMatchedRuleIds = new Set();
+  }
+
   #cancelSearchIndexBuild() {
     this.#searchIndexBuildToken += 1;
   }
@@ -493,24 +501,32 @@ export class GroupsStore {
         group_index: index,
         ruleIndices: null,
       }));
+      this.#clearSearchMatches();
       this.searchPending = false;
       return;
     }
 
     if (this.searchIndexRevision !== this.dataRevision) {
+      this.#clearSearchMatches();
       this.searchPending = true;
       return;
     }
 
     const nextVisible: VisibleGroup[] = [];
+    const matchedGroupIds = new Set<string>();
+    const matchedRuleIds = new Set<string>();
     const searchIndex = this.searchIndex;
     const len = searchIndex.length;
 
     for (let i = 0; i < len; i++) {
       const indexedGroup = searchIndex[i];
       const isForcedGroup = this.#forcedGroupIds.has(indexedGroup.id);
+      const isGroupMatchedByName = indexedGroup.nameLower.includes(query);
 
-      if (isForcedGroup || indexedGroup.nameLower.includes(query)) {
+      if (isForcedGroup || isGroupMatchedByName) {
+        if (isGroupMatchedByName) {
+          matchedGroupIds.add(indexedGroup.id);
+        }
         nextVisible.push({ group_index: i, ruleIndices: null });
         continue;
       }
@@ -522,8 +538,12 @@ export class GroupsStore {
 
       for (let r = 0; r < rulesLen; r++) {
         const indexedRule = rules[r];
-        if (forcedRules?.has(indexedRule.id) || indexedRule.searchBlob.includes(query)) {
+        const isMatchedBySearch = indexedRule.searchBlob.includes(query);
+        if (forcedRules?.has(indexedRule.id) || isMatchedBySearch) {
           matchedRuleIndices.push(r);
+          if (isMatchedBySearch) {
+            matchedRuleIds.add(indexedRule.id);
+          }
         }
       }
 
@@ -533,6 +553,8 @@ export class GroupsStore {
     }
 
     this.visibleGroups = nextVisible;
+    this.searchMatchedGroupIds = matchedGroupIds;
+    this.searchMatchedRuleIds = matchedRuleIds;
     this.searchPending = false;
   }
 
@@ -720,6 +742,8 @@ export class GroupsStore {
   };
 
   isRuleDuplicate = (ruleId: string) => this.duplicateRuleIds.has(ruleId);
+  isRuleSearchMatched = (ruleId: string) => this.searchMatchedRuleIds.has(ruleId);
+  isGroupSearchMatched = (groupId: string) => this.searchMatchedGroupIds.has(groupId);
 
   pinDuplicateByRuleId = (ruleId: string) => {
     const key = this.#resolveDuplicateKey(ruleId);

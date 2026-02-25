@@ -30,6 +30,7 @@
   import { defaultRule } from "../../../utils/defaults";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
+  import { splitSearchHighlightSegments } from "../search-highlight";
   import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
 
   type Props = {
@@ -52,6 +53,14 @@
 
   let group = $derived(store.data[group_index]);
   let searchActive = $derived(store.searchActive);
+  let searchQuery = $derived(store.normalizedSearch);
+  let isGroupSearchMatched = $derived(group ? store.isGroupSearchMatched(group.id) : false);
+  let groupNameHighlightParts = $derived(
+    group && isGroupSearchMatched
+      ? splitSearchHighlightSegments(group.name ?? "", searchQuery)
+      : null,
+  );
+  let hasGroupNameSearchHighlight = $derived(Boolean(groupNameHighlightParts));
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
   let effectiveOpen = $derived(group ? store.open_state[group.id] ?? false : false);
   let duplicateConflicts = $derived(group ? store.getDuplicateConflictsForGroup(group.id) : []);
@@ -313,12 +322,26 @@
           </div>
 
           <div class="group-name-wrap">
-            <input
-              type="text"
-              placeholder={t("group name...")}
-              class="group-name"
-              bind:value={group.name}
-            />
+            <div class="group-name-field">
+              <input
+                type="text"
+                placeholder={t("group name...")}
+                class="group-name"
+                class:search-text-hidden={hasGroupNameSearchHighlight}
+                bind:value={group.name}
+              />
+              {#if hasGroupNameSearchHighlight && groupNameHighlightParts}
+                <div class="search-highlight-overlay group-name-search-overlay" aria-hidden="true">
+                  {#each groupNameHighlightParts as part}
+                    {#if part.matched}
+                      <mark>{part.text}</mark>
+                    {:else}
+                      {part.text}
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
+            </div>
             {#if duplicateConflicts.length > 0}
               <GroupDuplicateMenu
                 conflicts={duplicateConflicts}
@@ -573,6 +596,56 @@
     margin-left: 0.4rem;
     min-width: 0;
     flex: 1 1 auto;
+  }
+
+  .group-name-field {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-highlight-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre;
+    color: var(--text);
+    padding: 0;
+    margin: 0;
+  }
+
+  .group-name-search-overlay {
+    transform: translateY(0.1rem);
+    font: 600 1.3rem var(--font);
+  }
+
+  .search-highlight-overlay mark {
+    background: color-mix(in oklab, var(--yellow) 34%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--yellow) 62%, transparent),
+      0 1px 0 color-mix(in oklab, var(--yellow) 30%, transparent);
+    color: inherit;
+    border-radius: 0.22rem;
+  }
+
+  .group-name.search-text-hidden {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--text);
+  }
+
+  .group-name.search-text-hidden:focus,
+  .group-name.search-text-hidden:focus-visible {
+    color: var(--text);
+    -webkit-text-fill-color: var(--text);
+  }
+
+  .group-name:focus + .search-highlight-overlay,
+  .group-name:focus-visible + .search-highlight-overlay {
+    display: none;
   }
 
   .group-actions {

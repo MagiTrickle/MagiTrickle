@@ -12,6 +12,7 @@
   import { RULE_TYPES, type Rule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
+  import { splitSearchHighlightSegments } from "../search-highlight";
 
   type Props = {
     rule: Rule;
@@ -72,6 +73,17 @@
     group_index,
     drop_position: dropEdge,
   });
+
+  const searchQuery = $derived(store.normalizedSearch);
+  const isSearchMatched = $derived(store.isRuleSearchMatched(rule_id));
+  const nameHighlightParts = $derived(
+    isSearchMatched ? splitSearchHighlightSegments(rule.name ?? "", searchQuery) : null,
+  );
+  const patternHighlightParts = $derived(
+    isSearchMatched ? splitSearchHighlightSegments(rule.rule ?? "", searchQuery) : null,
+  );
+  const hasNameSearchHighlight = $derived(Boolean(nameHighlightParts));
+  const hasPatternSearchHighlight = $derived(Boolean(patternHighlightParts));
 
   function applyDropEdge(after: boolean) {
     dropEdge = after ? "after" : "before";
@@ -148,7 +160,6 @@
     document.body.appendChild(badge);
     return badge;
   }
-
 </script>
 
 <div
@@ -189,12 +200,26 @@
     </div>
     <div class="name">
       <div class="label">{t("Name")}</div>
-      <input
-        type="text"
-        placeholder={t("rule name...")}
-        class="table-input"
-        bind:value={rule.name}
-      />
+      <div class="search-highlight-field">
+        <input
+          type="text"
+          placeholder={t("rule name...")}
+          class="table-input"
+          class:search-text-hidden={hasNameSearchHighlight}
+          bind:value={rule.name}
+        />
+        {#if hasNameSearchHighlight && nameHighlightParts}
+          <div class="search-highlight-overlay" aria-hidden="true">
+            {#each nameHighlightParts as part}
+              {#if part.matched}
+                <mark>{part.text}</mark>
+              {:else}
+                {part.text}
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
     </div>
     <div class="type">
       <div class="label">{t("Type")}</div>
@@ -202,15 +227,29 @@
     </div>
     <div class="pattern">
       <div class="label">{t("Pattern")}</div>
-      <input
-        type="text"
-        placeholder={t("rule pattern...")}
-        class="table-input pattern-input"
-        bind:value={rule.rule}
-        bind:this={input}
-        oninput={patternValidation}
-        onfocusout={patternValidation}
-      />
+      <div class="search-highlight-field">
+        <input
+          type="text"
+          placeholder={t("rule pattern...")}
+          class="table-input pattern-input"
+          class:search-text-hidden={hasPatternSearchHighlight}
+          bind:value={rule.rule}
+          bind:this={input}
+          oninput={patternValidation}
+          onfocusout={patternValidation}
+        />
+        {#if hasPatternSearchHighlight && patternHighlightParts}
+          <div class="search-highlight-overlay" aria-hidden="true">
+            {#each patternHighlightParts as part}
+              {#if part.matched}
+                <mark>{part.text}</mark>
+              {:else}
+                {part.text}
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
     </div>
     <div class="actions">
       {#if isDuplicate}
@@ -258,6 +297,51 @@
       0 0 0 1px color-mix(in oklab, var(--yellow) 24%, transparent),
       0 12px 28px -24px color-mix(in oklab, var(--yellow) 56%, transparent);
     animation: duplicate-focus-apple 2.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .search-highlight-field {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .search-highlight-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre;
+    color: var(--text);
+    font-size: 1rem;
+    font-family: var(--font);
+  }
+
+  .search-highlight-overlay mark {
+    background: color-mix(in oklab, var(--yellow) 34%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--yellow) 62%, transparent),
+      0 1px 0 color-mix(in oklab, var(--yellow) 30%, transparent);
+    color: inherit;
+    border-radius: 0.22rem;
+  }
+
+  .table-input.search-text-hidden {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--text);
+  }
+
+  .table-input.search-text-hidden:focus,
+  .table-input.search-text-hidden:focus-visible {
+    color: var(--text);
+    -webkit-text-fill-color: var(--text);
+  }
+
+  .table-input:focus + .search-highlight-overlay,
+  .table-input:focus-visible + .search-highlight-overlay {
+    display: none;
   }
 
   @keyframes duplicate-focus-apple {
@@ -312,6 +396,8 @@
     color: var(--text);
     border-bottom: 1px solid transparent;
     width: 100%;
+    padding: 0;
+    margin: 0;
   }
   .table-input:focus-visible {
     outline: none;
