@@ -260,13 +260,15 @@
       </div>
     </div>
     <div class="actions">
-      {#if isDuplicate}
-        <Tooltip value={t("Duplicate rule")}>
-          <div class="duplicate-indicator">
-            <TriangleAlert size={18} />
-          </div>
-        </Tooltip>
-      {/if}
+      <div class="duplicate-indicator-slot" class:is-empty={!isDuplicate}>
+        {#if isDuplicate}
+          <Tooltip value={t("Duplicate rule")}>
+            <div class="duplicate-indicator">
+              <TriangleAlert size={18} />
+            </div>
+          </Tooltip>
+        {/if}
+      </div>
       <Tooltip value={t(rule.enable ? "Disable Rule" : "Enable Rule")}>
         <Switch bind:checked={rule.enable} />
       </Tooltip>
@@ -426,6 +428,18 @@
     align-items: center;
     justify-content: end;
     gap: 0.5rem;
+  }
+
+  .duplicate-indicator-slot {
+    flex: 0 0 1.9rem;
+    width: 1.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .duplicate-indicator-slot.is-empty {
+    pointer-events: none;
   }
 
   .grip {
