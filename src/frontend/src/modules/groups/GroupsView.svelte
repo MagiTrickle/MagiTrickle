@@ -320,11 +320,6 @@
     display: none;
   }
 
-  .group-wrapper:has(:global([data-select-trigger][data-state="open"])),
-  .group-wrapper:has(:global([data-dropdown-menu-trigger][data-state="open"])) {
-    z-index: 1;
-  }
-
   .group-drop-slot {
     position: absolute;
     left: 0;

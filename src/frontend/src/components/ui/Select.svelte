@@ -104,6 +104,7 @@
     overflow-y: auto;
     width: max-content;
     min-width: 100%;
+    z-index: 10;
   }
 
   :global([data-select-item]) {
