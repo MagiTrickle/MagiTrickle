@@ -327,10 +327,11 @@
                 placeholder={t("group name...")}
                 class="group-name"
                 class:search-text-hidden={hasGroupNameSearchHighlight}
+                class:has-warning={duplicateConflicts.length > 0}
                 bind:value={group.name}
               />
               {#if hasGroupNameSearchHighlight && groupNameHighlightParts}
-                <div class="search-highlight-overlay group-name-search-overlay" aria-hidden="true">
+                <div class="search-highlight-overlay group-name-search-overlay" class:has-warning={duplicateConflicts.length > 0} aria-hidden="true">
                   {#each groupNameHighlightParts as part}
                     {#if part.matched}
                       <mark>{part.text}</mark>
@@ -579,6 +580,11 @@
       top: 0.1rem;
       min-width: 0;
       width: 100%;
+      box-sizing: border-box;
+    }
+
+    &.has-warning {
+      padding-right: 2.2rem;
     }
 
     &:focus-visible {
@@ -588,19 +594,29 @@
   }
 
   .group-name-wrap {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    position: relative;
     align-items: center;
-    gap: 0.2rem;
     margin-left: 0.4rem;
     min-width: 0;
     flex: 1 1 auto;
+  }
+
+  .group-name-wrap :global([data-dropdown-menu-trigger]) {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    z-index: 2;
   }
 
   .group-name-field {
     position: relative;
     width: 100%;
     min-width: 0;
+    flex: 1 1 auto;
   }
 
   .search-highlight-overlay {
@@ -614,6 +630,11 @@
     color: var(--text);
     padding: 0;
     margin: 0;
+    box-sizing: border-box;
+  }
+
+  .search-highlight-overlay.has-warning {
+    padding-right: 2.2rem;
   }
 
   .group-name-search-overlay {
