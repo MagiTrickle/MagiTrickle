@@ -473,14 +473,14 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      margin-top: -14rem; /* Прячем за карточкой, торчит только верх */
+      margin-top: -10rem; /* Прячем за карточкой, торчит только верх */
       transition: margin-top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
       pointer-events: auto;
+      animation: none;
     }
 
-    /* Когда форма в фокусе, логотип немного приподнимается */
     .logo-wrapper.is-focused {
-      margin-top: -17rem;
+      margin-top: -13rem;
     }
 
     .info-btn {
@@ -493,7 +493,6 @@
     .card {
       padding: 1.4rem 1.2rem 1.4rem;
       border-radius: 0.8rem;
-      margin-top: 4rem; /* Сдвигаем карточку чуть ниже центра, чтобы было место для логотипа */
     }
 
     .actions {
