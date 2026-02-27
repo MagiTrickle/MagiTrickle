@@ -153,4 +153,71 @@ test.describe("Groups Search", () => {
     await expect(page.locator(".rule")).toHaveCount(1);
     await expect(page.locator(".rule .pattern input").first()).toHaveValue("google.com");
   });
+
+  test("should highlight matched text in group name, rule name, and pattern", async ({ page }) => {
+    await page.route("**/groups?with_rules=true", async (route) => {
+      await route.fulfill({
+        json: {
+          groups: [
+            {
+              id: "g-highlight",
+              name: "Zeta Group",
+              rules: [
+                {
+                  id: "r-name",
+                  name: "Alpha Rule",
+                  rule: "first.example.com",
+                  type: "domain",
+                  enable: true,
+                },
+                {
+                  id: "r-pattern",
+                  name: "Network Rule",
+                  rule: "needle.example.com",
+                  type: "domain",
+                  enable: true,
+                },
+              ],
+              color: "#000000",
+              enable: true,
+              interface: "",
+            },
+          ],
+        },
+      });
+    });
+
+    await groupsPage.goto();
+
+    const group = page.locator(".group-wrapper").first();
+    const groupNameOverlay = group.locator(".group-name-field .group-name-search-overlay");
+
+    await groupsPage.search("zeta");
+    await expect(page.locator(".group-wrapper:visible")).toHaveCount(1);
+    await expect(groupNameOverlay.locator("mark")).toHaveCount(1);
+    await expect(groupNameOverlay.locator("mark").first()).toHaveText("Zeta");
+    await expect(group.locator(".rule .search-highlight-overlay mark")).toHaveCount(0);
+
+    await groupsPage.search("alpha");
+    await expect(group.locator(".rule")).toHaveCount(1);
+    const nameMatchedRule = group.locator('.rule[data-uuid="r-name"]');
+    await expect(nameMatchedRule.locator(".name .search-highlight-overlay mark")).toHaveCount(1);
+    await expect(nameMatchedRule.locator(".name .search-highlight-overlay mark").first()).toHaveText(
+      "Alpha",
+    );
+    await expect(nameMatchedRule.locator(".pattern .search-highlight-overlay mark")).toHaveCount(0);
+    await expect(groupNameOverlay.locator("mark")).toHaveCount(0);
+
+    await groupsPage.search("needle");
+    await expect(group.locator(".rule")).toHaveCount(1);
+    const patternMatchedRule = group.locator('.rule[data-uuid="r-pattern"]');
+    await expect(patternMatchedRule.locator(".pattern .search-highlight-overlay mark")).toHaveCount(
+      1,
+    );
+    await expect(
+      patternMatchedRule.locator(".pattern .search-highlight-overlay mark").first(),
+    ).toHaveText("needle");
+    await expect(patternMatchedRule.locator(".name .search-highlight-overlay mark")).toHaveCount(0);
+    await expect(groupNameOverlay.locator("mark")).toHaveCount(0);
+  });
 });
