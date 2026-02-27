@@ -133,7 +133,7 @@
 
   <div class="right-panel">
     <div class="brand-container">
-      <div class="logo-wrapper">
+      <div class="logo-wrapper" class:is-focused={isFocused}>
         <div
           class="logo-sticker"
           role="presentation"
@@ -228,6 +228,9 @@
     width: clamp(12rem, 25vw, 20rem);
     animation: drift 7s ease-in-out infinite;
     z-index: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 
   .logo-sticker {
@@ -249,12 +252,18 @@
     width: 100%;
     height: auto;
     display: block;
-    opacity: 0.9;
+    opacity: 0.25;
     transform: translateZ(0);
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
-    transition: filter 0.22s ease, opacity 0.22s ease, transform 0.22s ease;
+    filter: grayscale(1) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+    transition: filter 0.7s ease, opacity 0.7s ease, transform 0.22s ease;
     user-select: none;
     -webkit-user-drag: none;
+  }
+
+  .logo-sticker.is-hovered .logo-background {
+    opacity: 1;
+    transform: translateZ(15px) scale(1.02);
+    filter: grayscale(0) drop-shadow(0 calc(8px + var(--lift) * 0.5) calc(12px + var(--lift) * 0.5) rgba(0, 0, 0, 0.3));
   }
 
   .logo-sticker::before,
@@ -263,7 +272,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.2s ease, filter 0.7s ease;
     -webkit-mask-image: url('/static/logo.svg');
     -webkit-mask-size: contain;
     -webkit-mask-repeat: no-repeat;
@@ -273,6 +282,12 @@
     mask-repeat: no-repeat;
     mask-position: center;
     z-index: 2;
+    filter: grayscale(1);
+  }
+
+  .logo-sticker.is-hovered::before,
+  .logo-sticker.is-hovered::after {
+    filter: grayscale(0);
   }
 
   .logo-sticker::before {
@@ -306,12 +321,6 @@
     background-position: calc((var(--mx) - 50%) * -2) calc((var(--my) - 50%) * -2);
     mix-blend-mode: hard-light;
     transform: translateZ(2px);
-  }
-
-  .logo-sticker.is-hovered .logo-background {
-    opacity: 1;
-    transform: translateZ(15px) scale(1.02);
-    filter: drop-shadow(0 calc(8px + var(--lift) * 0.5) calc(12px + var(--lift) * 0.5) rgba(0, 0, 0, 0.3));
   }
 
   .logo-sticker.is-hovered::before,
@@ -428,31 +437,63 @@
 
   @media (max-width: 700px) {
     .auth-page {
-      flex-direction: column-reverse;
+      flex-direction: column;
+      justify-content: center;
     }
 
     .left-panel {
       padding: 1rem;
+      flex: none;
+      z-index: 2;
     }
 
     .right-panel {
-      padding: 2rem 1rem;
+      position: absolute;
+      inset: 0;
+      padding: 0;
       flex: none;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .brand-container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 100%;
+      justify-content: center;
+      align-items: center;
     }
 
     .logo-wrapper {
-      width: 12rem;
+      width: 14rem;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      margin-top: -14rem; /* Прячем за карточкой, торчит только верх */
+      transition: margin-top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: auto;
+    }
+
+    /* Когда форма в фокусе, логотип немного приподнимается */
+    .logo-wrapper.is-focused {
+      margin-top: -17rem;
     }
 
     .info-btn {
       top: 1rem;
       right: 1rem;
       bottom: auto;
+      pointer-events: auto;
     }
 
     .card {
       padding: 1.4rem 1.2rem 1.4rem;
       border-radius: 0.8rem;
+      margin-top: 4rem; /* Сдвигаем карточку чуть ниже центра, чтобы было место для логотипа */
     }
 
     .actions {
