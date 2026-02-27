@@ -153,7 +153,13 @@
     }
 
     .search-container {
+      --search-icon-size: 22px;
+      --search-collapsed-width: calc(var(--search-icon-size) + 1.2rem + 2px);
       width: var(--search-collapsed-width);
+      height: var(--search-collapsed-width);
+      min-height: var(--search-collapsed-width);
+      min-width: 0;
+      padding: 0.6rem;
     }
 
     .search-container:focus-within,

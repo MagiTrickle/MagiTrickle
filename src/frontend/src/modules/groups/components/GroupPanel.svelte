@@ -52,6 +52,14 @@
 
   let group = $derived(store.data[group_index]);
   let searchActive = $derived(store.searchActive);
+  let searchQuery = $derived(store.normalizedSearch);
+  let isGroupSearchMatched = $derived(group ? store.searchMatchedGroupIds.has(group.id) : false);
+  let groupNameHighlightParts = $derived(
+    group && isGroupSearchMatched
+      ? store.getSearchHighlightParts(group.name ?? "", searchQuery)
+      : undefined,
+  );
+  let hasGroupNameSearchHighlight = $derived(Boolean(groupNameHighlightParts));
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
   let effectiveOpen = $derived(group ? store.open_state[group.id] ?? false : false);
   let duplicateConflicts = $derived(group ? store.getDuplicateConflictsForGroup(group.id) : []);
@@ -313,12 +321,27 @@
           </div>
 
           <div class="group-name-wrap">
-            <input
-              type="text"
-              placeholder={t("group name...")}
-              class="group-name"
-              bind:value={group.name}
-            />
+            <div class="group-name-field">
+              <input
+                type="text"
+                placeholder={t("group name...")}
+                class="group-name"
+                class:search-text-hidden={hasGroupNameSearchHighlight}
+                class:has-warning={duplicateConflicts.length > 0}
+                bind:value={group.name}
+              />
+              {#if hasGroupNameSearchHighlight && groupNameHighlightParts}
+                <div class="search-highlight-overlay group-name-search-overlay" class:has-warning={duplicateConflicts.length > 0} aria-hidden="true">
+                  {#each groupNameHighlightParts as part}
+                    {#if part.matched}
+                      <mark>{part.text}</mark>
+                    {:else}
+                      {part.text}
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
+            </div>
             {#if duplicateConflicts.length > 0}
               <GroupDuplicateMenu
                 conflicts={duplicateConflicts}
@@ -557,6 +580,11 @@
       top: 0.1rem;
       min-width: 0;
       width: 100%;
+      box-sizing: border-box;
+    }
+
+    &.has-warning {
+      padding-right: 2.2rem;
     }
 
     &:focus-visible {
@@ -566,13 +594,78 @@
   }
 
   .group-name-wrap {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    position: relative;
     align-items: center;
-    gap: 0.2rem;
     margin-left: 0.4rem;
     min-width: 0;
     flex: 1 1 auto;
+  }
+
+  .group-name-wrap :global([data-dropdown-menu-trigger]) {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    z-index: 2;
+  }
+
+  .group-name-field {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .search-highlight-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: pre;
+    color: var(--text);
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+  .search-highlight-overlay.has-warning {
+    padding-right: 2.2rem;
+  }
+
+  .group-name-search-overlay {
+    transform: translateY(0.1rem);
+    font: 600 1.3rem var(--font);
+  }
+
+  .search-highlight-overlay mark {
+    background: color-mix(in oklab, var(--yellow) 34%, transparent);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--yellow) 62%, transparent),
+      0 1px 0 color-mix(in oklab, var(--yellow) 30%, transparent);
+    color: inherit;
+    border-radius: 0.22rem;
+  }
+
+  .group-name.search-text-hidden {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--text);
+  }
+
+  .group-name.search-text-hidden:focus,
+  .group-name.search-text-hidden:focus-visible {
+    color: var(--text);
+    -webkit-text-fill-color: var(--text);
+  }
+
+  .group-name:focus + .search-highlight-overlay,
+  .group-name:focus-visible + .search-highlight-overlay {
+    display: none;
   }
 
   .group-actions {
