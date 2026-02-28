@@ -27,6 +27,7 @@ PKG_REVISION ?= 1
 BUILDS_DIR := ./.build
 
 BUILD_DIR := $(BUILDS_DIR)/$(PLATFORM)_$(TARGET)
+STAMPS_DIR := $(BUILD_DIR)/.stamps
 
 DATA_DIR := $(BUILD_DIR)/data
 CONTROL_DIR := $(BUILD_DIR)/control
@@ -35,6 +36,15 @@ BIN_DIR := $(DATA_DIR)/bin
 ETC_DIR := $(DATA_DIR)/etc
 USRSHARE_DIR := $(DATA_DIR)/usr/share
 STATE_DIR := $(DATA_DIR)/var/lib/magitrickle
+
+BACKEND_SOURCES := $(shell find ./src/backend -type f -name '*.go' 2>/dev/null)
+BACKEND_SOURCES += ./src/backend/go.mod ./src/backend/go.sum
+BACKEND_BUILD_ENV := PLATFORM=$(PLATFORM) TARGET=$(TARGET) GOOS=$(GOOS) GOARCH=$(GOARCH) GOMIPS=$(GOMIPS) GOARM=$(GOARM) GO386=$(GO386) GO_TAGS=$(GO_TAGS) PKG_VERSION=$(PKG_VERSION)
+
+FRONTEND_SOURCES := $(shell find ./src/frontend/src -type f 2>/dev/null)
+FRONTEND_SOURCES += ./src/frontend/package.json ./src/frontend/package-lock.json
+FRONTEND_SOURCES += ./src/frontend/vite.config.ts ./src/frontend/tsconfig.json
+FRONTEND_BUILD_ENV := PKG_VERSION=$(PKG_VERSION) PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)
 
 ifeq ($(PLATFORM),entware)
 	BIN_DIR := $(DATA_DIR)/opt/bin
@@ -66,27 +76,60 @@ GO_FLAGS := \
 
 GO_PARAMS = -v -trimpath -ldflags="-X 'magitrickle/constant.Version=$(PKG_VERSION)' -w -s" $(if $(GO_TAGS),-tags "$(GO_TAGS)")
 
-all: clear build package
+.PHONY: all rebuild clear clean build build_backend build_frontend rebuild_backend rebuild_frontend package package_ipk FORCE
+
+all: build package
+
+rebuild: clear build package
 
 clear:
 	rm -rf ./src/frontend/dist
 	rm -rf "$(BUILD_DIR)"
 
+clean:
+	rm -rf "$(BUILDS_DIR)"
+
 build: build_backend build_frontend
 
-build_backend:
-	cd ./src/backend && go mod tidy
+$(STAMPS_DIR)/backend-env: FORCE
+	@mkdir -p $(STAMPS_DIR)
+	@echo "$(BACKEND_BUILD_ENV)" | cmp -s - $@ || echo "$(BACKEND_BUILD_ENV)" > $@
+
+$(STAMPS_DIR)/backend-built: $(BACKEND_SOURCES) $(STAMPS_DIR)/backend-env
+	@echo "Building backend..."
 	mkdir -p "$(BIN_DIR)"
+	cd ./src/backend && go mod tidy
 	cd ./src/backend && $(GO_FLAGS) go build $(GO_PARAMS) -o "../../$(BIN_DIR)/magitrickled" ./cmd/magitrickled
 ifneq ($(filter $(GOARCH),riscv64 mips64 mips64le loong64),$(GOARCH))
 	upx -9 --lzma "$(BIN_DIR)/magitrickled"
 endif
+	@touch "$(STAMPS_DIR)/backend-built"
+	@echo "Backend build complete"
 
-build_frontend:
+build_backend: $(STAMPS_DIR)/backend-built
+
+rebuild_backend:
+	@rm -f "$(STAMPS_DIR)/backend-built"
+	$(MAKE) build_backend
+
+$(STAMPS_DIR)/frontend-env: FORCE
+	@mkdir -p $(STAMPS_DIR)
+	@echo "$(FRONTEND_BUILD_ENV)" | cmp -s - $@ || echo "$(FRONTEND_BUILD_ENV)" > $@
+
+$(STAMPS_DIR)/frontend-built: $(FRONTEND_SOURCES) $(STAMPS_DIR)/frontend-env
+	@echo "Building frontend..."
 	cd ./src/frontend && npm install
 	cd ./src/frontend && VITE_PKG_VERSION="$(PKG_VERSION)" VITE_PKG_VERSION_IS_DEV=$(if $(PKG_VERSION_PRERELEASE),true,false) npm run build
 	mkdir -p "$(USRSHARE_DIR)/magitrickle/skins/default"
 	cp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"
+	@touch "$(STAMPS_DIR)/frontend-built"
+	@echo "Frontend build complete"
+
+build_frontend: $(STAMPS_DIR)/frontend-built
+
+rebuild_frontend:
+	@rm -f "$(STAMPS_DIR)/frontend-built"
+	$(MAKE) build_frontend
 
 define _copy_files
 	if [ -d $(1)/_ipk/control ]; then mkdir -p $(BUILD_DIR)/control; cp -r $(1)/_ipk/control/* $(BUILD_DIR)/control; fi
@@ -96,7 +139,7 @@ define _copy_files
 	if [ -d $(1)/var/lib/magitrickle ]; then mkdir -p $(STATE_DIR); cp -r $(1)/var/lib/magitrickle/* $(STATE_DIR); fi
 endef
 
-package:
+package: build
 ifeq ($(PLATFORM),openwrt)
 	$(MAKE) package_ipk
 endif
@@ -142,3 +185,5 @@ endif
 	tar -C "$(BUILD_DIR)/control" -czvf "$(BUILD_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(BUILD_DIR)/data" -czvf "$(BUILD_DIR)/data.tar.gz" --owner=0 --group=0 .
 	tar -C "$(BUILD_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_REVISION)_$(PLATFORM)_$(TARGET).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
+
+FORCE:
