@@ -7,6 +7,7 @@
   import { toast } from "../utils/events";
   import { fetcher } from "../utils/fetcher";
   import { Info, Password, User } from "./ui/icons";
+  import logoUrl from "../../static/logo.svg?url";
 
   let login = $state("");
   let password = $state("");
@@ -110,8 +111,8 @@
   <div class="right-panel">
     <div class="brand-container">
       <div class="logo-wrapper" class:is-focused={isFocused}>
-        <div class="logo-sticker" role="presentation">
-          <img src="/static/logo.svg" alt="" class="logo-background" draggable="false" />
+        <div class="logo-sticker" role="presentation" style="--logo-url: url('{logoUrl}')">
+          <img src={logoUrl} alt="" class="logo-background" draggable="false" />
         </div>
       </div>
     </div>
@@ -280,11 +281,11 @@
     inset: 0;
     pointer-events: none;
     transition: opacity 1.1s ease, filter 1.5s ease;
-    -webkit-mask-image: url('/static/logo.svg');
+    -webkit-mask-image: var(--logo-url);
     -webkit-mask-size: contain;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-position: center;
-    mask-image: url('/static/logo.svg');
+    mask-image: var(--logo-url);
     mask-size: contain;
     mask-repeat: no-repeat;
     mask-position: center;
