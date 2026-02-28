@@ -231,12 +231,12 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-top: -5.5rem;
-    transition: margin-top 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+    margin-top: -2.8rem;
+    transition: margin-top 1.9s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .logo-wrapper.is-focused {
-    margin-top: -11.5rem;
+    margin-top: -7.8rem;
   }
 
   .logo-sticker {
@@ -246,12 +246,12 @@
     transform: rotate(-12deg) perspective(1000px) translateY(0) scale(0.98);
     transform-style: preserve-3d;
     pointer-events: none;
-    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 1.8s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .logo-wrapper.is-focused .logo-sticker {
     transform: rotate(-9deg) perspective(1000px) translateY(-0.7rem) scale(1.03);
-    animation: logo-awake 4.6s ease-in-out infinite;
+    animation: logo-awake 7.8s ease-in-out infinite;
   }
 
   .logo-background {
@@ -261,7 +261,7 @@
     opacity: 0.25;
     transform: translateZ(0);
     filter: grayscale(1) saturate(0.85) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
-    transition: filter 0.9s ease, opacity 0.9s ease, transform 0.9s ease;
+    transition: filter 1.5s ease, opacity 1.5s ease, transform 1.5s ease;
     user-select: none;
     -webkit-user-drag: none;
   }
@@ -279,7 +279,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    transition: opacity 0.5s ease, filter 0.9s ease;
+    transition: opacity 1.1s ease, filter 1.5s ease;
     -webkit-mask-image: url('/static/logo.svg');
     -webkit-mask-size: contain;
     -webkit-mask-repeat: no-repeat;
@@ -501,12 +501,12 @@
     }
 
     .logo-wrapper {
-      width: 14rem;
-      margin-top: -10rem; /* Прячем за карточкой, торчит только верх */
+      width: 12.6rem;
+      margin-top: -7.2rem; /* В покое торчит только верхняя часть */
     }
 
     .logo-wrapper.is-focused {
-      margin-top: -15.5rem;
+      margin-top: -10.8rem; /* В активном состоянии видно примерно по пояс */
     }
 
     .info-btn {
