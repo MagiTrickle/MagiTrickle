@@ -96,6 +96,8 @@ func SetupHTTP(a app.Main, errChan chan error) (*http.Server, error) {
 			w.Header().Set("Content-Type", "image/x-icon")
 		case ".png":
 			w.Header().Set("Content-Type", "image/png")
+		case ".svg":
+			w.Header().Set("Content-Type", "image/svg+xml")
 		default:
 			w.Header().Set("Content-Type", "text/plain")
 		}
