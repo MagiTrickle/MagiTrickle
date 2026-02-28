@@ -14,8 +14,6 @@
   let error = $state(false);
   let isFocused = $state(false);
   let infoIsOpen = $state(false);
-  let stickerHover = $state(false);
-  let stickerStyle = $state("--mx:50%; --my:50%; --rx:0deg; --ry:0deg; --lift:0px;");
 
   let disabled = $derived(!login || !password || loading);
 
@@ -43,34 +41,14 @@
     }
   }
 
-  function onFocus() {
+  function onFormFocusIn() {
     isFocused = true;
   }
-  function onBlur() {
+
+  function onFormFocusOut(e: FocusEvent) {
+    const next = e.relatedTarget as Node | null;
+    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
     isFocused = false;
-  }
-
-  function onStickerMove(e: MouseEvent) {
-    const target = e.currentTarget as HTMLElement | null;
-    if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const px = (e.clientX - rect.left) / rect.width;
-    const py = (e.clientY - rect.top) / rect.height;
-    const clampedX = Math.min(Math.max(px, 0), 1);
-    const clampedY = Math.min(Math.max(py, 0), 1);
-    const rotateY = (clampedX - 0.5) * 10;
-    const rotateX = (0.5 - clampedY) * 10;
-    const lift = 8 + Math.abs(rotateX) + Math.abs(rotateY) * 0.25;
-    stickerStyle = `--mx:${(clampedX * 100).toFixed(1)}%; --my:${(clampedY * 100).toFixed(1)}%; --rx:${rotateX.toFixed(2)}deg; --ry:${rotateY.toFixed(2)}deg; --lift:${lift.toFixed(2)}px;`;
-  }
-
-  function onStickerEnter() {
-    stickerHover = true;
-  }
-
-  function onStickerLeave() {
-    stickerHover = false;
-    stickerStyle = "--mx:50%; --my:50%; --rx:0deg; --ry:0deg; --lift:0px;";
   }
 </script>
 
@@ -82,6 +60,8 @@
           e.preventDefault();
           submit();
         }}
+        onfocusin={onFormFocusIn}
+        onfocusout={onFormFocusOut}
       >
         <div class="field">
           <label for="login">{t("Login")}</label>
@@ -92,8 +72,6 @@
               type="text"
               bind:value={login}
               placeholder="..."
-              onfocus={onFocus}
-              onblur={onBlur}
             />
           </div>
         </div>
@@ -106,8 +84,6 @@
               type="password"
               bind:value={password}
               placeholder="..."
-              onfocus={onFocus}
-              onblur={onBlur}
             />
           </div>
         </div>
@@ -134,24 +110,16 @@
   <div class="right-panel">
     <div class="brand-container">
       <div class="logo-wrapper" class:is-focused={isFocused}>
-        <div
-          class="logo-sticker"
-          role="presentation"
-          class:is-hovered={stickerHover}
-          style={stickerStyle}
-          onmouseenter={onStickerEnter}
-          onmouseleave={onStickerLeave}
-          onmousemove={onStickerMove}
-        >
+        <div class="logo-sticker" role="presentation">
           <img src="/static/logo.svg" alt="" class="logo-background" draggable="false" />
         </div>
       </div>
     </div>
-    
-    <button class="info-btn" title="Info" aria-label="Info" onclick={() => (infoIsOpen = true)}>
-      <Info size={24} />
-    </button>
   </div>
+
+  <button class="info-btn" title="Info" aria-label="Info" onclick={() => (infoIsOpen = true)}>
+    <Info size={24} />
+  </button>
 </div>
 
 <InfoDialog bind:open={infoIsOpen} />
@@ -160,92 +128,130 @@
   .auth-page {
     position: relative;
     display: flex;
-    flex-direction: row;
+    align-items: center;
+    justify-content: center;
     min-height: 100vh;
     width: 100vw;
     box-sizing: border-box;
     overflow: hidden;
+    background: linear-gradient(155deg, #10131d 0%, #111827 52%, #0f1420 100%);
+  }
+
+  .auth-page::before {
+    content: "";
+    position: absolute;
+    inset: -22%;
+    pointer-events: none;
+    z-index: 0;
     background:
-      radial-gradient(circle at 15% 20%, color-mix(in oklab, var(--accent) 10%, transparent) 0, transparent 36%),
-      radial-gradient(circle at 80% 65%, color-mix(in oklab, var(--blue) 12%, transparent) 0, transparent 42%),
-      var(--bg-dark);
+      radial-gradient(78rem 52rem at 8% 20%, rgba(66, 189, 249, 0.08) 0%, rgba(66, 189, 249, 0.03) 38%, transparent 74%),
+      radial-gradient(72rem 56rem at 92% 82%, rgba(85, 158, 255, 0.07) 0%, rgba(85, 158, 255, 0.025) 40%, transparent 76%),
+      radial-gradient(54rem 40rem at 52% 58%, rgba(11, 17, 30, 0.42) 0%, transparent 72%);
+    filter: blur(16px);
+    opacity: 0.72;
+  }
+
+  .auth-page::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(110% 95% at 50% 50%, transparent 58%, rgba(6, 9, 16, 0.28) 100%);
   }
 
   .left-panel {
-    flex: 1;
+    width: min(100%, 560px);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
+    padding: 2rem 1rem;
     position: relative;
-    z-index: 1;
+    z-index: 2;
   }
 
   .right-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    position: relative;
+    position: absolute;
+    inset: 0;
+    display: block;
     overflow: hidden;
+    z-index: 1;
+    pointer-events: none;
   }
 
   .brand-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2rem;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
     z-index: 1;
   }
 
   .info-btn {
-    position: absolute;
-    bottom: 2rem;
-    right: 2rem;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
     background: var(--bg-light);
     border: 1px solid var(--bg-light-extra);
     color: var(--text-2);
-    width: 3rem;
-    height: 3rem;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 15px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    z-index: 2;
+    z-index: 3;
+    pointer-events: auto;
+    box-shadow: 0 0 10px 2px var(--bg-dark-extra);
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .info-btn:hover {
-    color: var(--text);
-    border-color: var(--accent);
-    transform: scale(1.05);
+    background: var(--bg-light-extra);
+  }
+
+  .info-btn:focus,
+  .info-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 10px 2px var(--bg-dark-extra);
   }
 
   .logo-wrapper {
-    position: relative;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     width: clamp(12rem, 25vw, 20rem);
-    animation: drift 7s ease-in-out infinite;
     z-index: 0;
     display: flex;
     justify-content: center;
     align-items: center;
+    margin-top: -5.5rem;
+    transition: margin-top 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .logo-wrapper.is-focused {
+    margin-top: -11.5rem;
   }
 
   .logo-sticker {
     width: 100%;
     height: 100%;
-    --mx: 50%;
-    --my: 50%;
-    --rx: 0deg;
-    --ry: 0deg;
-    --lift: 0px;
-    transform: rotate(-12deg) perspective(1000px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(calc(var(--lift) * -0.3));
+    position: relative;
+    transform: rotate(-12deg) perspective(1000px) translateY(0) scale(0.98);
     transform-style: preserve-3d;
-    pointer-events: auto;
-    cursor: pointer;
-    transition: transform 0.22s ease;
+    pointer-events: none;
+    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .logo-wrapper.is-focused .logo-sticker {
+    transform: rotate(-9deg) perspective(1000px) translateY(-0.7rem) scale(1.03);
+    animation: logo-awake 4.6s ease-in-out infinite;
   }
 
   .logo-background {
@@ -254,16 +260,17 @@
     display: block;
     opacity: 0.25;
     transform: translateZ(0);
-    filter: grayscale(1) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-    transition: filter 0.7s ease, opacity 0.7s ease, transform 0.22s ease;
+    filter: grayscale(1) saturate(0.85) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+    transition: filter 0.9s ease, opacity 0.9s ease, transform 0.9s ease;
     user-select: none;
     -webkit-user-drag: none;
   }
 
-  .logo-sticker.is-hovered .logo-background {
+  .logo-wrapper.is-focused .logo-background {
     opacity: 1;
     transform: translateZ(15px) scale(1.02);
-    filter: grayscale(0) drop-shadow(0 calc(8px + var(--lift) * 0.5) calc(12px + var(--lift) * 0.5) rgba(0, 0, 0, 0.3));
+    filter: grayscale(0) saturate(1.35) hue-rotate(-8deg)
+      drop-shadow(0 10px 18px rgba(58, 122, 201, 0.38));
   }
 
   .logo-sticker::before,
@@ -272,7 +279,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    transition: opacity 0.2s ease, filter 0.7s ease;
+    transition: opacity 0.5s ease, filter 0.9s ease;
     -webkit-mask-image: url('/static/logo.svg');
     -webkit-mask-size: contain;
     -webkit-mask-repeat: no-repeat;
@@ -285,8 +292,8 @@
     filter: grayscale(1);
   }
 
-  .logo-sticker.is-hovered::before,
-  .logo-sticker.is-hovered::after {
+  .logo-wrapper.is-focused .logo-sticker::before,
+  .logo-wrapper.is-focused .logo-sticker::after {
     filter: grayscale(0);
   }
 
@@ -294,10 +301,10 @@
     opacity: 0;
     background:
       radial-gradient(
-        circle at var(--mx) var(--my),
+        circle at 42% 34%,
         rgba(255, 255, 255, 0.8) 0,
-        rgba(255, 182, 255, 0.4) 15%,
-        rgba(138, 43, 226, 0.2) 30%,
+        rgba(90, 190, 255, 0.38) 16%,
+        rgba(80, 255, 201, 0.2) 34%,
         transparent 50%
       );
     mix-blend-mode: color-dodge;
@@ -317,14 +324,14 @@
         rgba(255, 105, 180, 0.4) 62%,
         transparent 80%
       );
-    background-size: 200% 200%;
-    background-position: calc((var(--mx) - 50%) * -2) calc((var(--my) - 50%) * -2);
+    background-size: 230% 230%;
+    background-position: 130% 50%;
     mix-blend-mode: hard-light;
     transform: translateZ(2px);
   }
 
-  .logo-sticker.is-hovered::before,
-  .logo-sticker.is-hovered::after {
+  .logo-wrapper.is-focused .logo-sticker::before,
+  .logo-wrapper.is-focused .logo-sticker::after {
     opacity: 1;
   }
 
@@ -413,47 +420,73 @@
     align-items: center;
     gap: 0.35rem;
     opacity: 0;
-    transition: opacity 0.3s ease-in-out;
+    transform: translateY(0.15rem);
+    transition: opacity 0.45s ease, transform 0.45s ease;
   }
 
   .helper-text.visible {
     opacity: 1;
+    transform: translateY(0);
   }
 
   .button-container {
     width: 33.333%;
   }
 
-  @keyframes drift {
+  @keyframes logo-awake {
     0%,
     100% {
-      transform: translate3d(0, 0, 0);
+      transform: rotate(-9deg) perspective(1000px) translateY(-0.7rem) scale(1.03);
     }
 
     50% {
-      transform: translate3d(0, 10px, 0);
+      transform: rotate(-7.5deg) perspective(1000px) translateY(-1.2rem) scale(1.045);
+    }
+  }
+
+  .logo-wrapper.is-focused .logo-sticker::before {
+    animation: logo-glow 3s ease-in-out infinite;
+  }
+
+  .logo-wrapper.is-focused .logo-sticker::after {
+    animation: logo-shimmer 2.8s linear infinite;
+  }
+
+  @keyframes logo-glow {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+
+    50% {
+      opacity: 0.95;
+    }
+  }
+
+  @keyframes logo-shimmer {
+    0% {
+      background-position: 130% 50%;
+    }
+
+    100% {
+      background-position: -30% 50%;
     }
   }
 
   @media (max-width: 700px) {
     .auth-page {
-      flex-direction: column;
+      align-items: center;
       justify-content: center;
     }
 
     .left-panel {
       padding: 1rem;
-      flex: none;
       z-index: 2;
+      width: 100%;
     }
 
     .right-panel {
-      position: absolute;
-      inset: 0;
       padding: 0;
-      flex: none;
-      z-index: 1;
-      pointer-events: none;
     }
 
     .brand-container {
@@ -469,18 +502,11 @@
 
     .logo-wrapper {
       width: 14rem;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
       margin-top: -10rem; /* Прячем за карточкой, торчит только верх */
-      transition: margin-top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-      pointer-events: auto;
-      animation: none;
     }
 
     .logo-wrapper.is-focused {
-      margin-top: -13rem;
+      margin-top: -15.5rem;
     }
 
     .info-btn {
