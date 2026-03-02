@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
   import { createEventDispatcher } from "svelte";
-  import { fade } from "svelte/transition";
 
   import { Add } from "./icons";
 
@@ -26,47 +25,38 @@
   <Dialog.Overlay />
   <Dialog.Content
     class="dialog"
-    data-state={open ? "open" : "closed"}
     escapeKeydownBehavior="close"
-    forceMount
     onOpenAutoFocus={(e) => {
       e.preventDefault();
       // textArea?.focus();
     }}
     style={`--generic-dialog-max-width: ${maxWidth}px`}
   >
-    {#snippet child({ props, open })}
-      {#if open}
-        <div
-          {...props}
-          class="modal"
-          in:fade={{ duration: 120 }}
-          out:fade={{ duration: 120 }}
-        >
-          <Dialog.Title class="title">{title}</Dialog.Title>
-          <Dialog.Close class="close">
-            <Add size={22} style="transform:rotate(45deg)" />
-          </Dialog.Close>
-          <form on:submit|preventDefault={() => dispatch("submit")}>
-            <div class="body">
-              <slot name="body">
-                <textarea
-                  bind:this={textArea}
-                  bind:value={textareaValue}
-                  placeholder={textareaPlaceholder}
-                  class:invalid={triedSubmit && !textareaValue.trim()}
-                  on:input={(e) =>
-                    dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
-                ></textarea>
-              </slot>
-            </div>
+    {#snippet child({ props })}
+      <div {...props} class="modal">
+        <Dialog.Title class="title">{title}</Dialog.Title>
+        <Dialog.Close class="close">
+          <Add size={22} style="transform:rotate(45deg)" />
+        </Dialog.Close>
+        <form on:submit|preventDefault={() => dispatch("submit")}>
+          <div class="body">
+            <slot name="body">
+              <textarea
+                bind:this={textArea}
+                bind:value={textareaValue}
+                placeholder={textareaPlaceholder}
+                class:invalid={triedSubmit && !textareaValue.trim()}
+                on:input={(e) =>
+                  dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
+              ></textarea>
+            </slot>
+          </div>
 
-            <div class="actions">
-              <slot name="actions" />
-            </div>
-          </form>
-        </div>
-      {/if}
+          <div class="actions">
+            <slot name="actions" />
+          </div>
+        </form>
+      </div>
     {/snippet}
   </Dialog.Content>
 </Dialog.Root>
@@ -121,22 +111,40 @@
     justify-content: center;
     align-items: center;
     background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(2px);
+    opacity: 0;
+    transition: opacity 120ms ease;
     z-index: 15;
+  }
+
+  :global([data-dialog-overlay][data-state="open"]) {
+    opacity: 1;
   }
 
   :global([data-dialog-content]) {
     position: fixed;
     left: 50%;
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(0.985);
+    opacity: 0;
     width: 100%;
     max-width: min(var(--generic-dialog-max-width, 300px), calc(100vw - 5rem));
     background-color: var(--bg-dark);
     border-radius: 0.5rem;
     border: 1px solid var(--bg-light-extra);
     padding: 1rem;
+    transition:
+      opacity 120ms ease,
+      transform 120ms ease;
     z-index: 16;
+  }
+
+  :global([data-dialog-content][data-state="open"]) {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  :global([data-dialog-content][data-state="closed"]) {
+    pointer-events: none;
   }
 
   :global([data-dialog-title]) {
