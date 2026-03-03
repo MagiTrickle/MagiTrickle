@@ -7,13 +7,12 @@
   import { toast } from "../utils/events";
   import { fetcher } from "../utils/fetcher";
   import { Info, Password, User } from "./ui/icons";
-  import logoUrl from "../../static/logo.svg?url";
+  import logoUrl from "../assets/logo.svg";
 
   let login = $state("");
   let password = $state("");
   let loading = $state(false);
   let error = $state(false);
-  let isFocused = $state(false);
   let infoIsOpen = $state(false);
 
   let disabled = $derived(!login || !password || loading);
@@ -42,27 +41,21 @@
     }
   }
 
-  function onFormFocusIn() {
-    isFocused = true;
-  }
-
-  function onFormFocusOut(e: FocusEvent) {
-    const next = e.relatedTarget as Node | null;
-    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
-    isFocused = false;
-  }
 </script>
 
 <div class="auth-page">
   <div class="left-panel">
+    <div class="logo-wrapper">
+      <div class="logo-sticker">
+        <img src={logoUrl} alt="" class="logo-background" draggable="false" />
+      </div>
+    </div>
     <div class="card">
       <form
         onsubmit={(e) => {
           e.preventDefault();
           submit();
         }}
-        onfocusin={onFormFocusIn}
-        onfocusout={onFormFocusOut}
       >
         <div class="field">
           <label for="login">{t("Login")}</label>
@@ -89,7 +82,7 @@
           </div>
         </div>
         <div class="actions">
-          <div class="helper-text" class:visible={isFocused}>
+          <div class="helper-text visible">
             <Info size={16} /><span> {t("entware credentials")}</span>
           </div>
           <div class="button-container">
@@ -105,16 +98,6 @@
           </div>
         </div>
       </form>
-    </div>
-  </div>
-
-  <div class="right-panel">
-    <div class="brand-container">
-      <div class="logo-wrapper" class:is-focused={isFocused}>
-        <div class="logo-sticker" role="presentation" style="--logo-url: url('{logoUrl}')">
-          <img src={logoUrl} alt="" class="logo-background" draggable="false" />
-        </div>
-      </div>
     </div>
   </div>
 
@@ -164,32 +147,13 @@
   .left-panel {
     width: min(100%, 560px);
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 0.75rem;
     padding: 2rem 1rem;
     position: relative;
     z-index: 2;
-  }
-
-  .right-panel {
-    position: absolute;
-    inset: 0;
-    display: block;
-    overflow: hidden;
-    z-index: 1;
-    pointer-events: none;
-  }
-
-  .brand-container {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 100%;
-    height: 100%;
-    display: grid;
-    place-items: center;
-    z-index: 1;
   }
 
   .info-btn {
@@ -223,117 +187,27 @@
   }
 
   .logo-wrapper {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: clamp(12rem, 25vw, 20rem);
-    z-index: 0;
+    width: clamp(5.25rem, 18vw, 6.5rem);
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-top: -2.8rem;
-    transition: margin-top 1.9s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .logo-wrapper.is-focused {
-    margin-top: -7.8rem;
+    margin: 0 auto 1.25rem;
   }
 
   .logo-sticker {
     width: 100%;
     height: 100%;
-    position: relative;
-    transform: rotate(-12deg) perspective(1000px) translateY(0) scale(0.98);
-    transform-style: preserve-3d;
     pointer-events: none;
-    transition: transform 1.8s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .logo-wrapper.is-focused .logo-sticker {
-    transform: rotate(-9deg) perspective(1000px) translateY(-0.7rem) scale(1.03);
-    animation: logo-awake 7.8s ease-in-out infinite;
   }
 
   .logo-background {
     width: 100%;
     height: auto;
     display: block;
-    opacity: 0.25;
-    transform: translateZ(0);
-    filter: grayscale(1) saturate(0.85) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
-    transition: filter 1.5s ease, opacity 1.5s ease, transform 1.5s ease;
+    opacity: 1;
+    filter: none;
     user-select: none;
     -webkit-user-drag: none;
-  }
-
-  .logo-wrapper.is-focused .logo-background {
-    opacity: 1;
-    transform: translateZ(15px) scale(1.02);
-    filter: grayscale(0) saturate(1.35) hue-rotate(-8deg)
-      drop-shadow(0 10px 18px rgba(58, 122, 201, 0.38));
-  }
-
-  .logo-sticker::before,
-  .logo-sticker::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    transition: opacity 1.1s ease, filter 1.5s ease;
-    -webkit-mask-image: var(--logo-url);
-    -webkit-mask-size: contain;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    mask-image: var(--logo-url);
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-    z-index: 2;
-    filter: grayscale(1);
-  }
-
-  .logo-wrapper.is-focused .logo-sticker::before,
-  .logo-wrapper.is-focused .logo-sticker::after {
-    filter: grayscale(0);
-  }
-
-  .logo-sticker::before {
-    opacity: 0;
-    background:
-      radial-gradient(
-        circle at 42% 34%,
-        rgba(255, 255, 255, 0.8) 0,
-        rgba(90, 190, 255, 0.38) 16%,
-        rgba(80, 255, 201, 0.2) 34%,
-        transparent 50%
-      );
-    mix-blend-mode: color-dodge;
-    transform: translateZ(2px);
-  }
-
-  .logo-sticker::after {
-    opacity: 0;
-    background:
-      linear-gradient(
-        118deg,
-        transparent 20%,
-        rgba(255, 105, 180, 0.4) 38%,
-        rgba(238, 130, 238, 0.6) 45%,
-        rgba(255, 255, 255, 0.9) 50%,
-        rgba(238, 130, 238, 0.6) 55%,
-        rgba(255, 105, 180, 0.4) 62%,
-        transparent 80%
-      );
-    background-size: 230% 230%;
-    background-position: 130% 50%;
-    mix-blend-mode: hard-light;
-    transform: translateZ(2px);
-  }
-
-  .logo-wrapper.is-focused .logo-sticker::before,
-  .logo-wrapper.is-focused .logo-sticker::after {
-    opacity: 1;
   }
 
   .card {
@@ -434,46 +308,6 @@
     width: 33.333%;
   }
 
-  @keyframes logo-awake {
-    0%,
-    100% {
-      transform: rotate(-9deg) perspective(1000px) translateY(-0.7rem) scale(1.03);
-    }
-
-    50% {
-      transform: rotate(-7.5deg) perspective(1000px) translateY(-1.2rem) scale(1.045);
-    }
-  }
-
-  .logo-wrapper.is-focused .logo-sticker::before {
-    animation: logo-glow 3s ease-in-out infinite;
-  }
-
-  .logo-wrapper.is-focused .logo-sticker::after {
-    animation: logo-shimmer 2.8s linear infinite;
-  }
-
-  @keyframes logo-glow {
-    0%,
-    100% {
-      opacity: 0.55;
-    }
-
-    50% {
-      opacity: 0.95;
-    }
-  }
-
-  @keyframes logo-shimmer {
-    0% {
-      background-position: 130% 50%;
-    }
-
-    100% {
-      background-position: -30% 50%;
-    }
-  }
-
   @media (max-width: 700px) {
     .auth-page {
       align-items: center;
@@ -486,28 +320,9 @@
       width: 100%;
     }
 
-    .right-panel {
-      padding: 0;
-    }
-
-    .brand-container {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 100%;
-      height: 100%;
-      justify-content: center;
-      align-items: center;
-    }
-
     .logo-wrapper {
-      width: 12.6rem;
-      margin-top: -7.2rem; /* В покое торчит только верхняя часть */
-    }
-
-    .logo-wrapper.is-focused {
-      margin-top: -10.8rem; /* В активном состоянии видно примерно по пояс */
+      width: 10rem;
+      margin-bottom: 1rem;
     }
 
     .info-btn {
