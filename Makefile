@@ -139,7 +139,7 @@ download_backend: $(STAMPS_DIR)/download-backend
 
 redownload_backend:
 	@rm -f "$(STAMPS_DIR)/download-backend"
-	$(MAKE) download_backend
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) download_backend
 
 $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME): FORCE
 	@mkdir -p $(STAMPS_DIR)
@@ -159,7 +159,7 @@ build_backend: $(STAMPS_DIR)/build-backend-$(UNIQUE_NAME)
 
 rebuild_backend:
 	@rm -f "$(STAMPS_DIR)/build-backend"
-	$(MAKE) build_backend
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) build_backend
 
 # Frontend
 
@@ -173,7 +173,7 @@ download_frontend: $(STAMPS_DIR)/download-frontend
 
 redownload_frontend:
 	@rm -f "$(STAMPS_DIR)/download-frontend"
-	$(MAKE) download_frontend
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) download_frontend
 
 $(STAMPS_DIR)/build-properties-frontend: FORCE
 	@mkdir -p $(STAMPS_DIR)
@@ -189,7 +189,7 @@ build_frontend: $(STAMPS_DIR)/build-frontend
 
 rebuild_frontend:
 	@rm -f "$(STAMPS_DIR)/build-frontend"
-	$(MAKE) build_frontend
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) build_frontend
 
 # Packaging
 
@@ -214,10 +214,10 @@ prepare_files: build
 
 package:
 ifeq ($(PLATFORM),openwrt)
-	$(MAKE) package_ipk
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
 endif
 ifeq ($(PLATFORM),entware)
-	$(MAKE) package_ipk
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
 endif
 
 package_ipk: prepare_files
