@@ -57,8 +57,8 @@ build:
       when: manual
       allow_failure: true
   before_script:
-    - wget https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/upx-4.2.4-r0.apk
     - apk add nodejs npm git make fakeroot tar
+    - apk add upx --repository=http://dl-cdn.alpinelinux.org/alpine/v3.21/main # Downloading of upx-4.2.4-r0
   script:
     - export $(make _return_export_dynamic_env);
       for config in config/*/*.config; do
