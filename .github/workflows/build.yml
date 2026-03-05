@@ -40,12 +40,6 @@ jobs:
         run: |
           docker run --rm -v /usr/local/bin:/mnt alpine:edge sh -c "apk add --no-cache apk-tools-static && cp /sbin/apk.static /mnt/apk && chmod +x /mnt/apk"
 
-      - name: Download frontend artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: ./src/frontend/dist
-
       - name: Build and Package
         run: |
           export $(make _return_export_dynamic_env);
