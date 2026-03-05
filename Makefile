@@ -42,6 +42,7 @@ BUILD_DIR := $(BUILDS_DIR)/$(UNIQUE_NAME)
 COMPILE_DIR := $(BUILD_DIR)/compile
 
 ROOT_DIR := $(BUILD_DIR)/root
+ROOT_APK_DIR := $(BUILD_DIR)/root_apk
 BIN_DIR := $(ROOT_DIR)/bin
 ETC_DIR := $(ROOT_DIR)/etc
 USRSHARE_DIR := $(ROOT_DIR)/usr/share
@@ -250,35 +251,41 @@ ifeq ($(PLATFORM),openwrt)
 	echo "Depends: libc, iptables-nft, iptables-mod-conntrack-extra, kmod-ipt-nat, kmod-ipt-ipset, ip6tables-nft" >> $(IPK_CONTROL_DIR)/control
 endif
 
-ifeq ($(PLATFORM),entware)
-	echo "/opt/var/lib/magitrickle/config.yaml" >> $(IPK_CONTROL_DIR)/conffiles
-endif
-ifeq ($(PLATFORM),openwrt)
-	echo "/etc/config/magitrickle" >> $(IPK_CONTROL_DIR)/conffiles
-	echo "/etc/magitrickle/state/config.yaml" >> $(IPK_CONTROL_DIR)/conffiles
-endif
-
 	tar -C "$(IPK_CONTROL_DIR)" -czvf "$(IPK_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(ROOT_DIR)" -czvf "$(IPK_DIR)/data.tar.gz" --owner=0 --group=0 .
 	tar -C "$(IPK_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_REVISION)_$(UNIQUE_NAME).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
 
 package_apk: prepare_files
-	# TODO: Processing of $(ROOT_DIR)/lib/apk/packages/magitrickle.{conffiles,conffiles_static,list}
-	#apk mkpkg \
-	#	-I "name:$(PKG_NAME)" \
-	#	-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
-	#	-I "description:$(PKG_DESCRIPTION)" \
-	#	-I "arch:$(TARGET)" \
-	#	-I "license:$(PKG_LICENSE)" \
-	#	-I "origin:feeds/packages/feeds/magitrickle/net/magitrickle" \
-	#	-I "maintainer:$(PKG_MAINTAINER)" \
-	#	-I "url:$(PKG_URL)" \
-	#	-I "provider-priority:100" \
-	#	-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft" \
-	#	-s "post-install:$(APK_DIR)/post-install.sh" \
-	#	-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
-	#	-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \
-	#	-F "$(ROOT_DIR)" \
-	#	-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk"
+	rm -rf $(ROOT_APK_DIR)
+	mkdir -p $(ROOT_APK_DIR)
+	cp -r $(ROOT_DIR)/. $(ROOT_APK_DIR)/
+
+	mkdir -p $(ROOT_APK_DIR)/lib/apk/packages
+	if [ -f $(APK_DIR)/conffiles ]; then \
+		cp $(APK_DIR)/conffiles $(ROOT_APK_DIR)/lib/apk/packages/$(PKG_NAME).conffiles; \
+		for file in $$(cat $(ROOT_APK_DIR)/lib/apk/packages/$(PKG_NAME).conffiles); do \
+			[ -f $(ROOT_APK_DIR)/$$file ] || continue; \
+			csum=$$(sha256sum $(ROOT_APK_DIR)/$$file | cut -d' ' -f1); \
+			echo "$$file $$csum" >> $(ROOT_APK_DIR)/lib/apk/packages/$(PKG_NAME).conffiles_static; \
+		done; \
+	fi
+	(cd $(ROOT_APK_DIR) && find . -type f,l -printf "/%P\n") > $(ROOT_APK_DIR)/lib/apk/packages/$(PKG_NAME).list
+
+	apk mkpkg \
+		-I "name:$(PKG_NAME)" \
+		-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
+		-I "description:$(PKG_DESCRIPTION)" \
+		-I "arch:$(TARGET)" \
+		-I "license:$(PKG_LICENSE)" \
+		-I "origin:feeds/packages/feeds/magitrickle/net/$(PKG_NAME)" \
+		-I "maintainer:$(PKG_MAINTAINER)" \
+		-I "url:$(PKG_URL)" \
+		-I "provider-priority:100" \
+		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft" \
+		-s "post-install:$(APK_DIR)/post-install.sh" \
+		-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
+		-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \
+		-F "$(ROOT_APK_DIR)" \
+		-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk"
 
 FORCE:
