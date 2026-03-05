@@ -8,6 +8,8 @@
 
 PKG_NAME := magitrickle
 PKG_DESCRIPTION := DNS-based routing application
+PKG_LICENSE := GPL-3.0-or-later
+PKG_URL := https://magitrickle.dev
 PKG_MAINTAINER := Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
 
 ifeq ($(strip $(PKG_VERSION)),)
@@ -228,6 +230,8 @@ package_ipk: prepare_files
 	echo 'Package: $(PKG_NAME)' > $(IPK_CONTROL_DIR)/control
 	echo 'Version: $(PKG_VERSION)-$(PKG_REVISION)' >> $(IPK_CONTROL_DIR)/control
 	echo 'Architecture: $(TARGET)' >> $(IPK_CONTROL_DIR)/control
+	echo 'License: $(PKG_LICENSE)' >> $(IPK_CONTROL_DIR)/control
+	echo 'URL: $(PKG_URL)' >> $(IPK_CONTROL_DIR)/control
 	echo 'Maintainer: $(PKG_MAINTAINER)' >> $(IPK_CONTROL_DIR)/control
 	echo 'Description: $(PKG_DESCRIPTION)' >> $(IPK_CONTROL_DIR)/control
 	echo 'Section: net' >> $(IPK_CONTROL_DIR)/control
