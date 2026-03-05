@@ -59,6 +59,7 @@ build:
   before_script:
     - apk add nodejs npm git make fakeroot tar
     - apk add upx --repository=http://dl-cdn.alpinelinux.org/alpine/v3.21/main # Downloading of upx-4.2.4-r0
+    - apk add apk-tools libapk --repository=http://dl-cdn.alpinelinux.org/alpine/v3.23/main # Downloading of apk-tools-3.0.5-r0
   script:
     - export $(make _return_export_dynamic_env);
       for config in config/*/*.config; do
@@ -68,6 +69,7 @@ build:
   artifacts:
     paths:
       - .build/*.ipk
+      - .build/*.apk
     expire_in: 1 week
 
 upload:
@@ -79,7 +81,7 @@ upload:
   script:
     - |
       ASSETS_LINKS=""
-      for file in $(find .build -name '*.ipk'); do
+      for file in $(find .build \( -name '*.ipk' -o -name '*.apk' \)); do
         name=$(basename "${file}")
         url="${PACKAGE_REGISTRY_URL}/${name}"
         curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"

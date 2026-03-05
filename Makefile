@@ -29,6 +29,7 @@ ifeq ($(strip $(PKG_VERSION)),)
 		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
 	endif
 endif
+PKG_VERSION_APK := $(shell echo "$(PKG_VERSION)" | sed -E 's/~git([0-9]+)\.[^.]+$$/_pre\1/')
 PKG_REVISION ?= 1
 
 # Directories
@@ -197,6 +198,7 @@ rebuild_frontend:
 
 define _copy_files
 	if [ -d $(1)/_ipk/control ]; then mkdir -p $(IPK_CONTROL_DIR); cp -r $(1)/_ipk/control/* $(IPK_CONTROL_DIR); fi
+	if [ -d $(1)/_apk ]; then mkdir -p $(APK_DIR); cp -r $(1)/_apk/* $(APK_DIR); fi
 	if [ -d $(1)/bin ]; then mkdir -p $(BIN_DIR); cp -r $(1)/bin/* $(BIN_DIR); fi
 	if [ -d $(1)/etc ]; then mkdir -p $(ETC_DIR); cp -r $(1)/etc/* $(ETC_DIR); fi
 	if [ -d $(1)/usr/share ]; then mkdir -p $(USRSHARE_DIR); cp -r $(1)/usr/share/* $(USRSHARE_DIR); fi
@@ -217,6 +219,7 @@ prepare_files: build
 package:
 ifeq ($(PLATFORM),openwrt)
 	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
+	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_apk
 endif
 ifeq ($(PLATFORM),entware)
 	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
@@ -258,5 +261,23 @@ endif
 	tar -C "$(IPK_CONTROL_DIR)" -czvf "$(IPK_DIR)/control.tar.gz" --owner=0 --group=0 .
 	tar -C "$(ROOT_DIR)" -czvf "$(IPK_DIR)/data.tar.gz" --owner=0 --group=0 .
 	tar -C "$(IPK_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_REVISION)_$(UNIQUE_NAME).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
+
+package_apk: prepare_files
+	apk mkpkg \
+		-I "name:$(PKG_NAME)" \
+		-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
+		-I "description:$(PKG_DESCRIPTION)" \
+		-I "arch:$(TARGET)" \
+		-I "license:$(PKG_LICENSE)" \
+		-I "origin:feeds/packages/feeds/magitrickle/net/magitrickle" \
+		-I "maintainer:$(PKG_MAINTAINER)" \
+		-I "url:$(PKG_URL)" \
+		-I "provider-priority:100" \
+		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft" \
+		-s "post-install:$(APK_DIR)/post-install.sh" \
+		-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
+		-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \
+		-F "$(ROOT_DIR)" \
+		-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk" \
 
 FORCE:

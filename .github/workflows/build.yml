@@ -36,6 +36,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fakeroot upx
 
+      - name: Install apk-tools
+        run: |
+          docker run --rm -v /usr/local/bin:/mnt alpine:edge sh -c "apk add --no-cache apk-tools-static && cp /sbin/apk.static /mnt/apk && chmod +x /mnt/apk"
+
       - name: Download frontend artifacts
         uses: actions/download-artifact@v4
         with:
@@ -55,7 +59,7 @@ jobs:
         id: create_file_list
         run: |
           echo 'file_list<<EOF' >> $GITHUB_OUTPUT
-          find . -name "magitrickle_*.ipk" -print >> $GITHUB_OUTPUT
+          find . \( -name "magitrickle_*.ipk" -o -name "magitrickle_*.apk" \) -print >> $GITHUB_OUTPUT
           echo 'EOF' >> $GITHUB_OUTPUT
 
       - name: Upload artifact
@@ -73,4 +77,5 @@ jobs:
         with:
           files: |-
             ./.build/magitrickle_*.ipk
+            ./.build/magitrickle_*.apk
           token: ${{ secrets.RELEASE_TOKEN }}
