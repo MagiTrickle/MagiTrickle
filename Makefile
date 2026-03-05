@@ -98,9 +98,19 @@ FRONTEND_BUILD_PROPERTIES := PKG_VERSION=$(PKG_VERSION) PKG_VERSION_PRERELEASE=$
 # Targets
 #
 
-.PHONY: all clear clean download download_backend download_frontend redownload redownload_backend redownload_frontend build build_backend build_frontend rebuild rebuild_backend rebuild_frontend prepare_files package package_ipk FORCE
+.PHONY: _return_export_dynamic_env all clear clean download download_backend download_frontend redownload redownload_backend redownload_frontend build build_backend build_frontend rebuild rebuild_backend rebuild_frontend prepare_files package package_ipk FORCE
 
 all: download build package
+
+_return_export_dynamic_env:
+	@echo "COMMIT=$(COMMIT)"
+	@echo "COMMITS_SINCE_TAG=$(COMMITS_SINCE_TAG)"
+	@echo "PKG_REVISION=$(PKG_REVISION)"
+	@echo "PKG_VERSION=$(PKG_VERSION)"
+	@echo "PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)"
+	@echo "PRERELEASE_DATE=$(PRERELEASE_DATE)"
+	@echo "TAG=$(TAG)"
+	@echo "TAG_RELEASE=$(TAG_RELEASE)"
 
 clear:
 	rm -rf ./src/frontend/dist
