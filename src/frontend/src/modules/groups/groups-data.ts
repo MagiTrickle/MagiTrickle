@@ -130,7 +130,10 @@ export function restoreGroupRulesOrder(group: Group, ruleIds: string[]) {
 
   if (!orderedRules.length) return false;
 
-  group.rules.splice(0, group.rules.length, ...orderedRules);
+  const orderedRuleIds = new Set(orderedRules.map((rule) => rule.id));
+  const remainingRules = group.rules.filter((rule) => !orderedRuleIds.has(rule.id));
+
+  group.rules.splice(0, group.rules.length, ...orderedRules, ...remainingRules);
   return true;
 }
 
