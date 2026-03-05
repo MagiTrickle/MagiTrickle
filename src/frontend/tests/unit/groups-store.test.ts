@@ -1,7 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import type { Group, Rule } from "../../src/types";
 import {
   cloneGroupsWithNewIds,
   prependGroups,
@@ -10,6 +9,7 @@ import {
   sortGroupRules,
   toConfigPayload,
 } from "../../src/modules/groups/groups-data";
+import type { Group, Rule } from "../../src/types";
 
 const makeRule = (id: string, name = id, pattern = `${id}.example.com`): Rule => ({
   id,
@@ -67,6 +67,26 @@ describe("Groups data API", () => {
     assert.deepStrictEqual(
       group.rules.map((rule) => rule.id),
       initialOrder,
+    );
+  });
+
+  it("keeps rules added after sorting when restoring manual order", () => {
+    const group = makeGroup("g1", [
+      makeRule("r1", "beta"),
+      makeRule("r2", "alpha"),
+      makeRule("r3", "gamma"),
+    ]);
+    const initialOrder = group.rules.map((rule) => rule.id);
+
+    sortGroupRules(group, "name", "asc");
+    group.rules.unshift(makeRule("r4", "delta"));
+    sortGroupRules(group, "name", "desc");
+
+    const restored = restoreGroupRulesOrder(group, initialOrder);
+    assert.strictEqual(restored, true);
+    assert.deepStrictEqual(
+      group.rules.map((rule) => rule.id),
+      ["r1", "r2", "r3", "r4"],
     );
   });
 

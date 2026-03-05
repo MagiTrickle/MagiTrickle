@@ -165,6 +165,55 @@ test.describe("Groups Management", () => {
     await expect(rules.nth(1).locator(".name input")).toHaveValue("Rule A");
   });
 
+  test("should keep a newly added rule after cycling sort states", async ({ page }) => {
+    await groupsPage.createGroup();
+    await groupsPage.setGroupName(0, "Sorted Group");
+
+    await groupsPage.setRuleName(0, 0, "Rule B");
+    await groupsPage.setRulePattern(0, 0, "b.example.com");
+
+    await groupsPage.addRuleToGroup(0);
+    await groupsPage.setRuleName(0, 0, "Rule A");
+    await groupsPage.setRulePattern(0, 0, "a.example.com");
+
+    const nameHeader = page
+      .locator(".group-rules-header-column.clickable")
+      .filter({ hasText: "Name" });
+
+    await nameHeader.click();
+
+    await groupsPage.addRuleToGroup(0);
+    await groupsPage.setRuleName(0, 0, "Rule C");
+    await groupsPage.setRulePattern(0, 0, "c.example.com");
+
+    await expect(page.locator(".rule")).toHaveCount(3);
+
+    await nameHeader.click();
+    await nameHeader.click();
+
+    await expect(page.locator(".rule")).toHaveCount(3);
+    const ruleNames = await page
+      .locator(".rule .name input")
+      .evaluateAll((elements) => elements.map((element) => (element as HTMLInputElement).value));
+    expect(ruleNames).toHaveLength(3);
+    expect(ruleNames).toEqual(expect.arrayContaining(["Rule A", "Rule B", "Rule C"]));
+
+    let savedRuleNames: string[] = [];
+    await page.route("**/groups?save=true", async (route) => {
+      const body = route.request().postDataJSON();
+      expect(body.groups).toHaveLength(1);
+      expect(body.groups[0].rules).toHaveLength(3);
+      savedRuleNames = body.groups[0].rules.map((rule: { name: string }) => rule.name);
+      await route.fulfill({ status: 200, json: {} });
+    });
+
+    await expect(groupsPage.saveButton).not.toHaveClass(/inactive/);
+    await groupsPage.save();
+
+    await expect(page.getByText("Saved")).toBeVisible();
+    expect(savedRuleNames).toEqual(expect.arrayContaining(["Rule A", "Rule B", "Rule C"]));
+  });
+
   test("should toggle group enabled state", async ({ page }) => {
     await groupsPage.createGroup();
     const groupHeader = await groupsPage.getGroupHeader(0);
