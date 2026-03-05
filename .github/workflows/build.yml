@@ -12,36 +12,9 @@ on:
     types: [published]
 
 jobs:
-  build_frontend:
-    name: Build frontend once
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Node.JS
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Build frontend
-        run: |
-          make clear
-          make build_frontend
-
-      - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: ./src/frontend/dist
-          if-no-files-found: error
-
   build:
     name: Build packages
     runs-on: ubuntu-latest
-    needs: build_frontend
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -63,6 +36,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fakeroot upx
 
+      - name: Install apk-tools
+        run: |
+          docker run --rm -v /usr/local/bin:/mnt alpine:edge sh -c "apk add --no-cache apk-tools-static && cp /sbin/apk.static /mnt/apk && chmod +x /mnt/apk"
+
       - name: Download frontend artifacts
         uses: actions/download-artifact@v4
         with:
@@ -71,16 +48,10 @@ jobs:
 
       - name: Build and Package
         run: |
-          printf '%s\n' \
-            'build_frontend:' \
-            $'\tmkdir -p "$(USRSHARE_DIR)/magitrickle/skins/default"' \
-            $'\tcp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"' \
-            > .ci-frontend.mk
+          export $(make _return_export_dynamic_env);
           for config in config/*/*.config; do
-            . "${config}"
-            cp "${config}" .config
-            rm -rf "./.build/${PLATFORM}_${TARGET}"
-            make -f Makefile -f .ci-frontend.mk build package
+            cp "${config}" .config;
+            make;
           done
 
       - name: Fetching file list for artifact
@@ -88,7 +59,7 @@ jobs:
         id: create_file_list
         run: |
           echo 'file_list<<EOF' >> $GITHUB_OUTPUT
-          find . -name "magitrickle_*.ipk" -print >> $GITHUB_OUTPUT
+          find . \( -name "magitrickle_*.ipk" -o -name "magitrickle_*.apk" \) -print >> $GITHUB_OUTPUT
           echo 'EOF' >> $GITHUB_OUTPUT
 
       - name: Upload artifact
@@ -106,4 +77,5 @@ jobs:
         with:
           files: |-
             ./.build/magitrickle_*.ipk
+            ./.build/magitrickle_*.apk
           token: ${{ secrets.RELEASE_TOKEN }}

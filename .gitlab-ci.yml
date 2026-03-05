@@ -50,9 +50,6 @@ test_frontend:
 build:
   stage: build
   image: golang:1.23-alpine
-  needs:
-    - job: build_frontend
-      artifacts: true
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
     - if: '$CI_COMMIT_TAG'
@@ -60,43 +57,19 @@ build:
       when: manual
       allow_failure: true
   before_script:
-    - wget https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/upx-4.2.4-r0.apk
-    - apk add git make upx-4.2.4-r0.apk fakeroot tar
+    - apk add nodejs npm git make fakeroot tar
+    - apk add upx --repository=http://dl-cdn.alpinelinux.org/alpine/v3.21/main # Downloading of upx-4.2.4-r0
+    - apk add apk-tools libapk --repository=http://dl-cdn.alpinelinux.org/alpine/v3.23/main # Downloading of apk-tools-3.0.5-r0
   script:
-    - |
-      printf '%s\n' \
-        'build_frontend:' \
-        $'\tmkdir -p "$(USRSHARE_DIR)/magitrickle/skins/default"' \
-        $'\tcp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"' \
-        > .ci-frontend.mk
+    - export $(make _return_export_dynamic_env);
       for config in config/*/*.config; do
-        . "${config}"
-        cp "${config}" .config
-        rm -rf "./.build/${PLATFORM}_${TARGET}"
-        make -f Makefile -f .ci-frontend.mk build package
+        cp "${config}" .config;
+        make;
       done
   artifacts:
     paths:
       - .build/*.ipk
-    expire_in: 1 week
-
-build_frontend:
-  stage: build
-  image: node:22-alpine
-  rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^(develop|main)$/'
-    - if: '$CI_COMMIT_TAG'
-    - if: '$CI_MERGE_REQUEST_ID'
-      when: manual
-      allow_failure: true
-  before_script:
-    - apk add git make
-  script:
-    - make clear
-    - make build_frontend
-  artifacts:
-    paths:
-      - src/frontend/dist
+      - .build/*.apk
     expire_in: 1 week
 
 upload:
@@ -108,7 +81,7 @@ upload:
   script:
     - |
       ASSETS_LINKS=""
-      for file in $(find .build -name '*.ipk'); do
+      for file in $(find .build \( -name '*.ipk' -o -name '*.apk' \)); do
         name=$(basename "${file}")
         url="${PACKAGE_REGISTRY_URL}/${name}"
         curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "${file}" "${url}"
