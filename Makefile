@@ -263,21 +263,22 @@ endif
 	tar -C "$(IPK_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_REVISION)_$(UNIQUE_NAME).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
 
 package_apk: prepare_files
-	apk mkpkg \
-		-I "name:$(PKG_NAME)" \
-		-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
-		-I "description:$(PKG_DESCRIPTION)" \
-		-I "arch:$(TARGET)" \
-		-I "license:$(PKG_LICENSE)" \
-		-I "origin:feeds/packages/feeds/magitrickle/net/magitrickle" \
-		-I "maintainer:$(PKG_MAINTAINER)" \
-		-I "url:$(PKG_URL)" \
-		-I "provider-priority:100" \
-		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft" \
-		-s "post-install:$(APK_DIR)/post-install.sh" \
-		-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
-		-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \
-		-F "$(ROOT_DIR)" \
-		-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk" \
+	# TODO: Processing of $(ROOT_DIR)/lib/apk/packages/magitrickle.{conffiles,conffiles_static,list}
+	#apk mkpkg \
+	#	-I "name:$(PKG_NAME)" \
+	#	-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
+	#	-I "description:$(PKG_DESCRIPTION)" \
+	#	-I "arch:$(TARGET)" \
+	#	-I "license:$(PKG_LICENSE)" \
+	#	-I "origin:feeds/packages/feeds/magitrickle/net/magitrickle" \
+	#	-I "maintainer:$(PKG_MAINTAINER)" \
+	#	-I "url:$(PKG_URL)" \
+	#	-I "provider-priority:100" \
+	#	-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft" \
+	#	-s "post-install:$(APK_DIR)/post-install.sh" \
+	#	-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
+	#	-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \
+	#	-F "$(ROOT_DIR)" \
+	#	-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk"
 
 FORCE:
