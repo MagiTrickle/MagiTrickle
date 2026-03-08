@@ -12,9 +12,46 @@ on:
     types: [published]
 
 jobs:
-  build:
-    name: Build packages
+  prepare:
+    name: Prepare build matrix
     runs-on: ubuntu-latest
+    outputs:
+      configs: ${{ steps.collect.outputs.configs }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build config matrix
+        id: collect
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          configs = sorted(Path("config").glob("*/*.config"))
+
+          if not configs:
+              raise SystemExit("No build configs found")
+
+          matrix = [
+              {
+                  "config": config.as_posix(),
+                  "name": config.stem,
+              }
+              for config in configs
+          ]
+
+          print(f"configs={json.dumps(matrix, separators=(',', ':'))}")
+          PY
+
+  build:
+    name: Build packages (${{ matrix.name }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.configs) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,36 +77,64 @@ jobs:
         run: |
           docker run --rm -v /usr/local/bin:/mnt alpine:edge sh -c "apk add --no-cache apk-tools-static && cp /sbin/apk.static /mnt/apk && chmod +x /mnt/apk"
 
-      - name: Build and Package
+      - name: Build and package
         run: |
           export $(make _return_export_dynamic_env);
-          for config in config/*/*.config; do
-            cp "${config}" .config;
-            make;
+          cp "${{ matrix.config }}" .config
+          make
+
+      - name: Collect package files
+        id: package_outputs
+        run: |
+          mapfile -t packages < <(
+            find .build -maxdepth 1 -type f \( -name "magitrickle_*.ipk" -o -name "magitrickle_*.apk" \) | sort
+          )
+
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "No package files found" >&2
+            exit 1
+          fi
+
+          if [ "${#packages[@]}" -gt 2 ]; then
+            echo "Expected at most 2 package files, found ${#packages[@]}" >&2
+            exit 1
+          fi
+
+          for i in "${!packages[@]}"; do
+            index=$((i + 1))
+            file="${packages[$i]}"
+            echo "package_${index}_path=${file}" >> "$GITHUB_OUTPUT"
+            echo "package_${index}_name=$(basename "${file}")" >> "$GITHUB_OUTPUT"
           done
 
-      - name: Fetching file list for artifact
-        if: ${{ github.event_name != 'release' }}
-        id: create_file_list
-        run: |
-          echo 'file_list<<EOF' >> $GITHUB_OUTPUT
-          find . \( -name "magitrickle_*.ipk" -o -name "magitrickle_*.apk" \) -print >> $GITHUB_OUTPUT
-          echo 'EOF' >> $GITHUB_OUTPUT
-
-      - name: Upload artifact
-        if: ${{ github.event_name != 'release' }}
+      - name: Upload package artifact 1
+        if: ${{ github.event_name != 'release' && steps.package_outputs.outputs.package_1_path != '' }}
         uses: actions/upload-artifact@v4
         with:
-          name: packages
-          path: ${{ steps.create_file_list.outputs.file_list }}
+          name: ${{ steps.package_outputs.outputs.package_1_name }}
+          path: ${{ steps.package_outputs.outputs.package_1_path }}
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload asset to release
-        if: ${{ github.event_name == 'release' }}
+      - name: Upload package artifact 2
+        if: ${{ github.event_name != 'release' && steps.package_outputs.outputs.package_2_path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package_outputs.outputs.package_2_name }}
+          path: ${{ steps.package_outputs.outputs.package_2_path }}
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload package asset 1 to release
+        if: ${{ github.event_name == 'release' && steps.package_outputs.outputs.package_1_path != '' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: |-
-            ./.build/magitrickle_*.ipk
-            ./.build/magitrickle_*.apk
+          files: ${{ steps.package_outputs.outputs.package_1_path }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Upload package asset 2 to release
+        if: ${{ github.event_name == 'release' && steps.package_outputs.outputs.package_2_path != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package_outputs.outputs.package_2_path }}
           token: ${{ secrets.RELEASE_TOKEN }}
