@@ -367,10 +367,9 @@ func (r *IPSetToLink) getUnusedMarkAndTable() (idx uint32, err error) {
 	}
 
 	for idx = r.startIdx; idx < 0x7ffffffe; idx++ {
-		if _, exists := tableMap[int(idx)]; !exists {
-			break
-		}
-		if _, exists := markMap[idx]; !exists {
+		_, tableExists := tableMap[int(idx)]
+		_, markExists := markMap[idx]
+		if !tableExists && !markExists {
 			break
 		}
 	}
