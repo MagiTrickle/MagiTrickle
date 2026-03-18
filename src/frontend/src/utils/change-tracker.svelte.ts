@@ -141,8 +141,84 @@ export class ChangeTracker<T extends object> {
     else this.dirtyArrays.delete(array);
   }
 
+  private clearDirtyField(id: string, prop: string) {
+    const props = this.dirtyObjectProps.get(id);
+    if (!props) return;
+
+    props.delete(prop);
+    if (props.size === 0) {
+      this.dirtyObjectProps.delete(id);
+    }
+  }
+
   private notify() {
     this.version += 1;
+  }
+
+  private removeIndexedState(node: any) {
+    if (!node || typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      this.originalArrays.delete(node);
+      for (const item of node) {
+        this.removeIndexedState(item);
+      }
+      return;
+    }
+
+    if (node.id) {
+      this.originalObjects.delete(node.id);
+    }
+
+    for (const key in node) {
+      if (typeof node[key] === "object") {
+        this.removeIndexedState(node[key]);
+      }
+    }
+  }
+
+  private collectLiveState(node: any, ids: Set<string>, arrays: Set<object>) {
+    if (!node || typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      arrays.add(node);
+      for (const item of node) {
+        this.collectLiveState(item, ids, arrays);
+      }
+      return;
+    }
+
+    if (node.id) {
+      ids.add(node.id);
+    }
+
+    for (const key in node) {
+      if (typeof node[key] === "object") {
+        this.collectLiveState(node[key], ids, arrays);
+      }
+    }
+  }
+
+  private pruneDirtyState() {
+    const liveIds = new Set<string>();
+    const liveArrays = new Set<object>();
+
+    this.collectLiveState(this.state, liveIds, liveArrays);
+
+    for (const id of Array.from(this.dirtyObjectProps.keys())) {
+      if (!liveIds.has(id)) {
+        this.dirtyObjectProps.delete(id);
+      }
+    }
+
+    for (const array of Array.from(this.dirtyArrays)) {
+      if (!liveArrays.has(array)) {
+        this.dirtyArrays.delete(array);
+        continue;
+      }
+
+      this.checkArrayStructure(array);
+    }
   }
 
   private traverse(node: any, map: Map<string, any>) {
@@ -158,6 +234,7 @@ export class ChangeTracker<T extends object> {
   }
 
   get data() {
+    const _ = this.version;
     return this.proxy;
   }
 
@@ -209,27 +286,60 @@ export class ChangeTracker<T extends object> {
     }
 
     this.init(snapshot);
+    this.proxy = this.createProxy(this.state);
     this.notify();
   }
 
-  acknowledgeUpdate(object: any) {
+  acknowledgeUpdate(object: any, persistedFields?: Record<string, any>) {
     if (!object || !object.id) return;
-    const snapshot = $state.snapshot(object);
     const target = this.reverseProxyCache.get(object) || object;
+    const originalSnapshot = this.originalObjects.get(object.id);
+    const fieldEntries = Object.entries(persistedFields ?? {});
 
-    if (this.originalObjects.has(object.id)) {
-      this.clearDirtyStateFor(this.originalObjects.get(object.id));
+    if (fieldEntries.length === 0) {
+      if (originalSnapshot) {
+        this.removeIndexedState(originalSnapshot);
+      }
+
+      this.clearDirtyStateFor(target);
+
+      const snapshot = $state.snapshot(target);
+      this.indexAndLink(target, snapshot);
+      this.pruneDirtyState();
+      this.notify();
+      return;
     }
 
-    this.originalObjects.set(object.id, snapshot);
-    this.indexAndLink(target, snapshot);
+    const nextOriginalSnapshot = structuredClone(originalSnapshot ?? { id: object.id });
 
-    if (this.dirtyObjectProps.has(object.id)) {
-      this.dirtyObjectProps.delete(object.id);
+    for (const [field, value] of fieldEntries) {
+      const previousValue = target[field];
+      this.clearDirtyStateFor(previousValue);
+
+      if (originalSnapshot) {
+        this.removeIndexedState(originalSnapshot[field]);
+      }
+
+      target[field] = value;
     }
 
-    this.clearDirtyStateFor(snapshot);
+    const snapshot = $state.snapshot(target);
 
+    nextOriginalSnapshot.id = snapshot.id;
+
+    for (const [field] of fieldEntries) {
+      nextOriginalSnapshot[field] = snapshot[field];
+    }
+
+    this.originalObjects.set(object.id, nextOriginalSnapshot);
+
+    for (const [field] of fieldEntries) {
+      this.indexAndLink(target[field], snapshot[field]);
+      this.clearDirtyStateFor(target[field]);
+      this.clearDirtyField(object.id, field);
+    }
+
+    this.pruneDirtyState();
     this.notify();
   }
 

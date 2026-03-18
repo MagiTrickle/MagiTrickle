@@ -377,9 +377,7 @@ export class SubscriptionsStore {
         {},
       );
 
-      subscription.rules = updated.rules;
-      subscription.last_update = updated.last_update;
-      this.tracker.acknowledgeUpdate(subscription);
+      this.tracker.acknowledgeUpdate(subscription, updated);
 
       this.markDataRevision();
       toast.success(t("Synced"));

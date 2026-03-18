@@ -208,6 +208,26 @@ describe("ChangeTracker", () => {
       assert.strictEqual(tracker.data[0].id, "2");
       assert.strictEqual(tracker.isDirty, false);
     });
+
+    it("should expose a fresh root proxy after reset so add/delete acknowledgements still work", () => {
+      const tracker = new ChangeTracker([createItem({ id: "1" })]);
+      const firstProxy = tracker.data;
+
+      tracker.reset([createItem({ id: "1" })]);
+
+      const secondProxy = tracker.data;
+      const added = createItem({ id: "2" });
+
+      assert.notStrictEqual(secondProxy, firstProxy);
+
+      secondProxy.push(added);
+      tracker.acknowledgeNewItem(secondProxy, added, "end");
+      assert.strictEqual(tracker.isDirty, false);
+
+      secondProxy.pop();
+      tracker.acknowledgeDelete(secondProxy, "2");
+      assert.strictEqual(tracker.isDirty, false);
+    });
   });
 
   describe("Nested Data (Groups -> Rules)", () => {
@@ -373,6 +393,43 @@ describe("ChangeTracker", () => {
       assert.strictEqual(tracker.isDirty, true);
       assert.strictEqual(tracker.changes.mutated.length, 1);
       assert.strictEqual(tracker.changes.mutated[0].id, "1");
+    });
+
+    it("should preserve unrelated dirty fields when acknowledging specific persisted fields", () => {
+      const tracker = new ChangeTracker([
+        {
+          id: "sub1",
+          name: "Original",
+          interface: "all",
+          interval: 60,
+          enable: true,
+          last_update: 0,
+          rules: [createItem({ id: "rule1" })],
+        },
+      ]);
+      const proxy = tracker.data;
+
+      proxy[0].name = "Unsaved";
+      proxy[0].rules.push(createItem({ id: "rule-local" }));
+
+      tracker.acknowledgeUpdate(proxy[0], {
+        rules: [createItem({ id: "rule-server" })],
+        last_update: 123,
+      });
+
+      assert.strictEqual(proxy[0].name, "Unsaved");
+      assert.strictEqual(proxy[0].last_update, 123);
+      assert.deepStrictEqual(
+        proxy[0].rules.map((rule: RuleItem) => rule.id),
+        ["rule-server"],
+      );
+      assert.strictEqual(tracker.isDirty, true);
+      assert.deepStrictEqual(
+        tracker.changes.mutated.map((item: { id: string }) => item.id),
+        ["sub1"],
+      );
+      assert.strictEqual(tracker.changes.added.length, 0);
+      assert.strictEqual(tracker.changes.deleted.length, 0);
     });
 
     it("should acknowledge a deletion and make array clean", () => {
