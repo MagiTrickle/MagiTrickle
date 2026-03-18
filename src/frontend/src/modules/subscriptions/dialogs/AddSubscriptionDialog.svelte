@@ -12,6 +12,7 @@
   import { Info, Link, LoaderCircle, Network, Refresh, Type } from "../../../components/ui/icons";
   import type { SubscriptionRule } from "../../../types";
   import { fetcher } from "../../../utils/fetcher";
+  import { toInterfaceOption } from "../../../utils/interface-labels";
 
   type DialogProps = {
     open: boolean;
@@ -31,6 +32,7 @@
   let isLoading = $state(false);
   let error = $state<string | null>(null);
   let fetchError = $state(false);
+  let interfaceOptions = $derived(interfaces.list.map(toInterfaceOption));
 
   let typeBreakdown = $derived.by(() => {
     const counts: Record<string, number> = {};
@@ -47,7 +49,7 @@
     step = 1;
     url = "";
     name = "";
-    selectedInterface = interfaces.list[0] || "";
+    selectedInterface = interfaces.list[0]?.id || "";
     selectedInterval = 86400;
     rules = [];
     isLoading = false;
@@ -90,7 +92,7 @@
       rules = res.rules;
       step = 2;
       if (!selectedInterface) {
-        selectedInterface = interfaces.list[0] || "";
+        selectedInterface = interfaces.list[0]?.id || "";
       }
     } catch (e) {
       console.error(e);
@@ -209,7 +211,8 @@
               <span class="icon"><Network size={18} /></span>
               <Select
                 id="sub-interface"
-                options={interfaces.list.map((i) => ({ value: i, label: i }))}
+                options={interfaceOptions}
+                variant="stacked"
                 bind:selected={selectedInterface}
                 class="interface-select"
               />

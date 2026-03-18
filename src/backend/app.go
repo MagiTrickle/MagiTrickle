@@ -3,14 +3,13 @@ package magitrickle
 import (
 	"errors"
 	"fmt"
-	"net"
-	"slices"
 	"sync"
 	"sync/atomic"
 
 	"magitrickle/app"
 	"magitrickle/constant"
 	groupruntime "magitrickle/groups"
+	"magitrickle/internal/interfaces"
 	"magitrickle/models"
 	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/intID"
@@ -193,7 +192,7 @@ func (a *App) AddSubscription(subscription *models.Subscription) error {
 
 	for _, sub := range a.subscriptions {
 		if sub.ID == subscription.ID {
-			return app.ErrSubscriptionConflict
+			return errors.New("subscription id conflict")
 		}
 	}
 	a.subscriptions = append(a.subscriptions, subscription)
@@ -232,25 +231,9 @@ func (a *App) RemoveSubscriptionByID(id intID.ID) (bool, error) {
 	return false, nil
 }
 
-// ListInterfaces возвращает список сетевых интерфейсов, удовлетворяющих заданным критериям
-func (a *App) ListInterfaces() ([]net.Interface, error) {
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get interfaces: %w", err)
-	}
-
-	if a.config.ShowAllInterfaces {
-		return interfaces, nil
-	}
-
-	var filteredInterfaces []net.Interface
-	for _, iface := range interfaces {
-		if iface.Flags&net.FlagPointToPoint == 0 || slices.Contains(constant.IgnoredInterfaces, iface.Name) {
-			continue
-		}
-		filteredInterfaces = append(filteredInterfaces, iface)
-	}
-	return filteredInterfaces, nil
+// ListInterfaces возвращает список сетевых интерфейсов, доступных для выбора в UI.
+func (a *App) ListInterfaces() ([]models.InterfaceInfo, error) {
+	return interfaces.List(a.config.ShowAllInterfaces)
 }
 
 // DnsOverrider возвращает dnsOverrider

@@ -47,6 +47,7 @@
   } from "../../../components/ui/icons";
   import { draggable } from "../../../lib/dnd";
   import { type SubscriptionRule } from "../../../types";
+  import { toInterfaceOption } from "../../../utils/interface-labels";
 
   type Props = {
     subscription_index: number;
@@ -81,6 +82,7 @@
   let visibleRuleIndices = $derived(store.visibilityMap.get(subscription_index));
   let effectiveOpen = $derived(subscription ? (store.open_state[subscription.id] ?? false) : false);
   let urlError = $derived(subscription ? store.subscriptionUrlErrors.get(subscription.id) : null);
+  let interfaceOptions = $derived(interfaces.list.map(toInterfaceOption));
 
   function toggleOpen() {
     if (!subscription) return;
@@ -275,7 +277,8 @@
         <div class="subscription-actions">
           <div class="action interface">
             <Select
-              options={interfaces.list.map((item) => ({ value: item, label: item }))}
+              options={interfaceOptions}
+              variant="stacked"
               bind:selected={subscription.interface}
               class="subscription-interface"
             />

@@ -5,5 +5,6 @@ type InterfacesRes struct {
 }
 
 type InterfaceRes struct {
-	ID string `json:"id" example:"nwg0" swaggertype:"string"`
+	ID   string `json:"id" example:"nwg0" swaggertype:"string"`
+	Name string `json:"name,omitempty" example:"Home"`
 }

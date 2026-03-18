@@ -9,7 +9,12 @@ import type { Interfaces } from "../src/types.ts";
 const API_BASE = "/api/v1";
 
 const INTERFACES: Interfaces = {
-  interfaces: [{ id: "nwg0" }, { id: "longinterf" }, { id: "eth1" }, { id: "wg0" }],
+  interfaces: [
+    { id: "nwg0", name: "WireGuard tunnel" },
+    { id: "longinterf" },
+    { id: "eth1", name: "ISP uplink" },
+    { id: "wg0", name: "Neighbor tunnel" },
+  ],
 };
 
 const DATA = JSON.parse(Deno.readTextFileSync("./dev/groups.json"));

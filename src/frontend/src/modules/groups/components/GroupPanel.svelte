@@ -11,6 +11,8 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
+  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
+  import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
   import RuleRow from "./RuleRow.svelte";
 
   import {
@@ -28,9 +30,8 @@
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
+  import { toInterfaceOption } from "../../../utils/interface-labels";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
-  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
-  import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
 
   type Props = {
     group_index: number;
@@ -61,8 +62,9 @@
   );
   let hasGroupNameSearchHighlight = $derived(Boolean(groupNameHighlightParts));
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
-  let effectiveOpen = $derived(group ? store.open_state[group.id] ?? false : false);
+  let effectiveOpen = $derived(group ? (store.open_state[group.id] ?? false) : false);
   let duplicateConflicts = $derived(group ? store.getDuplicateConflictsForGroup(group.id) : []);
+  let interfaceOptions = $derived(interfaces.list.map(toInterfaceOption));
 
   function toggleOpen() {
     if (!group) return;
@@ -122,7 +124,7 @@
   let totalRulesCount = $derived(
     searchActive && Array.isArray(visibleRuleIndices)
       ? visibleRuleIndices.length
-      : group?.rules.length ?? 0,
+      : (group?.rules.length ?? 0),
   );
 
   let usePagination = $derived(totalRulesCount > PAGE_SIZE);
@@ -250,7 +252,9 @@
               row.scrollIntoView({ behavior: "smooth", block: "center" });
             }
           } else {
-            const targetGroup = document.querySelector<HTMLElement>(`.group[data-uuid="${group.id}"]`);
+            const targetGroup = document.querySelector<HTMLElement>(
+              `.group[data-uuid="${group.id}"]`,
+            );
             if (targetGroup) {
               const rect = targetGroup.getBoundingClientRect();
               const inView = rect.top >= 0 && rect.bottom <= window.innerHeight;
@@ -331,7 +335,11 @@
                 bind:value={group.name}
               />
               {#if hasGroupNameSearchHighlight && groupNameHighlightParts}
-                <div class="search-highlight-overlay group-name-search-overlay" class:has-warning={duplicateConflicts.length > 0} aria-hidden="true">
+                <div
+                  class="search-highlight-overlay group-name-search-overlay"
+                  class:has-warning={duplicateConflicts.length > 0}
+                  aria-hidden="true"
+                >
                   {#each groupNameHighlightParts as part}
                     {#if part.matched}
                       <mark>{part.text}</mark>
@@ -353,10 +361,7 @@
         </div>
 
         <div class="group-actions">
-          <Select
-            options={interfaces.list.map((item) => ({ value: item, label: item }))}
-            bind:selected={group.interface}
-          />
+          <Select options={interfaceOptions} variant="stacked" bind:selected={group.interface} />
 
           <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
             <Switch class="enable-group" bind:checked={group.enable} />
@@ -454,7 +459,10 @@
               <div class="group-rules-header-column">{t("Type")}</div>
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="group-rules-header-column clickable" onclick={() => handleSort("pattern")}>
+              <div
+                class="group-rules-header-column clickable"
+                onclick={() => handleSort("pattern")}
+              >
                 {t("Pattern")}
                 <div class="sort-icon">
                   {#if sortField === "pattern" && sortDirection === "desc"}

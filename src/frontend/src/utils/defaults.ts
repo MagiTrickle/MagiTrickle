@@ -7,7 +7,7 @@ export function defaultGroup(): Group {
   return {
     enable: true,
     id: randomId(),
-    interface: interfaces.list.at(0) ?? "",
+    interface: interfaces.list.at(0)?.id ?? "",
     name: "",
     color: randomDarkishColor(),
     rules: [],

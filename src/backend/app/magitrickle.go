@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"net"
 	"time"
 
 	"magitrickle/models"
@@ -40,7 +39,7 @@ type Main interface {
 	RemoveSubscriptionByID(id intID.ID) (bool, error)
 	SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride string) (result SubscriptionSyncResult, changed bool, err error)
 	SyncDueSubscriptions(now time.Time) (bool, error)
-	ListInterfaces() ([]net.Interface, error)
+	ListInterfaces() ([]models.InterfaceInfo, error)
 	DnsOverrider() *netfilterTools.PortRemap
 	LoadConfig() error
 	SaveConfig() error
