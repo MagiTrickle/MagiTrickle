@@ -7,7 +7,7 @@
   import { toast } from "../utils/events";
   import { fetcher } from "../utils/fetcher";
   import { Info, Password, User } from "./ui/icons";
-  import logoUrl from "../../static/logo.svg?url";
+  import logoUrl from "../assets/logo.svg";
 
   let login = $state("");
   let password = $state("");
@@ -232,12 +232,12 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-top: -2.8rem;
+    margin-top: -4rem;
     transition: margin-top 1.9s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .logo-wrapper.is-focused {
-    margin-top: -7.8rem;
+    margin-top: -9rem;
   }
 
   .logo-sticker {
