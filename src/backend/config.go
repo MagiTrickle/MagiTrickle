@@ -158,6 +158,12 @@ func (a *App) ImportConfig(cfg config.Config) error {
 		}
 	}
 
+	a.subscriptionSyncMu.Lock()
+	defer a.subscriptionSyncMu.Unlock()
+
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
 	if cfg.Groups != nil {
 		// отключаем старые группы и очищаем срез
 		for _, group := range a.groups {
@@ -186,7 +192,7 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			if group.Enable != nil {
 				enable = *group.Enable
 			}
-			err := a.AddGroup(&models.Group{
+			err := a.addGroupLocked(&models.Group{
 				ID:        group.ID,
 				Name:      group.Name,
 				Color:     group.Color,
@@ -232,13 +238,13 @@ func (a *App) ImportConfig(cfg config.Config) error {
 		a.subscriptions = a.subscriptions[:0]
 	}
 
-	a.syncSubscriptionGroups()
-	return nil
+	return a.syncSubscriptionGroupsLocked()
 }
 
 func (a *App) ExportConfig() config.Config {
-	groups := make([]config.Group, 0, len(a.groups))
-	for _, group := range a.groups {
+	groupRefs := a.groupSnapshot()
+	groups := make([]config.Group, 0, len(groupRefs))
+	for _, group := range groupRefs {
 		if group.Internal {
 			continue
 		}
@@ -261,6 +267,7 @@ func (a *App) ExportConfig() config.Config {
 		}
 		groups = append(groups, groupCfg)
 	}
+	subscriptions := a.Subscriptions()
 
 	return config.Config{
 		ConfigVersion: "0.1.3",
@@ -309,7 +316,7 @@ func (a *App) ExportConfig() config.Config {
 			LogLevel:          &a.config.LogLevel,
 		},
 		Groups:        &groups,
-		Subscriptions: exportSubscriptions(a.subscriptions),
+		Subscriptions: exportSubscriptions(subscriptions),
 	}
 }
 

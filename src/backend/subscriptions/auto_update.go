@@ -30,7 +30,7 @@ func SyncDueSubscriptions(subs []*models.Subscription, now time.Time) bool {
 			continue
 		}
 
-		sub.Rules = ParseRules(list)
+		sub.Rules = RefreshRules(list, sub.Rules)
 		sub.LastUpdate = now.UnixMilli()
 		updated = true
 	}

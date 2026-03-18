@@ -37,8 +37,7 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 				Int("type", int(event.Header.Type)).
 				Msg("interface up")
 		}
-
-		for _, group := range a.groups {
+		for _, group := range a.groupSnapshot() {
 			if group.Interface != ifaceName {
 				continue
 			}

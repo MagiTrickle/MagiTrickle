@@ -1,18 +1,19 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"magitrickle/api/utils"
 	"magitrickle/api/v1/types"
+	"magitrickle/app"
 	"magitrickle/models"
 	"magitrickle/subscriptions"
 	"magitrickle/utils/intID"
 
 	"github.com/rs/zerolog/log"
 )
-
 
 // GetSubscriptions
 //
@@ -87,8 +88,10 @@ func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.app.SetSubscriptions(newSubs)
-	h.app.SyncSubscriptionGroups()
+	if err := h.app.ReplaceSubscriptions(newSubs); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if r.URL.Query().Get("save") != "false" {
 		if err := h.app.SaveConfig(); err != nil {
 			log.Error().Err(err).Msg("failed to save config file")
@@ -131,10 +134,13 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.app.AddSubscription(sub); err != nil {
-		utils.WriteError(w, http.StatusConflict, err.Error())
+		status := http.StatusInternalServerError
+		if errors.Is(err, app.ErrSubscriptionConflict) {
+			status = http.StatusConflict
+		}
+		utils.WriteError(w, status, err.Error())
 		return
 	}
-	h.app.SyncSubscriptionGroups()
 	if r.URL.Query().Get("save") != "false" {
 		if err := h.app.SaveConfig(); err != nil {
 			log.Error().Err(err).Msg("failed to save config file")
@@ -169,30 +175,20 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var target *models.Subscription
-	for _, sub := range h.app.Subscriptions() {
-		if sub.ID == id {
-			target = sub
-			break
-		}
-	}
-	if target == nil {
-		utils.WriteError(w, http.StatusNotFound, "subscription not found")
-		return
-	}
-	if target.URL == "" {
-		utils.WriteError(w, http.StatusBadRequest, "subscription url is required")
-		return
-	}
-
-	list, err := subscriptions.FetchList(target.URL)
+	target, err := h.app.SyncSubscriptionByID(id, time.Now())
 	if err != nil {
-		utils.WriteError(w, http.StatusBadGateway, err.Error())
+		switch {
+		case errors.Is(err, app.ErrSubscriptionNotFound):
+			utils.WriteError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, app.ErrSubscriptionInvalid):
+			utils.WriteError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, app.ErrSubscriptionFetch):
+			utils.WriteError(w, http.StatusBadGateway, err.Error())
+		default:
+			utils.WriteError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
-	target.Rules = subscriptions.ParseRules(list)
-	target.LastUpdate = time.Now().UnixMilli()
-	h.app.SyncSubscriptionGroups()
 
 	if r.URL.Query().Get("save") != "false" {
 		if err := h.app.SaveConfig(); err != nil {
@@ -236,11 +232,15 @@ func (h *Handler) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.app.RemoveSubscriptionByID(id) {
+	removed, err := h.app.RemoveSubscriptionByID(id)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !removed {
 		utils.WriteError(w, http.StatusNotFound, "subscription not found")
 		return
 	}
-	h.app.SyncSubscriptionGroups()
 
 	if r.URL.Query().Get("save") != "false" {
 		if err := h.app.SaveConfig(); err != nil {

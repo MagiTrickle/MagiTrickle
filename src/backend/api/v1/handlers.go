@@ -171,7 +171,10 @@ func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	h.app.SyncSubscriptionGroups()
+	if err := h.app.SyncSubscriptionGroups(); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	utils.WriteJson(w, http.StatusOK, RespFromGroups(newGroups, true))
 	if r.URL.Query().Get("save") == "true" {
 		if err := h.app.SaveConfig(); err != nil {

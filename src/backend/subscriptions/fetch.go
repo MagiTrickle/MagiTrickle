@@ -5,7 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
+
+const fetchTimeout = 15 * time.Second
 
 func FetchList(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
@@ -16,7 +19,7 @@ func FetchList(rawURL string) (string, error) {
 		return "", fmt.Errorf("unsupported url scheme")
 	}
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: fetchTimeout}
 	resp, err := client.Get(rawURL)
 	if err != nil {
 		return "", err
