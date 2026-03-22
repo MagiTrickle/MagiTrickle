@@ -43,7 +43,7 @@ test.describe("Header Settings", () => {
     // Check dialog title
     const dialog = page.locator("[data-dialog-content]");
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("Info", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("About", { exact: true })).toBeVisible();
 
     // Check for some content
     await expect(dialog.locator("text=Official website")).toBeVisible();
