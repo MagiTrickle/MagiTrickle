@@ -14,7 +14,7 @@
   let { open = $bindable() }: Props = $props();
 </script>
 
-<GenericDialog {open} title={t("Info")} on:close={() => (open = false)} maxWidth={420}>
+<GenericDialog {open} title={t("About")} on:close={() => (open = false)} maxWidth={420}>
   <div slot="body">
     <div class="container">
       <div class="block">
@@ -81,7 +81,7 @@
       </div>
     </div>
     <div class="build">
-      {t("build")}: {version}
+      {t("Build")}: {version}
     </div>
   </div>
 </GenericDialog>
