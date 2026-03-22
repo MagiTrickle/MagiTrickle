@@ -187,7 +187,7 @@
   }
 
   .logo-wrapper {
-    width: clamp(5.25rem, 18vw, 6.5rem);
+    width: 128px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -318,11 +318,6 @@
       padding: 1rem;
       z-index: 2;
       width: 100%;
-    }
-
-    .logo-wrapper {
-      width: 10rem;
-      margin-bottom: 1rem;
     }
 
     .info-btn {
