@@ -102,7 +102,7 @@ FRONTEND_BUILD_PROPERTIES := PKG_VERSION=$(PKG_VERSION) PKG_VERSION_PRERELEASE=$
 # Targets
 #
 
-.PHONY: _return_export_dynamic_env all clear clean download download_backend download_frontend redownload redownload_backend redownload_frontend build build_backend build_frontend rebuild rebuild_backend rebuild_frontend prepare_files package package_ipk FORCE
+.PHONY: _return_export_dynamic_env all clear clean download download_backend download_frontend redownload redownload_backend redownload_frontend build build_backend build_frontend rebuild rebuild_backend rebuild_frontend prepare_files package package_ipk FORCE sdk/clean sdk/prepare
 
 all: download build package
 
@@ -130,6 +130,35 @@ download: download_backend download_frontend
 rebuild: rebuild_backend rebuild_frontend
 
 build: build_backend build_frontend
+
+# Target for building via SDK
+
+sdk/clean:
+	find sdk ! -name 'Makefile' -type f -exec rm -rf {} +
+
+sdk/prepare:
+	echo "PKG_NAME:=$(PKG_NAME)" > sdk/pkg-info.mk
+	echo "PKG_DESCRIPTION:=$(PKG_DESCRIPTION)" >> sdk/pkg-info.mk
+	echo "PKG_LICENSE:=$(PKG_LICENSE)" >> sdk/pkg-info.mk
+	echo "PKG_URL:=$(PKG_URL)" >> sdk/pkg-info.mk
+	echo "PKG_MAINTAINER:=$(PKG_MAINTAINER)" >> sdk/pkg-info.mk
+	echo "PKG_VERSION:=$(PKG_VERSION)" >> sdk/pkg-info.mk
+	echo "PKG_VERSION_APK:=$(PKG_VERSION_APK)" >> sdk/pkg-info.mk
+	if [ -n "$(PKG_REVISION)" ]; then \
+		echo "PKG_REVISION:=$(PKG_REVISION)" >> sdk/pkg-info.mk; \
+	fi
+	echo "PLATFORM:=$(PLATFORM)" >> "sdk/pkg-info.mk"
+
+	@mkdir -p sdk/src
+	cp -vrf src/backend/* sdk/src/
+	@rm -rf sdk/src/tests
+
+	@mkdir -p sdk/frontend
+	cp -vrf src/frontend/dist/* sdk/frontend/
+
+	cp -vrf files sdk/files
+	
+	ln -sf sdk magitrickle 
 
 # Backend
 

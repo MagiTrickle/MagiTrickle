@@ -8,8 +8,6 @@ on:
       - '**.md'
       - '.github/**'
       - '!.github/workflows/build.yml'
-  release:
-    types: [published]
 
 jobs:
   prepare:
