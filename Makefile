@@ -45,12 +45,14 @@ ROOT_DIR := $(BUILD_DIR)/root
 ROOT_APK_DIR := $(BUILD_DIR)/root_apk
 BIN_DIR := $(ROOT_DIR)/bin
 ETC_DIR := $(ROOT_DIR)/etc
+LIB_DIR := $(ROOT_DIR)/lib
 USRSHARE_DIR := $(ROOT_DIR)/usr/share
 STATE_DIR := $(ROOT_DIR)/var/lib/magitrickle
 
 ifeq ($(PLATFORM),entware)
 	BIN_DIR := $(ROOT_DIR)/opt/bin
 	ETC_DIR := $(ROOT_DIR)/opt/etc
+	LIB_DIR := $(ROOT_DIR)/opt/lib
 	USRSHARE_DIR := $(ROOT_DIR)/opt/usr/share
 	STATE_DIR := $(ROOT_DIR)/opt/var/lib/magitrickle
 
@@ -63,6 +65,7 @@ endif
 ifeq ($(PLATFORM),openwrt)
 	BIN_DIR := $(ROOT_DIR)/usr/bin
 	ETC_DIR := $(ROOT_DIR)/etc
+	LIB_DIR := $(ROOT_DIR)/lib
 	USRSHARE_DIR := $(ROOT_DIR)/usr/share
 	STATE_DIR := $(ROOT_DIR)/etc/magitrickle/state
 
@@ -202,6 +205,7 @@ define _copy_files
 	if [ -d $(1)/_apk ]; then mkdir -p $(APK_DIR); cp -r $(1)/_apk/* $(APK_DIR); fi
 	if [ -d $(1)/bin ]; then mkdir -p $(BIN_DIR); cp -r $(1)/bin/* $(BIN_DIR); fi
 	if [ -d $(1)/etc ]; then mkdir -p $(ETC_DIR); cp -r $(1)/etc/* $(ETC_DIR); fi
+	if [ -d $(1)/lib ]; then mkdir -p $(LIB_DIR); cp -r $(1)/lib/* $(LIB_DIR); fi
 	if [ -d $(1)/usr/share ]; then mkdir -p $(USRSHARE_DIR); cp -r $(1)/usr/share/* $(USRSHARE_DIR); fi
 	if [ -d $(1)/var/lib/magitrickle ]; then mkdir -p $(STATE_DIR); cp -r $(1)/var/lib/magitrickle/* $(STATE_DIR); fi
 endef
