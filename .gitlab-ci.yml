@@ -7,12 +7,27 @@ variables:
   GIT_DEPTH: 0
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${CI_PROJECT_NAME}/${CI_COMMIT_TAG}"
 
+src_unchanged:
+  stage: test
+  image: alpine:latest
+  rules:
+    - if: '$CI_MERGE_REQUEST_ID'
+      changes:
+        - src/backend/**/*
+        - src/frontend/**/*
+      when: never
+    - if: '$CI_MERGE_REQUEST_ID'
+  script:
+    - echo "Bypassing \"Pipeline must successes\"..."
+
 test_backend:
   stage: test
   image: golang:1.23-alpine
   rules:
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_MERGE_REQUEST_ID'
+      changes:
+        - src/backend/**/*
   script:
     - cd ./src/backend
     - GOOS=linux go vet -tags "${GO_TAGS}" ./...
@@ -36,6 +51,8 @@ test_frontend:
   rules:
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_MERGE_REQUEST_ID'
+      changes:
+        - src/frontend/**/*
   before_script:
     - apt-get update
     - apt-get install -y unzip ca-certificates
