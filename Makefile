@@ -23,7 +23,7 @@ ifeq ($(strip $(PKG_VERSION)),)
 	COMMITS_SINCE_TAG := $(shell [ -n "$(TAG)" ] && git rev-list $(TAG)..HEAD --count 2>/dev/null || echo 0)
 	ifneq ($(or $(filter-out 0,$(COMMITS_SINCE_TAG)),$(if $(TAG),,1)),)
 		PKG_VERSION_PRERELEASE := $(shell v=$(PKG_VERSION); echo $${v%.*}.$$(( $${v##*.} + 1 )) )
-		PRERELEASE_DATE := $(shell date +%Y%m%d%H%M%S)
+		PRERELEASE_DATE := $(shell date -u +%Y%m%d%H%M%S)
 		COMMIT := $(shell git rev-parse --short HEAD)
 
 		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
