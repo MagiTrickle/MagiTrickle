@@ -78,9 +78,16 @@ jobs:
           docker run --rm -v /usr/local/bin:/mnt alpine:edge sh -c "apk add --no-cache apk-tools-static && cp /sbin/apk.static /mnt/apk && chmod +x /mnt/apk"
 
       - name: Build and package
+        env:
+          BUILD_KEY_APK_SEC_CONTENT: ${{ secrets.BUILD_KEY_APK_SEC }}
         run: |
           export $(make _return_export_dynamic_env);
           cp "${{ matrix.config }}" .config
+          if [ -n "$BUILD_KEY_APK_SEC_CONTENT" ]; then
+            KEY_FILE=$(mktemp)
+            printf '%s' "$BUILD_KEY_APK_SEC_CONTENT" > "$KEY_FILE"
+            export BUILD_KEY_APK_SEC="$KEY_FILE"
+          fi
           make
 
       - name: Collect package files
