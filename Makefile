@@ -101,6 +101,11 @@ FRONTEND_SOURCES += ./src/frontend/vite.config.ts ./src/frontend/tsconfig.json
 FRONTEND_SOURCES += $(FRONTEND_DEPENDENCIES)
 FRONTEND_BUILD_PROPERTIES := PKG_VERSION=$(PKG_VERSION) PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)
 
+# Packaging data
+
+BUILD_KEY_APK_SEC ?= private-key.pem
+BUILD_KEY_APK_PUB ?= public-key.pem
+
 #
 # Targets
 #
@@ -221,6 +226,12 @@ prepare_files: build
 	$(if $(filter entware,$(PLATFORM)), $(if $(filter %_kn,$(TARGET)), $(call _copy_files,./files/entware_kn)))
 	$(if $(filter openwrt,$(PLATFORM)), $(call _copy_files,./files/openwrt))
 
+$(BUILD_KEY_APK_SEC):
+	openssl ecparam -name prime256v1 -genkey -noout -out $(BUILD_KEY_APK_SEC)
+
+$(BUILD_KEY_APK_PUB): $(BUILD_KEY_APK_SEC)
+	openssl ec -in $(BUILD_KEY_APK_SEC) -pubout > $(BUILD_KEY_APK_PUB)
+
 package:
 ifeq ($(PLATFORM),openwrt)
 	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
@@ -259,7 +270,7 @@ endif
 	tar -C "$(ROOT_DIR)" -czvf "$(IPK_DIR)/data.tar.gz" --owner=0 --group=0 .
 	tar -C "$(IPK_DIR)" -czvf "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION)-$(PKG_REVISION)_$(UNIQUE_NAME).ipk" --owner=0 --group=0 ./debian-binary ./control.tar.gz ./data.tar.gz
 
-package_apk: prepare_files
+package_apk: prepare_files $(BUILD_KEY_APK_SEC)
 	rm -rf $(ROOT_APK_DIR)
 	mkdir -p $(ROOT_APK_DIR)
 	cp -r $(ROOT_DIR)/. $(ROOT_APK_DIR)/
@@ -290,6 +301,7 @@ package_apk: prepare_files
 		-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
 		-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \
 		-F "$(ROOT_APK_DIR)" \
-		-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk"
+		-o "$(BUILDS_DIR)/$(PKG_NAME)_$(PKG_VERSION_APK)-r$(PKG_REVISION)_$(UNIQUE_NAME).apk" \
+		--sign "$(BUILD_KEY_APK_SEC)"
 
 FORCE:
