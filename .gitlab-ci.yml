@@ -9,7 +9,7 @@ variables:
 
 src_unchanged:
   stage: test
-  image: alpine:latest
+  image: busybox:1.37.0-uclibc
   rules:
     - if: '$CI_MERGE_REQUEST_ID'
       changes:
