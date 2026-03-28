@@ -15,9 +15,9 @@ PKG_MAINTAINER := Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
 ifeq ($(strip $(PKG_VERSION)),)
 	TAG := $(shell git describe --tags --abbrev=0 2> /dev/null)
 	PKG_VERSION := $(if $(TAG),$(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//'),0.0.0)
-	TAG_RELEASE := $(shell echo "$(TAG)" | grep -oE 'rev[0-9]+$$' | sed 's/rev//')
-	ifneq ($(strip $(TAG_RELEASE)),)
-		PKG_REVISION ?= $(TAG_RELEASE)
+	TAG_REVISION := $(shell echo "$(TAG)" | grep -oE 'rev[0-9]+$$' | sed 's/rev//')
+	ifneq ($(strip $(TAG_REVISION)),)
+		PKG_REVISION ?= $(TAG_REVISION)
 	endif
 
 	COMMITS_SINCE_TAG := $(shell [ -n "$(TAG)" ] && git rev-list $(TAG)..HEAD --count 2>/dev/null || echo 0)
@@ -234,11 +234,11 @@ $(BUILD_KEY_APK_PUB): $(BUILD_KEY_APK_SEC)
 
 package:
 ifeq ($(PLATFORM),openwrt)
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_apk
+	PKG_VERSION=$(PKG_VERSION) PKG_REVISION=$(PKG_REVISION) $(MAKE) package_ipk
+	PKG_VERSION=$(PKG_VERSION) PKG_REVISION=$(PKG_REVISION) $(MAKE) package_apk
 endif
 ifeq ($(PLATFORM),entware)
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) package_ipk
+	PKG_VERSION=$(PKG_VERSION) PKG_REVISION=$(PKG_REVISION) $(MAKE) package_ipk
 endif
 
 package_ipk: prepare_files
