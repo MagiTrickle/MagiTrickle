@@ -1,0 +1,203 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      openwrt-arches: ${{ steps.vars.outputs.openwrt-arches }}
+      entware-arches: ${{ steps.vars.outputs.entware-arches }}
+      excluded-kn-arches: ${{ steps.vars.outputs.excluded-kn-arches }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.JS
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache-dependency-path: ./src/frontend/package-lock.json
+          cache: 'npm'
+
+      - name: Build frontend
+        run: | 
+          make download_frontend
+          make build_frontend 
+
+      - name: Upload frontend artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend
+          path: |
+            ./src/frontend/dist
+          if-no-files-found: error
+
+      - name: Generate list of arches
+        id: vars
+        run: |
+          OPENWRT_ARCHES=$(python3 -c 'from pathlib import Path; \
+            print([filename.stem for filename in Path("config/openwrt").iterdir()])')
+
+          ENTWARE_ARCHES=$(python3 -c 'from pathlib import Path; \
+            print([filename.stem for filename in Path("config/entware").iterdir() if not filename.stem.endswith("_kn")])')
+
+          EXCLUDED_KN_ARCHES=$(python3 -c "from pathlib import Path; \
+            kn_arches=[filename.stem.removesuffix('_kn') for filename in Path('config/entware').iterdir() if filename.stem.endswith('_kn')]; \
+            exclude_configs=list(set(${ENTWARE_ARCHES}) - set(kn_arches)); \
+            exclude_configs=[{'arch': config, 'platform': 'entware_kn'} for config in exclude_configs]; \
+            print(exclude_configs)")
+
+          echo "openwrt-arches=$OPENWRT_ARCHES" >> "$GITHUB_OUTPUT"
+          echo "entware-arches=$ENTWARE_ARCHES" >> "$GITHUB_OUTPUT"
+          echo "excluded-kn-arches=$EXCLUDED_KN_ARCHES" >> "$GITHUB_OUTPUT"
+
+  build-openwrt:
+    name: ${{ matrix.arch }}-${{ matrix.branch }} build
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJson(needs.prepare.outputs.openwrt-arches) }}
+        branch:
+          - openwrt-24.10
+          - openwrt-25.12
+        exclude:
+          # exclude unsupported pairs
+          - arch: mips_4kec
+            branch: openwrt-25.12
+          - arch: riscv64_generic
+            branch: openwrt-24.10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download frontend artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend
+          path: ./src/frontend/dist
+
+      - name: Prepare sdk
+        run: |
+          make sdk/clean
+          make sdk/prepare PLATFORM=openwrt
+
+      - name: build
+        uses: openwrt/gh-action-sdk@main
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.branch }}
+          FEEDNAME: magitrickle
+          PACKAGES: magitrickle
+          NO_REFRESH_CHECK: true
+          V: s
+
+      - name: Rename packages
+        run: |
+          for file in ./bin/packages/${{ matrix.arch }}/magitrickle/magitrickle[_-]*.[ai]pk; do
+            new_file=$(basename $file)
+            case "$new_file" in
+              *.ipk)
+                new_file=${new_file/_${{ matrix.arch }}/_${{ matrix.branch }}_${{ matrix.arch }}}
+                ;;
+              *.apk)
+                new_file=${new_file/magitrickle-/magitrickle_}
+                new_file=${new_file%.*}_${{ matrix.branch }}_${{ matrix.arch }}.apk
+                ;;
+            esac
+            mv $file ./$new_file
+          done
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: magitrickle_openwrt-${{ matrix.arch }}-${{ matrix.branch }}
+          path: ./magitrickle_*.[ai]pk
+          if-no-files-found: error
+          compression-level: 0
+
+  build-entware:
+    name: Build ${{ matrix.platform }} package ${{ matrix.arch }} 
+    runs-on: ubuntu-latest
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - entware
+          - entware_kn
+        arch: ${{ fromJson(needs.prepare.outputs.entware-arches) }}
+        exclude: ${{ fromJson(needs.prepare.outputs.excluded-kn-arches) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download frontend artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend
+          path: ./src/frontend/dist
+
+      - name: Prepare sdk
+        run: |
+          make sdk/clean
+          make sdk/prepare PLATFORM=${{ matrix.platform }}
+
+      - name: Build
+        uses: ownik/gh-action-entware-sdk@v1
+        env:
+          ARCH: ${{ matrix.arch }}
+          FEEDNAME: magitrickle
+          PACKAGES: magitrickle
+          V: s
+
+      - name: Rename packages
+        run: |
+          for file in ./bin/targets/${{ matrix.arch }}/*/packages/magitrickle_*.ipk; do
+            new_file=$(basename $file)
+            new_file=${new_file/_${{ matrix.arch }}/_${{ matrix.platform }}_${{ matrix.arch }}}
+            mv $file ./$new_file
+          done
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: magitrickle_${{ matrix.platform }}_${{ matrix.arch }}
+          path: ./magitrickle_*.[ai]pk
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Upload release
+    if: ${{ github.event_name == 'release' }}
+    needs:
+      - prepare
+      - build-openwrt
+      - build-entware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ./magitrickle_*.[ai]pk
+
+      - uses: geekyeggo/delete-artifact@v5
+        with:
+            name: 'magitrickle_*'
