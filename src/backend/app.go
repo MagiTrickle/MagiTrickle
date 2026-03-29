@@ -33,7 +33,7 @@ type App struct {
 	dnsMITM      *dnsMITMProxy.DNSMITMProxy
 	nfHelper     *netfilterTools.Helper
 	recordsCache *recordsCache.Records
-	groups       []*Group
+	groups       atomic.Pointer[[]*Group]
 	dnsOverrider *netfilterTools.PortRemap
 }
 
@@ -42,6 +42,8 @@ func New() *App {
 	a := &App{
 		config: constant.DefaultAppConfig,
 	}
+	emptyGroups := make([]*Group, 0)
+	a.groups.Store(&emptyGroups)
 	if err := a.LoadConfig(); err != nil {
 		log.Error().Err(err).Msg("failed to load config file")
 	}
@@ -55,8 +57,9 @@ func (a *App) Config() models.AppConfig {
 
 // Groups возвращает список групп
 func (a *App) Groups() []app.Group {
-	groups := make([]app.Group, len(a.groups))
-	for i, g := range a.groups {
+	gs := *a.groups.Load()
+	groups := make([]app.Group, len(gs))
+	for i, g := range gs {
 		groups[i] = g
 	}
 	return groups
@@ -64,15 +67,17 @@ func (a *App) Groups() []app.Group {
 
 // ClearGroups отключает все группы и очищает список
 func (a *App) ClearGroups() {
-	for _, g := range a.groups {
+	for _, g := range *a.groups.Load() {
 		_ = g.Disable()
 	}
-	a.groups = a.groups[:0]
+	emptyGroups := make([]*Group, 0)
+	a.groups.Store(&emptyGroups)
 }
 
 // AddGroup добавляет новую группу
 func (a *App) AddGroup(groupModel *models.Group) error {
-	for _, group := range a.groups {
+	groups := *a.groups.Load()
+	for _, group := range groups {
 		if groupModel.ID == group.ID {
 			return ErrGroupIDConflict
 		}
@@ -90,7 +95,10 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 	if err != nil {
 		return fmt.Errorf("failed to create group: %w", err)
 	}
-	a.groups = append(a.groups, grp)
+	newGroups := make([]*Group, len(groups)+1)
+	copy(newGroups, groups)
+	newGroups[len(groups)] = grp
+	a.groups.Store(&newGroups)
 
 	log.Info().
 		Str("id", grp.ID.String()).
@@ -111,7 +119,11 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 
 // RemoveGroupByIndex удаляет группу по индексу
 func (a *App) RemoveGroupByIndex(idx int) {
-	a.groups = append(a.groups[:idx], a.groups[idx+1:]...)
+	groups := *a.groups.Load()
+	newGroups := make([]*Group, 0, len(groups)-1)
+	newGroups = append(newGroups, groups[:idx]...)
+	newGroups = append(newGroups, groups[idx+1:]...)
+	a.groups.Store(&newGroups)
 }
 
 // ListInterfaces возвращает список сетевых интерфейсов, удовлетворяющих заданным критериям

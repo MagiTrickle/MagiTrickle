@@ -115,7 +115,7 @@ func (a *App) Start(ctx context.Context) (err error) {
 		}()
 	}
 
-	for _, group := range a.groups {
+	for _, group := range *a.groups.Load() {
 		if err := group.Enable(); err != nil {
 			return fmt.Errorf("failed to enable group: %w", err)
 		}
@@ -124,7 +124,7 @@ func (a *App) Start(ctx context.Context) (err error) {
 		}
 	}
 	defer func() {
-		for _, group := range a.groups {
+		for _, group := range *a.groups.Load() {
 			_ = group.Disable()
 		}
 	}()

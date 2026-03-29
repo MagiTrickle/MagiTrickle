@@ -31,7 +31,7 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 				Int("type", int(event.Header.Type)).
 				Msg("interface add")
 		}
-		for _, group := range a.groups {
+		for _, group := range *a.groups.Load() {
 			if group.Interface != ifaceName {
 				continue
 			}
