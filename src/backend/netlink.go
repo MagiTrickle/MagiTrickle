@@ -2,6 +2,7 @@ package magitrickle
 
 import (
 	"fmt"
+	"net"
 	"slices"
 
 	"magitrickle/constant"
@@ -24,24 +25,32 @@ func subscribeLinkUpdates() (chan netlink.LinkUpdate, chan struct{}, error) {
 func (a *App) handleLink(event netlink.LinkUpdate) {
 	switch event.Header.Type {
 	case unix.RTM_NEWLINK:
-		ifaceName := event.Link.Attrs().Name
+		linkAttrs := event.Link.Attrs()
+		if linkAttrs.Flags&net.FlagUp == 0 {
+			break
+		}
+
+		ifaceName := linkAttrs.Name
 		if !slices.Contains(constant.IgnoredInterfaces, ifaceName) {
 			log.Debug().
 				Str("interface", ifaceName).
 				Int("type", int(event.Header.Type)).
-				Msg("interface add")
+				Msg("interface up")
 		}
+
 		for _, group := range a.groups {
 			if group.Interface != ifaceName {
 				continue
 			}
-			if err := group.LinkUpdateHook(event); err != nil {
+
+			if err := group.LinkUpHook(event); err != nil {
 				log.Error().
 					Err(err).
 					Str("group", group.ID.String()).
 					Msg("error while handling interface up")
 			}
 		}
+
 	case unix.RTM_DELLINK:
 		log.Debug().
 			Str("interface", event.Link.Attrs().Name).

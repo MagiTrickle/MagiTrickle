@@ -450,7 +450,7 @@ func (g *Group) Sync() error {
 	return g.sync()
 }
 
-func (g *Group) LinkUpdateHook(event netlink.LinkUpdate) error {
+func (g *Group) LinkUpHook(event netlink.LinkUpdate) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 
@@ -462,5 +462,5 @@ func (g *Group) LinkUpdateHook(event netlink.LinkUpdate) error {
 		return nil
 	}
 
-	return g.ipsetToLink.LinkUpdateHook(event)
+	return g.ipsetToLink.LinkUpHook(event)
 }
