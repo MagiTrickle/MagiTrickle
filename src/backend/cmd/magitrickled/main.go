@@ -56,7 +56,7 @@ func removePIDFile() {
 
 func main() {
 	// Настройка zerolog
-	consoleLogger := zerolog.ConsoleWriter{Out: os.Stderr}
+	consoleLogger := zerolog.ConsoleWriter{Out: os.Stdout}
 
 	log.Logger = log.Output(consoleLogger)
 	log.Info().
