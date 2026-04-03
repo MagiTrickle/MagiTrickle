@@ -238,7 +238,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 		}
 		err := netlink.RouteAdd(route)
 		if err != nil && !errors.Is(err, unix.EEXIST) {
-			return fmt.Errorf("error while adding route: %w", err)
+			return fmt.Errorf("error while adding ipv4 blackhole route: %w", err)
 		}
 		r.ip4Route[0] = route
 
@@ -264,7 +264,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 			}
 			err = netlink.RouteAdd(route)
 			if err != nil && !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("error while adding route: %w", err)
+				return fmt.Errorf("error while adding ipv4 iface route: %w", err)
 			}
 			r.ip4Route[1] = route
 		}
@@ -280,7 +280,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 		}
 		err := netlink.RouteAdd(route)
 		if err != nil && !errors.Is(err, unix.EEXIST) {
-			return fmt.Errorf("error while adding route: %w", err)
+			return fmt.Errorf("error while adding ipv6 blackhole route: %w", err)
 		}
 		r.ip6Route[0] = route
 
@@ -307,7 +307,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 			}
 			err = netlink.RouteAdd(route)
 			if err != nil && !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("error while adding route: %w", err)
+				return fmt.Errorf("error while adding ipv6 iface route: %w", err)
 			}
 			r.ip6Route[1] = route
 		}

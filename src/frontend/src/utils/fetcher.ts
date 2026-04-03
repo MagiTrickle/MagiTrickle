@@ -43,7 +43,14 @@ export async function fetcher<T>(...args: any[]): Promise<T> {
     console.error("Fetch error:", e);
 
     if ((e as Error).message !== "Unauthorized") {
-      toast.error(t("Request failed"));
+      let errorMessage = t("Request failed");
+      try {
+        const resBody = JSON.parse((e as Error).message);
+        if (resBody?.error) {
+          errorMessage = `${errorMessage}: ${resBody.error}`;
+        }
+      } catch {}
+      toast.error(errorMessage);
     }
     throw e;
   }
