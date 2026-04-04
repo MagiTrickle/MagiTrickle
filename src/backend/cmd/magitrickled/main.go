@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -54,9 +55,41 @@ func removePIDFile() {
 	_ = os.Remove(constant.PIDPath)
 }
 
+func parseLogLevel() zerolog.Level {
+	for i, arg := range os.Args[1:] {
+		if arg == "--" {
+			break
+		}
+		var value string
+		if arg == "--log-level" && i+1 < len(os.Args[1:]) {
+			value = os.Args[i+2]
+		} else if strings.HasPrefix(arg, "--log-level=") {
+			value = strings.TrimPrefix(arg, "--log-level=")
+		} else {
+			continue
+		}
+		level, err := zerolog.ParseLevel(strings.ToLower(value))
+		if err != nil {
+			log.Fatal().Str("level", value).Msg("unknown log level (use: trace, debug, info, warn, error)")
+		}
+		return level
+	}
+	return zerolog.InfoLevel
+}
+
 func main() {
 	// Настройка zerolog
-	consoleLogger := zerolog.ConsoleWriter{Out: os.Stderr}
+	consoleLogger := zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "15:04:05",
+		FieldsOrder: []string{
+			"id", "net", "name", "client",
+			"qclass", "qtype", "rcode",
+			"address", "ttl", "cname",
+			"group", "groupId", "subnet",
+		},
+	}
+	zerolog.SetGlobalLevel(parseLogLevel())
 
 	log.Logger = log.Output(consoleLogger)
 	log.Info().
