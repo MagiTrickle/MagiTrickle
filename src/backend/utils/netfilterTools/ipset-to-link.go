@@ -264,9 +264,9 @@ func (r *IPSetToLink) insertIPRoute() error {
 			}
 
 			if iface.Attrs().Flags&net.FlagPointToPoint == 0 {
-				gw, err := getGwFromIface(iface)
+				gw, err := getGwFromIface(iface, nl.FAMILY_V4)
 				if err != nil {
-					log.Warn().Str("iface", r.ifaceName).Err(err).Msg("gateway not found")
+					log.Warn().Str("iface", r.ifaceName).Err(err).Msg("IPv4 gateway not found")
 				} else {
 					route.Gw = gw
 				}
@@ -315,6 +315,16 @@ func (r *IPSetToLink) insertIPRoute() error {
 				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 				Family:    nl.FAMILY_V6,
 			}
+
+			if iface.Attrs().Flags&net.FlagPointToPoint == 0 {
+				gw, err := getGwFromIface(iface, nl.FAMILY_V6)
+				if err != nil {
+					log.Warn().Str("iface", r.ifaceName).Err(err).Msg("IPv6 gateway not found")
+				} else {
+					route.Gw = gw
+				}
+			}
+
 			err = netlink.RouteAdd(route)
 			if err != nil && !errors.Is(err, unix.EEXIST) {
 				return fmt.Errorf("error while adding route: %w", err)
@@ -326,8 +336,8 @@ func (r *IPSetToLink) insertIPRoute() error {
 	return nil
 }
 
-func getGwFromIface(iface netlink.Link) (net.IP, error) {
-	routes, err := netlink.RouteListFiltered(nl.FAMILY_V4, &netlink.Route{
+func getGwFromIface(iface netlink.Link, family int) (net.IP, error) {
+	routes, err := netlink.RouteListFiltered(family, &netlink.Route{
 		LinkIndex: iface.Attrs().Index,
 	}, netlink.RT_FILTER_OIF)
 	if err != nil {
