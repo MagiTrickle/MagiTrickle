@@ -501,7 +501,7 @@ func (r *IPSetToLink) ClearIfDisabled() error {
 	return errors.Join(errs...)
 }
 
-func (r *IPSetToLink) LinkUpdateHook(event netlink.LinkUpdate) error {
+func (r *IPSetToLink) LinkUpHook(event netlink.LinkUpdate) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
 
