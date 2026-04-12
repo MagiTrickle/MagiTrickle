@@ -202,8 +202,8 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 		rules = *rulesRes.Rules
 	}
 	utils.WriteJson(w, http.StatusOK, map[string]interface{}{
-		"rules":       rules,
-		"last_update": target.LastUpdate,
+		"rules":      rules,
+		"lastUpdate": target.LastUpdate,
 	})
 }
 

@@ -20,7 +20,7 @@ const SUBSCRIPTIONS = [
     interface: "blackhole",
     enable: true,
     url: "https://services.should.be.blocked.com",
-    last_update: Date.now(),
+    lastUpdate: Date.now(),
     interval: 86400,
     rules: [
       { enable: true, id: "11223344", rule: "google.com", type: "domain" },
@@ -136,11 +136,11 @@ app.patch(`${API_BASE}/subscription`, async (c) => {
       ...SUBSCRIPTIONS[index],
       ...body,
       rules: rules,
-      last_update: Date.now(),
+      lastUpdate: Date.now(),
     };
 
     SUBSCRIPTIONS[index] = updatedSub;
-    return c.json(updatedSub);
+    return c.json({ rules: updatedSub.rules, lastUpdate: updatedSub.lastUpdate });
   }
   return c.json({ error: "Subscription not found" }, 404);
 });

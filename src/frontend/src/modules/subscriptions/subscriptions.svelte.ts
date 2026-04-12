@@ -208,9 +208,8 @@ export class SubscriptionsStore {
     this.finishedSubscriptionsCount = 0;
     this.fetchError = false;
     try {
-      const fetched =
-        (await fetcher.get<{ subscriptions: Subscription[] }>("/subscriptions"))?.subscriptions ??
-        [];
+      const fetched = (await fetcher.get<{ subscriptions: Subscription[] }>("/subscriptions"))
+        ?.subscriptions ?? [];
       this.tracker = new ChangeTracker(fetched);
       this.dataRevision = 0;
       if (typeof window !== "undefined") {
@@ -372,12 +371,15 @@ export class SubscriptionsStore {
 
     overlay.show(t("syncing..."));
     try {
-      const updated = await fetcher.patch<{ rules: SubscriptionRule[]; last_update: number }>(
+      const updated = await fetcher.patch<{ rules: SubscriptionRule[]; lastUpdate: number }>(
         `/subscription?id=${subscription.id}`,
         {},
       );
 
-      this.tracker.acknowledgeUpdate(subscription, updated);
+      this.tracker.acknowledgeUpdate(subscription, {
+        rules: updated.rules,
+        lastUpdate: updated.lastUpdate,
+      });
 
       this.markDataRevision();
       toast.success(t("Synced"));
@@ -420,7 +422,7 @@ export class SubscriptionsStore {
       rules: payload.rules,
       enable: true,
       interface: payload.interface || "",
-      last_update: Date.now(),
+      lastUpdate: Date.now(),
       interval: payload.interval,
     };
 

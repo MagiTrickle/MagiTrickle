@@ -403,7 +403,7 @@ describe("ChangeTracker", () => {
           interface: "all",
           interval: 60,
           enable: true,
-          last_update: 0,
+          lastUpdate: 0,
           rules: [createItem({ id: "rule1" })],
         },
       ]);
@@ -414,11 +414,11 @@ describe("ChangeTracker", () => {
 
       tracker.acknowledgeUpdate(proxy[0], {
         rules: [createItem({ id: "rule-server" })],
-        last_update: 123,
+        lastUpdate: 123,
       });
 
       assert.strictEqual(proxy[0].name, "Unsaved");
-      assert.strictEqual(proxy[0].last_update, 123);
+      assert.strictEqual(proxy[0].lastUpdate, 123);
       assert.deepStrictEqual(
         proxy[0].rules.map((rule: RuleItem) => rule.id),
         ["rule-server"],

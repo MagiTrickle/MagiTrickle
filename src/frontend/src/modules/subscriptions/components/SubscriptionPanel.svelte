@@ -227,7 +227,7 @@
               </span>
               <span class="update-line">
                 <span class="icon-wrap"><History size={14} /></span>
-                <span class="update-text">{formatTime(subscription.last_update)}</span>
+                <span class="update-text">{formatTime(subscription.lastUpdate)}</span>
                 <span class="update-sep">•</span>
                 <span class="update-interval">
                   <span class="interval-label">{t("Update every")}</span>
