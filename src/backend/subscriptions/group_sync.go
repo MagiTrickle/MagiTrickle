@@ -7,7 +7,7 @@ import (
 	"magitrickle/utils/intID"
 )
 
-func BuildSubscriptionGroups(subs []*models.Subscription, usedIDs map[[4]byte]struct{}) []*models.Group {
+func BuildSubscriptionGroups(subs []*models.Subscription, usedIDs map[intID.ID]struct{}) []*models.Group {
 	groups := make([]*models.Group, 0, len(subs))
 	for _, sub := range subs {
 		if sub == nil {
@@ -61,12 +61,12 @@ func isZeroID(id intID.ID) bool {
 	return id == (intID.ID{})
 }
 
-func idInUse(id intID.ID, used map[[4]byte]struct{}) bool {
+func idInUse(id intID.ID, used map[intID.ID]struct{}) bool {
 	_, exists := used[id]
 	return exists
 }
 
-func nextUniqueID(used map[[4]byte]struct{}) intID.ID {
+func nextUniqueID(used map[intID.ID]struct{}) intID.ID {
 	for {
 		candidate := intID.RandomID()
 		if !idInUse(candidate, used) {

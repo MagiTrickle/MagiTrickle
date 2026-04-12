@@ -28,7 +28,7 @@ func (a *App) SyncSubscriptionGroups() error {
 
 func (a *App) syncSubscriptionGroupsLocked() error {
 	kept := make([]*Group, 0, len(a.groups))
-	usedIDs := make(map[[4]byte]struct{}, len(a.groups))
+	usedIDs := make(map[intID.ID]struct{}, len(a.groups))
 	var errs []error
 
 	for _, group := range a.groups {
