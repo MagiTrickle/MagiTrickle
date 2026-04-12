@@ -44,10 +44,10 @@ func (h *Handler) userGroups() []app.Group {
 //	@Tags			hooks
 //	@Accept			json
 //	@Produce		json
-//	@Param			json	body		types.NetfilterDHookReq	true	"Тело запроса"
+//	@Param			json	body	types.NetfilterDHookReq	true	"Тело запроса"
 //	@Success		200
-//	@Failure		400		{object}	types.ErrorRes
-//	@Failure		500		{object}	types.ErrorRes
+//	@Failure		400	{object}	types.ErrorRes
+//	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/system/hooks/netfilterd [post]
 func (h *Handler) NetfilterDHook(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.NetfilterDHookReq](r)
@@ -71,8 +71,8 @@ func (h *Handler) NetfilterDHook(w http.ResponseWriter, r *http.Request) {
 //	@Description	Возвращает список интерфейсов
 //	@Tags			config
 //	@Produce		json
-//	@Success		200		{object}	types.InterfacesRes
-//	@Failure		500		{object}	types.ErrorRes
+//	@Success		200	{object}	types.InterfacesRes
+//	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/system/interfaces [get]
 func (h *Handler) ListInterfaces(w http.ResponseWriter, r *http.Request) {
 	interfaces, err := h.app.ListInterfaces()
@@ -95,7 +95,7 @@ func (h *Handler) ListInterfaces(w http.ResponseWriter, r *http.Request) {
 //	@Tags			config
 //	@Produce		json
 //	@Success		200
-//	@Failure		500		{object}	types.ErrorRes
+//	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/system/config/save [post]
 func (h *Handler) SaveConfig(w http.ResponseWriter, r *http.Request) {
 	if err := h.app.SaveConfig(); err != nil {
@@ -132,9 +132,9 @@ func (h *Handler) GetGroups(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Param			save	query		bool			false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.GroupsReq	true	"Тело запроса"
-//	@Success		200			{object}	types.GroupsRes
-//	@Failure		400			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.GroupsRes
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups [put]
 func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.GroupsReq](r)
@@ -192,9 +192,9 @@ func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Param			save	query		bool			false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.GroupReq	true	"Тело запроса"
-//	@Success		200			{object}	types.GroupRes
-//	@Failure		400			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.GroupRes
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups [post]
 func (h *Handler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.GroupReq](r)
@@ -248,10 +248,10 @@ func (h *Handler) GetGroup(w http.ResponseWriter, r *http.Request) {
 //	@Param			groupID	path		string			true	"ID группы"
 //	@Param			save	query		bool			false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.GroupReq	true	"Тело запроса"
-//	@Success		200			{object}	types.GroupRes
-//	@Failure		400			{object}	types.ErrorRes
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.GroupRes
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		404		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID} [put]
 func (h *Handler) PutGroup(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.GroupReq](r)
@@ -300,11 +300,11 @@ func (h *Handler) PutGroup(w http.ResponseWriter, r *http.Request) {
 //	@Description	Удаляет запрошенную группу
 //	@Tags			groups
 //	@Produce		json
-//	@Param			groupID	path		string	true	"ID группы"
-//	@Param			save	query		bool	false	"Сохранить изменения в конфигурационный файл"
+//	@Param			groupID	path	string	true	"ID группы"
+//	@Param			save	query	bool	false	"Сохранить изменения в конфигурационный файл"
 //	@Success		200
-//	@Failure		404		{object}	types.ErrorRes
-//	@Failure		500		{object}	types.ErrorRes
+//	@Failure		404	{object}	types.ErrorRes
+//	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID} [delete]
 func (h *Handler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
@@ -330,9 +330,9 @@ func (h *Handler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 //	@Tags			rules
 //	@Produce		json
 //	@Param			groupID	path		string	true	"ID группы"
-//	@Success		200			{object}	types.RulesRes
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.RulesRes
+//	@Failure		404		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID}/rules [get]
 func (h *Handler) GetRules(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
@@ -350,10 +350,10 @@ func (h *Handler) GetRules(w http.ResponseWriter, r *http.Request) {
 //	@Param			groupID	path		string			true	"ID группы"
 //	@Param			save	query		bool			false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.RulesReq	true	"Тело запроса"
-//	@Success		200			{object}	types.RulesRes
-//	@Failure		400			{object}	types.ErrorRes
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.RulesRes
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		404		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID}/rules [put]
 func (h *Handler) PutRules(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.RulesReq](r)
@@ -419,10 +419,10 @@ func (h *Handler) PutRules(w http.ResponseWriter, r *http.Request) {
 //	@Param			groupID	path		string			true	"ID группы"
 //	@Param			save	query		bool			false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.RuleReq	true	"Тело запроса"
-//	@Success		200			{object}	types.RuleRes
-//	@Failure		400			{object}	types.ErrorRes
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.RuleRes
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		404		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID}/rules [post]
 func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.RuleReq](r)
@@ -462,9 +462,9 @@ func (h *Handler) CreateRule(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Param			groupID	path		string	true	"ID группы"
 //	@Param			ruleID	path		string	true	"ID правила"
-//	@Success		200			{object}	types.RuleRes
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.RuleRes
+//	@Failure		404		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID}/rules/{ruleID} [get]
 func (h *Handler) GetRule(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))
@@ -484,10 +484,10 @@ func (h *Handler) GetRule(w http.ResponseWriter, r *http.Request) {
 //	@Param			ruleID	path		string			true	"ID правила"
 //	@Param			save	query		bool			false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.RuleReq	true	"Тело запроса"
-//	@Success		200			{object}	types.RuleRes
-//	@Failure		400			{object}	types.ErrorRes
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Success		200		{object}	types.RuleRes
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		404		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID}/rules/{ruleID} [put]
 func (h *Handler) PutRule(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.RuleReq](r)
@@ -526,12 +526,12 @@ func (h *Handler) PutRule(w http.ResponseWriter, r *http.Request) {
 //	@Description	Удаляет запрошенное правило
 //	@Tags			rules
 //	@Produce		json
-//	@Param			groupID	path		string	true	"ID группы"
-//	@Param			ruleID	path		string	true	"ID правила"
-//	@Param			save	query		bool	false	"Сохранить изменения в конфигурационный файл"
+//	@Param			groupID	path	string	true	"ID группы"
+//	@Param			ruleID	path	string	true	"ID правила"
+//	@Param			save	query	bool	false	"Сохранить изменения в конфигурационный файл"
 //	@Success		200
-//	@Failure		404			{object}	types.ErrorRes
-//	@Failure		500			{object}	types.ErrorRes
+//	@Failure		404	{object}	types.ErrorRes
+//	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/groups/{groupID}/rules/{ruleID} [delete]
 func (h *Handler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	groupIdx, _ := strconv.Atoi(r.Header.Get("groupIdx"))

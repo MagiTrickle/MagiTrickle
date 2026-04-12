@@ -91,7 +91,7 @@
     fetchError = false;
     try {
       const res = await fetcher.get<{ rules: SubscriptionRule[] }>(
-        `/subscription/rules?url=${encodeURIComponent(url)}`,
+        `/subscriptions/rules?url=${encodeURIComponent(url)}`,
       );
       rules = res.rules;
       step = 2;

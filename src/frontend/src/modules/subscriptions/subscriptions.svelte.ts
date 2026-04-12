@@ -372,7 +372,7 @@ export class SubscriptionsStore {
     overlay.show(t("syncing..."));
     try {
       const updated = await fetcher.patch<{ rules: SubscriptionRule[]; lastUpdate: number }>(
-        `/subscription?id=${subscription.id}`,
+        `/subscriptions/${subscription.id}`,
         {},
       );
 
@@ -399,7 +399,7 @@ export class SubscriptionsStore {
 
     overlay.show(t("deleting subscription..."));
     try {
-      await fetcher.delete(`/subscription?id=${removed.id}`);
+      await fetcher.delete(`/subscriptions/${removed.id}`);
       this.data.splice(index, 1);
       this.tracker.acknowledgeDelete(this.data, removed.id);
       delete this.open_state[removed.id];
@@ -428,7 +428,7 @@ export class SubscriptionsStore {
 
     overlay.show(t("Adding..."));
     try {
-      await fetcher.post("/subscription", nextSubscription);
+      await fetcher.post("/subscriptions", nextSubscription);
       this.data.unshift(nextSubscription);
       this.tracker.acknowledgeNewItem(this.data, nextSubscription, "start");
       this.open_state[nextSubscription.id] = true;

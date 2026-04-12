@@ -110,15 +110,32 @@ app.put(`${API_BASE}/subscriptions`, async (c) => {
   return c.json({ status: "ok" });
 });
 
-app.post(`${API_BASE}/subscription`, async (c) => {
+app.post(`${API_BASE}/subscriptions`, async (c) => {
   const body = await c.req.json();
   console.debug("created subscription", body);
   SUBSCRIPTIONS.unshift(body);
   return c.json({ status: "ok" });
 });
 
-app.patch(`${API_BASE}/subscription`, async (c) => {
-  const id = c.req.query("id");
+app.get(`${API_BASE}/subscriptions/rules`, (c) => {
+  if (Math.random() < 0.5) {
+    return c.json({ error: "random error" }, 500);
+  }
+  const url = c.req.query("url");
+
+  const count = Math.floor(Math.random() * 50) + 5;
+  const rules = Array.from({ length: count }).map(() => ({
+    enable: true,
+    id: Math.random().toString(16).substring(2, 10),
+    rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
+    type: Math.random() < 0.5 ? "namespace" : "domain",
+  }));
+
+  return c.json({ rules });
+});
+
+app.patch(`${API_BASE}/subscriptions/:id`, async (c) => {
+  const id = c.req.param("id");
   const body = await c.req.json();
   console.debug("updated subscription, syncing rules", id, body);
   const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
@@ -145,8 +162,8 @@ app.patch(`${API_BASE}/subscription`, async (c) => {
   return c.json({ error: "Subscription not found" }, 404);
 });
 
-app.delete(`${API_BASE}/subscription`, async (c) => {
-  const id = c.req.query("id");
+app.delete(`${API_BASE}/subscriptions/:id`, async (c) => {
+  const id = c.req.param("id");
   console.debug("deleting subscription", id);
   const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
   if (index !== -1) {
@@ -154,23 +171,6 @@ app.delete(`${API_BASE}/subscription`, async (c) => {
     return c.json({ status: "ok" });
   }
   return c.json({ error: "Subscription not found" }, 404);
-});
-
-app.get(`${API_BASE}/subscription/rules`, (c) => {
-  if (Math.random() < 0.5) {
-    return c.json({ error: "random error" }, 500);
-  }
-  const url = c.req.query("url");
-
-  const count = Math.floor(Math.random() * 50) + 5;
-  const rules = Array.from({ length: count }).map(() => ({
-    enable: true,
-    id: Math.random().toString(16).substring(2, 10),
-    rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
-    type: Math.random() < 0.5 ? "namespace" : "domain",
-  }));
-
-  return c.json({ rules });
 });
 
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));

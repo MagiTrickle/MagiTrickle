@@ -12,6 +12,7 @@ import (
 	"magitrickle/subscriptions"
 	"magitrickle/utils/intID"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -35,11 +36,11 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
-//	@Param			save	query		bool		false	"Сохранить изменения в конфигурационный файл"
+//	@Param			save	query		bool					false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.SubscriptionsReq	true	"Тело запроса"
-//	@Success		200	{object}	map[string]string
-//	@Failure		400	{object}	types.ErrorRes
-//	@Failure		500	{object}	types.ErrorRes
+//	@Success		200		{object}	map[string]string
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/subscriptions [put]
 func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.SubscriptionsReq](r)
@@ -107,13 +108,13 @@ func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
-//	@Param			save	query		bool		false	"Сохранить изменения в конфигурационный файл"
+//	@Param			save	query		bool					false	"Сохранить изменения в конфигурационный файл"
 //	@Param			json	body		types.SubscriptionReq	true	"Тело запроса"
-//	@Success		200	{object}	map[string]string
-//	@Failure		400	{object}	types.ErrorRes
-//	@Failure		409	{object}	types.ErrorRes
-//	@Failure		500	{object}	types.ErrorRes
-//	@Router			/api/v1/subscription [post]
+//	@Success		200		{object}	map[string]string
+//	@Failure		400		{object}	types.ErrorRes
+//	@Failure		409		{object}	types.ErrorRes
+//	@Failure		500		{object}	types.ErrorRes
+//	@Router			/api/v1/subscriptions [post]
 func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 	req, err := utils.ReadJson[types.SubscriptionReq](r)
 	if err != nil {
@@ -156,15 +157,15 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	query		string	true	"ID подписки"
-//	@Param			save	query		bool		false	"Сохранить изменения в конфигурационный файл"
-//	@Success		200	{object}	map[string]interface{}
-//	@Failure		400	{object}	types.ErrorRes
-//	@Failure		404	{object}	types.ErrorRes
-//	@Failure		502	{object}	types.ErrorRes
-//	@Router			/api/v1/subscription [patch]
+//	@Param			subscriptionID	path		string	true	"ID подписки"
+//	@Param			save			query		bool	false	"Сохранить изменения в конфигурационный файл"
+//	@Success		200				{object}	map[string]interface{}
+//	@Failure		400				{object}	types.ErrorRes
+//	@Failure		404				{object}	types.ErrorRes
+//	@Failure		502				{object}	types.ErrorRes
+//	@Router			/api/v1/subscriptions/{subscriptionID} [patch]
 func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
-	idStr := r.URL.Query().Get("id")
+	idStr := chi.URLParam(r, "subscriptionID")
 	if idStr == "" {
 		utils.WriteError(w, http.StatusBadRequest, "subscription id is required")
 		return
@@ -213,15 +214,15 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 //	@Description	Удаляет подписку
 //	@Tags			subscriptions
 //	@Produce		json
-//	@Param			id	query		string	true	"ID подписки"
-//	@Param			save	query		bool		false	"Сохранить изменения в конфигурационный файл"
-//	@Success		200	{object}	map[string]string
-//	@Failure		400	{object}	types.ErrorRes
-//	@Failure		404	{object}	types.ErrorRes
-//	@Failure		500	{object}	types.ErrorRes
-//	@Router			/api/v1/subscription [delete]
+//	@Param			subscriptionID	path		string	true	"ID подписки"
+//	@Param			save			query		bool	false	"Сохранить изменения в конфигурационный файл"
+//	@Success		200				{object}	map[string]string
+//	@Failure		400				{object}	types.ErrorRes
+//	@Failure		404				{object}	types.ErrorRes
+//	@Failure		500				{object}	types.ErrorRes
+//	@Router			/api/v1/subscriptions/{subscriptionID} [delete]
 func (h *Handler) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
-	idStr := r.URL.Query().Get("id")
+	idStr := chi.URLParam(r, "subscriptionID")
 	if idStr == "" {
 		utils.WriteError(w, http.StatusBadRequest, "subscription id is required")
 		return
@@ -260,7 +261,7 @@ func (h *Handler) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 //	@Success		200	{object}	types.SubscriptionRulesRes
 //	@Failure		400	{object}	types.ErrorRes
 //	@Failure		502	{object}	types.ErrorRes
-//	@Router			/api/v1/subscription/rules [get]
+//	@Router			/api/v1/subscriptions/rules [get]
 func (h *Handler) GetSubscriptionRules(w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Query().Get("url")
 	if url == "" {
