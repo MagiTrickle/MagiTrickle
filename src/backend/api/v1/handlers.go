@@ -24,17 +24,8 @@ func NewHandler(a app.Main) *Handler {
 	return &Handler{app: a}
 }
 
-func (h *Handler) userGroups() []app.Group {
-	all := h.app.Groups()
-	userGroups := make([]app.Group, 0, len(all))
-	for _, group := range all {
-		model := group.Model()
-		if model != nil && model.Internal {
-			continue
-		}
-		userGroups = append(userGroups, group)
-	}
-	return userGroups
+func (h *Handler) userGroups() []app.RuleSet {
+	return h.app.UserGroups()
 }
 
 // NetfilterDHook
@@ -171,7 +162,7 @@ func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := h.app.SyncSubscriptionGroups(); err != nil {
+	if err := h.app.SyncSubscriptionRuleSets(); err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -166,10 +166,10 @@ func (a *App) ImportConfig(cfg config.Config) error {
 
 	if cfg.Groups != nil {
 		// отключаем старые группы и очищаем срез
-		for _, group := range a.groups {
+		for _, group := range a.userRuleSets {
 			_ = group.Disable()
 		}
-		a.groups = a.groups[:0]
+		a.userRuleSets = a.userRuleSets[:0]
 
 		// импортируем новые группы
 		for _, group := range *cfg.Groups {
@@ -224,7 +224,6 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			}
 			a.subscriptions = append(a.subscriptions, &models.Subscription{
 				ID:         sub.ID,
-				GroupID:    sub.GroupID,
 				Name:       sub.Name,
 				Interface:  sub.Interface,
 				Enable:     enable,
@@ -238,25 +237,26 @@ func (a *App) ImportConfig(cfg config.Config) error {
 		a.subscriptions = a.subscriptions[:0]
 	}
 
-	return a.syncSubscriptionGroupsLocked()
+	return a.syncSubscriptionRuleSetsLocked()
 }
 
 func (a *App) ExportConfig() config.Config {
-	groupRefs := a.groupSnapshot()
+	groupRefs := a.userRuleSetSnapshot()
 	groups := make([]config.Group, 0, len(groupRefs))
 	for _, group := range groupRefs {
-		if group.Internal {
+		groupModel := group.Model()
+		if groupModel == nil {
 			continue
 		}
 		groupCfg := config.Group{
-			ID:        group.ID,
-			Name:      group.Name,
-			Color:     group.Color,
-			Interface: group.Interface,
-			Enable:    &group.Group.Enable,
-			Rules:     make([]config.Rule, len(group.Rules)),
+			ID:        groupModel.ID,
+			Name:      groupModel.Name,
+			Color:     groupModel.Color,
+			Interface: groupModel.Interface,
+			Enable:    &groupModel.Enable,
+			Rules:     make([]config.Rule, len(groupModel.Rules)),
 		}
-		for idx, rule := range group.Rules {
+		for idx, rule := range groupModel.Rules {
 			groupCfg.Rules[idx] = config.Rule{
 				ID:     rule.ID,
 				Name:   rule.Name,
@@ -334,7 +334,6 @@ func exportSubscriptions(subs []*models.Subscription) *[]config.Subscription {
 		}
 		list[idx] = config.Subscription{
 			ID:         sub.ID,
-			GroupID:    sub.GroupID,
 			Name:       sub.Name,
 			Interface:  sub.Interface,
 			Enable:     &sub.Enable,

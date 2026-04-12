@@ -11,7 +11,6 @@ type SubscriptionRule struct {
 
 type Subscription struct {
 	ID         intID.ID
-	GroupID    intID.ID
 	Name       string
 	Interface  string
 	Enable     bool

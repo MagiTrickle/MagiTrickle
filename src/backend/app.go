@@ -10,6 +10,7 @@ import (
 
 	"magitrickle/app"
 	"magitrickle/constant"
+	groupruntime "magitrickle/groups"
 	"magitrickle/models"
 	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/intID"
@@ -35,12 +36,13 @@ type App struct {
 
 	subscriptionSyncMu sync.Mutex
 
-	dnsMITM       *dnsMITMProxy.DNSMITMProxy
-	nfHelper      *netfilterTools.Helper
-	recordsCache  *recordsCache.Records
-	groups        []*Group
-	dnsOverrider  *netfilterTools.PortRemap
-	subscriptions []*models.Subscription
+	dnsMITM              *dnsMITMProxy.DNSMITMProxy
+	nfHelper             *netfilterTools.Helper
+	recordsCache         *recordsCache.Records
+	userRuleSets         []*RuleSet
+	subscriptionRuleSets []*RuleSet
+	dnsOverrider         *netfilterTools.PortRemap
+	subscriptions        []*models.Subscription
 }
 
 // New создаёт новый экземпляр App
@@ -60,24 +62,21 @@ func (a *App) Config() models.AppConfig {
 }
 
 // Groups возвращает список групп
-func (a *App) Groups() []app.Group {
-	groupRefs := a.groupSnapshot()
-	groups := make([]app.Group, len(groupRefs))
+func (a *App) Groups() []app.RuleSet {
+	groupRefs := a.userRuleSetSnapshot()
+	groups := make([]app.RuleSet, len(groupRefs))
 	for i, g := range groupRefs {
 		groups[i] = g
 	}
 	return groups
 }
 
-// UserGroups returns only non-internal groups.
-func (a *App) UserGroups() []app.Group {
-	groupRefs := a.groupSnapshot()
-	list := make([]app.Group, 0, len(groupRefs))
-	for _, g := range groupRefs {
-		if g.Internal {
-			continue
-		}
-		list = append(list, g)
+// UserGroups returns only user-defined groups.
+func (a *App) UserGroups() []app.RuleSet {
+	groupRefs := a.userRuleSetSnapshot()
+	list := make([]app.RuleSet, len(groupRefs))
+	for i, g := range groupRefs {
+		list[i] = g
 	}
 	return list
 }
@@ -86,10 +85,10 @@ func (a *App) UserGroups() []app.Group {
 func (a *App) ClearGroups() {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-	for _, g := range a.groups {
+	for _, g := range a.userRuleSets {
 		_ = g.Disable()
 	}
-	a.groups = nil
+	a.userRuleSets = nil
 }
 
 // AddGroup добавляет новую группу
@@ -100,8 +99,8 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 }
 
 func (a *App) addGroupLocked(groupModel *models.Group) error {
-	for _, group := range a.groups {
-		if groupModel.ID == group.ID {
+	for _, group := range a.userRuleSets {
+		if groupModel.ID == group.IDValue() {
 			return ErrGroupIDConflict
 		}
 	}
@@ -114,18 +113,18 @@ func (a *App) addGroupLocked(groupModel *models.Group) error {
 		dup[rule.ID] = struct{}{}
 	}
 
-	grp, err := NewGroup(groupModel, a)
+	grp, err := NewRuleSet(groupruntime.BuildRuntimeRuleSet(groupModel), a)
 	if err != nil {
 		return fmt.Errorf("failed to create group: %w", err)
 	}
-	a.groups = append(a.groups, grp)
+	a.userRuleSets = append(a.userRuleSets, grp)
 	removeAdded := func() {
-		a.groups = a.groups[:len(a.groups)-1]
+		a.userRuleSets = a.userRuleSets[:len(a.userRuleSets)-1]
 	}
 
 	log.Info().
-		Str("id", grp.ID.String()).
-		Str("name", grp.Name).
+		Str("id", grp.IDValue().String()).
+		Str("name", grp.DisplayName()).
 		Msg("added group")
 
 	// если приложение уже запущено – включаем группу и выполняем синхронизацию
@@ -147,16 +146,16 @@ func (a *App) addGroupLocked(groupModel *models.Group) error {
 func (a *App) RemoveGroupByIndex(idx int) {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-	a.groups = append(a.groups[:idx], a.groups[idx+1:]...)
+	a.userRuleSets = append(a.userRuleSets[:idx], a.userRuleSets[idx+1:]...)
 }
 
 // RemoveGroupByID removes a group by ID.
 func (a *App) RemoveGroupByID(id intID.ID) bool {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-	for idx, group := range a.groups {
-		if group.ID == id {
-			a.groups = append(a.groups[:idx], a.groups[idx+1:]...)
+	for idx, group := range a.userRuleSets {
+		if group.IDValue() == id {
+			a.userRuleSets = append(a.userRuleSets[:idx], a.userRuleSets[idx+1:]...)
 			return true
 		}
 	}
@@ -170,7 +169,7 @@ func (a *App) Subscriptions() []*models.Subscription {
 	return cloneSubscriptions(a.subscriptions)
 }
 
-// ReplaceSubscriptions replaces the subscriptions list and rebuilds internal groups.
+// ReplaceSubscriptions replaces the subscriptions list and rebuilds subscription rule sets.
 func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
@@ -180,9 +179,9 @@ func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
 
 	previous := a.subscriptions
 	a.subscriptions = cloneSubscriptions(subscriptions)
-	if err := a.syncSubscriptionGroupsLocked(); err != nil {
+	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		a.subscriptions = previous
-		if rollbackErr := a.syncSubscriptionGroupsLocked(); rollbackErr != nil {
+		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
 		}
 		return err
@@ -190,7 +189,7 @@ func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
 	return nil
 }
 
-// AddSubscription adds a new subscription if ID is unique and rebuilds internal groups.
+// AddSubscription adds a new subscription if ID is unique and rebuilds subscription rule sets.
 func (a *App) AddSubscription(subscription *models.Subscription) error {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
@@ -205,9 +204,9 @@ func (a *App) AddSubscription(subscription *models.Subscription) error {
 	}
 	next := cloneSubscription(subscription)
 	a.subscriptions = append(a.subscriptions, next)
-	if err := a.syncSubscriptionGroupsLocked(); err != nil {
+	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		a.subscriptions = a.subscriptions[:len(a.subscriptions)-1]
-		if rollbackErr := a.syncSubscriptionGroupsLocked(); rollbackErr != nil {
+		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
 		}
 		return err
@@ -227,9 +226,9 @@ func (a *App) RemoveSubscriptionByID(id intID.ID) (bool, error) {
 		if sub.ID == id {
 			removed := sub
 			a.subscriptions = append(a.subscriptions[:idx], a.subscriptions[idx+1:]...)
-			if err := a.syncSubscriptionGroupsLocked(); err != nil {
+			if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 				a.subscriptions = append(a.subscriptions[:idx], append([]*models.Subscription{removed}, a.subscriptions[idx:]...)...)
-				if rollbackErr := a.syncSubscriptionGroupsLocked(); rollbackErr != nil {
+				if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
 					return true, errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
 				}
 				return true, err
@@ -266,12 +265,22 @@ func (a *App) DnsOverrider() *netfilterTools.PortRemap {
 	return a.dnsOverrider
 }
 
-func (a *App) groupSnapshot() []*Group {
+func (a *App) ruleSetSnapshot() []*RuleSet {
 	a.stateMu.RLock()
 	defer a.stateMu.RUnlock()
 
-	list := make([]*Group, len(a.groups))
-	copy(list, a.groups)
+	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
+	list = append(list, a.userRuleSets...)
+	list = append(list, a.subscriptionRuleSets...)
+	return list
+}
+
+func (a *App) userRuleSetSnapshot() []*RuleSet {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+
+	list := make([]*RuleSet, len(a.userRuleSets))
+	copy(list, a.userRuleSets)
 	return list
 }
 

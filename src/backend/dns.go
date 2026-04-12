@@ -183,9 +183,9 @@ func (a *App) processARecord(aRecord dns.A, idStr, clientAddrStr, network string
 	a.recordsCache.AddAddress(domainName, aRecord.A, ttlDuration)
 
 	names := a.recordsCache.GetAliases(domainName)
-	for _, group := range a.groupSnapshot() {
+	for _, group := range a.ruleSetSnapshot() {
 	Rule:
-		for _, domain := range group.Rules {
+		for _, domain := range group.RuleModels() {
 			if !domain.IsEnabled() {
 				continue
 			}
@@ -214,8 +214,8 @@ func (a *App) processARecord(aRecord dns.A, idStr, clientAddrStr, network string
 				log.Info().
 					Str("name", domainName).
 					Str("address", addrStr).
-					Str("group", group.Name).
-					Str("groupId", group.ID.String()).
+					Str("group", group.DisplayName()).
+					Str("groupId", group.IDValue().String()).
 					Msg("added to routing")
 
 				break Rule
@@ -254,9 +254,9 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, idStr, clientAddrStr, netwo
 	a.recordsCache.AddAddress(domainName, aaaaRecord.AAAA, ttlDuration)
 
 	names := a.recordsCache.GetAliases(domainName)
-	for _, group := range a.groupSnapshot() {
+	for _, group := range a.ruleSetSnapshot() {
 	Rule:
-		for _, domain := range group.Rules {
+		for _, domain := range group.RuleModels() {
 			if !domain.IsEnabled() {
 				continue
 			}
@@ -285,8 +285,8 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, idStr, clientAddrStr, netwo
 				log.Info().
 					Str("name", domainName).
 					Str("address", addrStr).
-					Str("group", group.Name).
-					Str("groupId", group.ID.String()).
+					Str("group", group.DisplayName()).
+					Str("groupId", group.IDValue().String()).
 					Msg("added to routing")
 
 				break Rule
@@ -315,9 +315,9 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, idStr, clientAddrStr, ne
 	now := time.Now()
 	addresses := a.recordsCache.GetAddresses(domainName)
 	aliases := a.recordsCache.GetAliases(domainName)
-	for _, group := range a.groupSnapshot() {
+	for _, group := range a.ruleSetSnapshot() {
 	Rule:
-		for _, domain := range group.Rules {
+		for _, domain := range group.RuleModels() {
 			if !domain.IsEnabled() {
 				continue
 			}
@@ -329,8 +329,8 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, idStr, clientAddrStr, ne
 				log.Info().
 					Str("name", domainName).
 					Str("cname", targetName).
-					Str("group", group.Name).
-					Str("groupId", group.ID.String()).
+					Str("group", group.DisplayName()).
+					Str("groupId", group.IDValue().String()).
 					Msg("added alias")
 
 				for _, address := range addresses {

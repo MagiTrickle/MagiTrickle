@@ -16,36 +16,67 @@ import (
 
 const subscriptionAutoUpdateTick = time.Minute
 
-func (a *App) SyncSubscriptionGroups() error {
+func (a *App) SyncSubscriptionRuleSets() error {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
 
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
 
-	return a.syncSubscriptionGroupsLocked()
+	return a.syncSubscriptionRuleSetsLocked()
 }
 
-func (a *App) syncSubscriptionGroupsLocked() error {
-	kept := make([]*Group, 0, len(a.groups))
-	usedIDs := make(map[intID.ID]struct{}, len(a.groups))
+func (a *App) syncSubscriptionRuleSetsLocked() error {
 	var errs []error
 
-	for _, group := range a.groups {
-		if group.Internal {
-			if err := group.Disable(); err != nil {
-				errs = append(errs, fmt.Errorf("failed to disable subscription group %s: %w", group.ID.String(), err))
-			}
+	for _, ruleSet := range a.subscriptionRuleSets {
+		if err := ruleSet.Disable(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to disable subscription rule set %s: %w", ruleSet.IDValue().String(), err))
+		}
+	}
+	a.subscriptionRuleSets = nil
+
+	runtimeRuleSets, err := a.buildSubscriptionRuleSetsLocked()
+	if err != nil {
+		return errors.Join(append(errs, err)...)
+	}
+	a.subscriptionRuleSets = runtimeRuleSets
+
+	return errors.Join(errs...)
+}
+
+func (a *App) buildSubscriptionRuleSetsLocked() ([]*RuleSet, error) {
+	specs := subscriptions.BuildRuntimeRuleSets(a.subscriptions)
+	runtimeRuleSets := make([]*RuleSet, 0, len(specs))
+	for _, spec := range specs {
+		ruleSet, err := newRuleSet(spec, a)
+		if err != nil {
+			_ = disableRuleSets(runtimeRuleSets)
+			return nil, fmt.Errorf("failed to create subscription rule set %s: %w", spec.ID.String(), err)
+		}
+
+		runtimeRuleSets = append(runtimeRuleSets, ruleSet)
+		if !a.enabled.Load() {
 			continue
 		}
-		kept = append(kept, group)
-		usedIDs[group.ID] = struct{}{}
-	}
-	a.groups = kept
 
-	for _, groupModel := range subscriptions.BuildSubscriptionGroups(a.subscriptions, usedIDs) {
-		if err := a.addGroupLocked(groupModel); err != nil {
-			errs = append(errs, fmt.Errorf("failed to add subscription group %s: %w", groupModel.ID.String(), err))
+		if err := ruleSet.Enable(); err != nil {
+			_ = disableRuleSets(runtimeRuleSets)
+			return nil, fmt.Errorf("failed to enable subscription rule set %s: %w", ruleSet.IDValue().String(), err)
+		}
+		if err := ruleSet.Sync(); err != nil {
+			_ = disableRuleSets(runtimeRuleSets)
+			return nil, fmt.Errorf("failed to sync subscription rule set %s: %w", ruleSet.IDValue().String(), err)
+		}
+	}
+	return runtimeRuleSets, nil
+}
+
+func disableRuleSets(ruleSets []*RuleSet) error {
+	var errs []error
+	for _, ruleSet := range ruleSets {
+		if err := ruleSet.Disable(); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
@@ -108,10 +139,10 @@ func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscrip
 	previousLastUpdate := current.LastUpdate
 	current.Rules = target.Rules
 	current.LastUpdate = target.LastUpdate
-	if err := a.syncSubscriptionGroupsLocked(); err != nil {
+	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		current.Rules = previousRules
 		current.LastUpdate = previousLastUpdate
-		if rollbackErr := a.syncSubscriptionGroupsLocked(); rollbackErr != nil {
+		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))
 		}
 		return nil, err
@@ -133,12 +164,12 @@ func (a *App) SyncDueSubscriptions(now time.Time) (bool, error) {
 	a.stateMu.Lock()
 	previousSubscriptions := a.subscriptions
 	a.subscriptions = nextSubscriptions
-	err := a.syncSubscriptionGroupsLocked()
+	err := a.syncSubscriptionRuleSetsLocked()
 	a.stateMu.Unlock()
 	if err != nil {
 		a.stateMu.Lock()
 		a.subscriptions = previousSubscriptions
-		rollbackErr := a.syncSubscriptionGroupsLocked()
+		rollbackErr := a.syncSubscriptionRuleSetsLocked()
 		a.stateMu.Unlock()
 		if rollbackErr != nil {
 			return true, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))

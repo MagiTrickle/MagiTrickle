@@ -36,9 +36,6 @@ func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscriptio
 	if req.LastUpdate != nil {
 		sub.LastUpdate = *req.LastUpdate
 	}
-	if existing != nil {
-		sub.GroupID = existing.GroupID
-	}
 
 	if req.Rules != nil {
 		newRules := make([]*models.SubscriptionRule, len(*req.Rules))

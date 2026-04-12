@@ -23,13 +23,13 @@ var (
 
 type Main interface {
 	Config() models.AppConfig
-	Groups() []Group
-	UserGroups() []Group
+	Groups() []RuleSet
+	UserGroups() []RuleSet
 	ClearGroups()
 	AddGroup(groupModel *models.Group) error
 	RemoveGroupByIndex(idx int)
 	RemoveGroupByID(id intID.ID) bool
-	SyncSubscriptionGroups() error
+	SyncSubscriptionRuleSets() error
 	Subscriptions() []*models.Subscription
 	ReplaceSubscriptions(subscriptions []*models.Subscription) error
 	AddSubscription(subscription *models.Subscription) error
@@ -46,7 +46,7 @@ type Main interface {
 	Start(ctx context.Context) (err error)
 }
 
-type Group interface {
+type RuleSet interface {
 	Enabled() bool
 	Model() *models.Group
 	AddIPv4Subnet(subnet netfilterTools.IPv4Subnet, ttl netfilterTools.IPSetTimeout) error

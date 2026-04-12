@@ -73,9 +73,6 @@ func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
 			utils.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if existing != nil {
-			sub.GroupID = existing.GroupID
-		}
 		newSubs[i] = sub
 	}
 	if err := ensureUniqueSubscriptionIDs(newSubs); err != nil {

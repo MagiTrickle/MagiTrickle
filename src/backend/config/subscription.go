@@ -11,7 +11,6 @@ type SubscriptionRule struct {
 
 type Subscription struct {
 	ID         intID.ID           `yaml:"id"`
-	GroupID    intID.ID           `yaml:"group_id"`
 	Name       string             `yaml:"name"`
 	Interface  string             `yaml:"interface"`
 	Enable     *bool              `yaml:"enable"`
