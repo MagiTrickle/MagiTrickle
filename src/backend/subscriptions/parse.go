@@ -65,7 +65,7 @@ func RefreshRules(list string, existing []*models.SubscriptionRule) []*models.Su
 				rule.Type = current.Type
 			}
 		}
-		if rule.ID == (intID.ID{}) {
+		if rule.ID.IsZero() {
 			rule.ID = nextUniqueRuleID(usedRuleIDs)
 			continue
 		}

@@ -14,7 +14,7 @@ func BuildSubscriptionGroups(subs []*models.Subscription, usedIDs map[intID.ID]s
 			continue
 		}
 
-		if isZeroID(sub.GroupID) || idInUse(sub.GroupID, usedIDs) {
+		if sub.GroupID.IsZero() || idInUse(sub.GroupID, usedIDs) {
 			sub.GroupID = nextUniqueID(usedIDs)
 		}
 		usedIDs[sub.GroupID] = struct{}{}
@@ -55,10 +55,6 @@ func subscriptionAsGroup(sub *models.Subscription) *models.Group {
 		Rules:     rules,
 		Internal:  true,
 	}
-}
-
-func isZeroID(id intID.ID) bool {
-	return id == (intID.ID{})
 }
 
 func idInUse(id intID.ID, used map[intID.ID]struct{}) bool {

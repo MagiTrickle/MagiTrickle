@@ -14,6 +14,10 @@ func (id ID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
+func (id ID) IsZero() bool {
+	return id == (ID{})
+}
+
 func (id ID) MarshalText() ([]byte, error) {
 	return []byte(id.String()), nil
 }

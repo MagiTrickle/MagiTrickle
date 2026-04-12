@@ -44,7 +44,7 @@ func TestRefreshRulesPreservesExistingOverrides(t *testing.T) {
 	if refreshed[1].Rule != "sub.example.net" {
 		t.Fatalf("expected second parsed rule to be kept, got %q", refreshed[1].Rule)
 	}
-	if refreshed[1].ID == (intID.ID{}) {
+	if refreshed[1].ID.IsZero() {
 		t.Fatal("expected new rule to receive an ID")
 	}
 	if refreshed[1].Enable != true {

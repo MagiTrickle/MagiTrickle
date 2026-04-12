@@ -279,7 +279,7 @@ func (h *Handler) GetSubscriptionRules(w http.ResponseWriter, r *http.Request) {
 func ensureUniqueSubscriptionIDs(subs []*models.Subscription) error {
 	dup := make(map[[4]byte]struct{})
 	for _, sub := range subs {
-		if _, exists := dup[sub.ID]; exists || sub.ID == (intID.ID{}) {
+		if _, exists := dup[sub.ID]; exists || sub.ID.IsZero() {
 			for {
 				sub.ID = intID.RandomID()
 				if _, exists := dup[sub.ID]; !exists {
@@ -295,7 +295,7 @@ func ensureUniqueSubscriptionIDs(subs []*models.Subscription) error {
 func ensureUniqueSubscriptionRuleIDs(sub *models.Subscription) error {
 	dup := make(map[[4]byte]struct{})
 	for _, rule := range sub.Rules {
-		if _, exists := dup[rule.ID]; exists || rule.ID == (intID.ID{}) {
+		if _, exists := dup[rule.ID]; exists || rule.ID.IsZero() {
 			for {
 				rule.ID = intID.RandomID()
 				if _, exists := dup[rule.ID]; !exists {
