@@ -160,7 +160,7 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 //	@Failure		400				{object}	types.ErrorRes
 //	@Failure		404				{object}	types.ErrorRes
 //	@Failure		502				{object}	types.ErrorRes
-//	@Router			/api/v1/subscriptions/{subscriptionID} [patch]
+//	@Router			/api/v1/subscriptions/{subscriptionID}/sync [post]
 func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "subscriptionID")
 	if idStr == "" {

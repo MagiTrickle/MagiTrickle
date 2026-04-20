@@ -134,7 +134,7 @@ app.get(`${API_BASE}/subscriptions/rules`, (c) => {
   return c.json({ rules });
 });
 
-app.patch(`${API_BASE}/subscriptions/:id`, async (c) => {
+app.post(`${API_BASE}/subscriptions/:id/sync`, async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   console.debug("updated subscription, syncing rules", id, body);

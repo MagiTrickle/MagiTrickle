@@ -371,8 +371,8 @@ export class SubscriptionsStore {
 
     overlay.show(t("syncing..."));
     try {
-      const updated = await fetcher.patch<{ rules: SubscriptionRule[]; lastUpdate: number }>(
-        `/subscriptions/${subscription.id}`,
+      const updated = await fetcher.post<{ rules: SubscriptionRule[]; lastUpdate: number }>(
+        `/subscriptions/${subscription.id}/sync`,
         {},
       );
 
