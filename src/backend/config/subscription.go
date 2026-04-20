@@ -16,6 +16,6 @@ type Subscription struct {
 	Enable     *bool              `yaml:"enable"`
 	URL        string             `yaml:"url"`
 	Interval   uint32             `yaml:"interval"`
-	LastUpdate int64              `yaml:"last_update"`
+	LastUpdate uint32             `yaml:"last_update"`
 	Rules      []SubscriptionRule `yaml:"rules"`
 }

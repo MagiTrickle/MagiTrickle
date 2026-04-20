@@ -20,7 +20,7 @@ const SUBSCRIPTIONS = [
     interface: "blackhole",
     enable: true,
     url: "https://services.should.be.blocked.com",
-    lastUpdate: Date.now(),
+    lastUpdate: Math.floor(Date.now() / 1000),
     interval: 86400,
     rules: [
       { enable: true, id: "11223344", rule: "google.com", type: "domain" },
@@ -153,7 +153,7 @@ app.patch(`${API_BASE}/subscriptions/:id`, async (c) => {
       ...SUBSCRIPTIONS[index],
       ...body,
       rules: rules,
-      lastUpdate: Date.now(),
+      lastUpdate: Math.floor(Date.now() / 1000),
     };
 
     SUBSCRIPTIONS[index] = updatedSub;

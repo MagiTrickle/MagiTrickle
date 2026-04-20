@@ -9,7 +9,7 @@ import (
 )
 
 func SyncDueSubscriptions(subs []*models.Subscription, now time.Time) bool {
-	nowMillis := now.UnixMilli()
+	nowSeconds := uint32(now.Unix())
 	updated := false
 
 	for _, sub := range subs {
@@ -20,7 +20,7 @@ func SyncDueSubscriptions(subs []*models.Subscription, now time.Time) bool {
 		if interval == 0 {
 			continue
 		}
-		if sub.LastUpdate > 0 && nowMillis < sub.LastUpdate+int64(interval)*1000 {
+		if sub.LastUpdate > 0 && uint64(nowSeconds) < uint64(sub.LastUpdate)+uint64(interval) {
 			continue
 		}
 
@@ -31,7 +31,7 @@ func SyncDueSubscriptions(subs []*models.Subscription, now time.Time) bool {
 		}
 
 		sub.Rules = RefreshRules(list, sub.Rules)
-		sub.LastUpdate = now.UnixMilli()
+		sub.LastUpdate = uint32(now.Unix())
 		updated = true
 	}
 

@@ -16,6 +16,6 @@ type Subscription struct {
 	Enable     bool
 	URL        string
 	Interval   uint32
-	LastUpdate int64
+	LastUpdate uint32
 	Rules      []*SubscriptionRule
 }

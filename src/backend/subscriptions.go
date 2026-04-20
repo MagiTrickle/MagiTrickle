@@ -126,7 +126,7 @@ func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscrip
 	}
 
 	target.Rules = subscriptions.RefreshRules(list, target.Rules)
-	target.LastUpdate = now.UnixMilli()
+	target.LastUpdate = uint32(now.Unix())
 
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()

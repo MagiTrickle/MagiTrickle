@@ -137,7 +137,7 @@
 
   function formatTime(timestamp: number | undefined | null) {
     if (!timestamp) return t("Never updated");
-    const date = new Date(timestamp);
+    const date = new Date(timestamp * 1000);
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
   }
 

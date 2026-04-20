@@ -422,7 +422,7 @@ export class SubscriptionsStore {
       rules: payload.rules,
       enable: true,
       interface: payload.interface || "",
-      lastUpdate: Date.now(),
+      lastUpdate: Math.floor(Date.now() / 1000),
       interval: payload.interval,
     };
 
