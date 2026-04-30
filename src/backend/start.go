@@ -74,6 +74,12 @@ func (a *App) Start(ctx context.Context) (err error) {
 		return fmt.Errorf("failed to clear iptables: %w", err)
 	}
 
+	linkUpdateChannel, linkUpdateDone, err := subscribeLinkUpdates()
+	if err != nil {
+		return err
+	}
+	defer close(linkUpdateDone)
+	
 	newCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errChan := make(chan error)
@@ -130,12 +136,6 @@ func (a *App) Start(ctx context.Context) (err error) {
 	}()
 
 	go a.StartSubscriptionAutoUpdate(newCtx)
-
-	linkUpdateChannel, linkUpdateDone, err := subscribeLinkUpdates()
-	if err != nil {
-		return err
-	}
-	defer close(linkUpdateDone)
 
 	for {
 		select {
