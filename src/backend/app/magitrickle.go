@@ -2,21 +2,40 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net"
+	"time"
 
 	"magitrickle/config"
 	"magitrickle/models"
+	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
 
 	"github.com/vishvananda/netlink"
 )
 
+var (
+	ErrSubscriptionConflict = errors.New("subscription id conflict")
+	ErrSubscriptionNotFound = errors.New("subscription not found")
+	ErrSubscriptionInvalid  = errors.New("subscription invalid")
+	ErrSubscriptionFetch    = errors.New("subscription fetch failed")
+)
+
 type Main interface {
 	Config() models.AppConfig
-	Groups() []Group
+	Groups() []RuleSet
+	UserGroups() []RuleSet
 	ClearGroups()
 	AddGroup(groupModel *models.Group) error
 	RemoveGroupByIndex(idx int)
+	RemoveGroupByID(id intID.ID) bool
+	SyncSubscriptionRuleSets() error
+	Subscriptions() []*models.Subscription
+	ReplaceSubscriptions(subscriptions []*models.Subscription) error
+	AddSubscription(subscription *models.Subscription) error
+	RemoveSubscriptionByID(id intID.ID) (bool, error)
+	SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscription, error)
+	SyncDueSubscriptions(now time.Time) (bool, error)
 	ListInterfaces() ([]net.Interface, error)
 	DnsOverrider() *netfilterTools.PortRemap
 	LoadConfig() error
@@ -27,7 +46,7 @@ type Main interface {
 	Start(ctx context.Context) (err error)
 }
 
-type Group interface {
+type RuleSet interface {
 	Enabled() bool
 	Model() *models.Group
 	AddIPv4Subnet(subnet netfilterTools.IPv4Subnet, ttl netfilterTools.IPSetTimeout) error

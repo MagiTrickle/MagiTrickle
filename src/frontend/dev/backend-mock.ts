@@ -13,6 +13,21 @@ const INTERFACES: Interfaces = {
 };
 
 const DATA = JSON.parse(Deno.readTextFileSync("./dev/groups.json"));
+const SUBSCRIPTIONS = [
+  {
+    id: "a1b2c3d4",
+    name: "Bad Bad Services",
+    interface: "blackhole",
+    enable: true,
+    url: "https://services.should.be.blocked.com",
+    lastUpdate: Math.floor(Date.now() / 1000),
+    interval: 86400,
+    rules: [
+      { enable: true, id: "11223344", rule: "google.com", type: "domain" },
+      { enable: true, id: "55667788", rule: "facebook.com", type: "domain" },
+    ],
+  },
+];
 
 function randomLogLine() {
   function randomIndex(array: any[]) {
@@ -78,13 +93,86 @@ app.post(`${API_BASE}/auth`, async (c) => {
 
 app.get(`${API_BASE}/groups`, (c) => c.json(DATA));
 app.put(`${API_BASE}/groups`, async (c) => {
-  console.log("recieved", (await c.req.json())?.groups?.length, "groups");
+  console.debug("recieved", (await c.req.json())?.groups?.length, "groups");
   await new Promise((resolve) => setTimeout(resolve, 2000));
   if (Math.random() < 0.5) {
     return c.json({ error: "random error" }, 500);
   }
   return c.json({ status: "ok" });
 });
+
+app.get(`${API_BASE}/subscriptions`, (c) => c.json({ subscriptions: SUBSCRIPTIONS }));
+
+app.put(`${API_BASE}/subscriptions`, async (c) => {
+  console.debug("recieved", (await c.req.json())?.subscriptions?.length, "subscriptions");
+  const body = await c.req.json();
+  SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...body.subscriptions);
+  return c.json({ status: "ok" });
+});
+
+app.post(`${API_BASE}/subscriptions`, async (c) => {
+  const body = await c.req.json();
+  console.debug("created subscription", body);
+  SUBSCRIPTIONS.unshift(body);
+  return c.json({ status: "ok" });
+});
+
+app.get(`${API_BASE}/subscriptions/rules`, (c) => {
+  if (Math.random() < 0.5) {
+    return c.json({ error: "random error" }, 500);
+  }
+  const url = c.req.query("url");
+
+  const count = Math.floor(Math.random() * 50) + 5;
+  const rules = Array.from({ length: count }).map(() => ({
+    enable: true,
+    id: Math.random().toString(16).substring(2, 10),
+    rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
+    type: Math.random() < 0.5 ? "namespace" : "domain",
+  }));
+
+  return c.json({ rules });
+});
+
+app.post(`${API_BASE}/subscriptions/:id/sync`, async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  console.debug("updated subscription, syncing rules", id, body);
+  const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
+
+  if (index !== -1) {
+    const count = Math.floor(Math.random() * 70) + 5;
+    const rules = Array.from({ length: count }).map(() => ({
+      enable: true,
+      id: Math.random().toString(16).substring(2, 10),
+      rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
+      type: Math.random() < 0.5 ? "namespace" : "domain",
+    }));
+
+    const updatedSub = {
+      ...SUBSCRIPTIONS[index],
+      ...body,
+      rules: rules,
+      lastUpdate: Math.floor(Date.now() / 1000),
+    };
+
+    SUBSCRIPTIONS[index] = updatedSub;
+    return c.json({ rules: updatedSub.rules, lastUpdate: updatedSub.lastUpdate });
+  }
+  return c.json({ error: "Subscription not found" }, 404);
+});
+
+app.delete(`${API_BASE}/subscriptions/:id`, async (c) => {
+  const id = c.req.param("id");
+  console.debug("deleting subscription", id);
+  const index = SUBSCRIPTIONS.findIndex((s) => s.id === id);
+  if (index !== -1) {
+    SUBSCRIPTIONS.splice(index, 1);
+    return c.json({ status: "ok" });
+  }
+  return c.json({ error: "Subscription not found" }, 404);
+});
+
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));
 app.get(`${API_BASE}/logs`, async (c) => {
   return streamSSE(c, async (stream) => {

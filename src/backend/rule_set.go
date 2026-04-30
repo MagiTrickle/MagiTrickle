@@ -9,14 +9,16 @@ import (
 	"time"
 
 	"magitrickle/models"
+	"magitrickle/rulesets"
+	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
 
 	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
 )
 
-type Group struct {
-	*models.Group
+type RuleSet struct {
+	spec rulesets.Spec
 
 	enabled atomic.Bool
 	locker  sync.Mutex
@@ -26,140 +28,183 @@ type Group struct {
 	ipsetToLink *netfilterTools.IPSetToLink
 }
 
-func (g *Group) Enabled() bool {
+func (g *RuleSet) Enabled() bool {
 	return g.enabled.Load()
 }
 
-func NewGroup(group *models.Group, app *App) (*Group, error) {
-	return &Group{
-		Group: group,
-		app:   app,
+func newRuleSet(spec rulesets.Spec, app *App) (*RuleSet, error) {
+	return &RuleSet{
+		spec: spec,
+		app:  app,
 	}, nil
 }
 
-func (g *Group) Model() *models.Group {
-	return g.Group
+func NewRuleSet(spec rulesets.Spec, app *App) (*RuleSet, error) {
+	return newRuleSet(spec, app)
 }
 
-func (g *Group) addIPv4Subnet(subnet netfilterTools.IPv4Subnet, ttl netfilterTools.IPSetTimeout) error {
+func (g *RuleSet) Model() *models.Group {
+	return g.spec.Model
+}
+
+func (g *RuleSet) IDValue() intID.ID {
+	if g.spec.Model != nil {
+		return g.spec.Model.ID
+	}
+	return g.spec.ID
+}
+
+func (g *RuleSet) RuntimeKey() string {
+	return g.spec.RuntimeKey
+}
+
+func (g *RuleSet) DisplayName() string {
+	if g.spec.Model != nil {
+		return g.spec.Model.Name
+	}
+	return g.spec.Name
+}
+
+func (g *RuleSet) RouteInterface() string {
+	if g.spec.Model != nil {
+		return g.spec.Model.Interface
+	}
+	return g.spec.Interface
+}
+
+func (g *RuleSet) RuleModels() []*models.Rule {
+	if g.spec.Model != nil {
+		return g.spec.Model.Rules
+	}
+	return g.spec.Rules
+}
+
+func (g *RuleSet) ConfiguredEnabled() bool {
+	if g.spec.Model != nil {
+		return g.spec.Model.Enable
+	}
+	return g.spec.Enable
+}
+
+func (g *RuleSet) addIPv4Subnet(subnet netfilterTools.IPv4Subnet, ttl netfilterTools.IPSetTimeout) error {
 	return g.ipset.AddIPv4Subnet(subnet, ttl)
 }
 
-func (g *Group) AddIPv4Subnet(subnet netfilterTools.IPv4Subnet, ttl netfilterTools.IPSetTimeout) error {
+func (g *RuleSet) AddIPv4Subnet(subnet netfilterTools.IPv4Subnet, ttl netfilterTools.IPSetTimeout) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
 	return g.addIPv4Subnet(subnet, ttl)
 }
 
-func (g *Group) addIPv6Subnet(subnet netfilterTools.IPv6Subnet, ttl netfilterTools.IPSetTimeout) error {
+func (g *RuleSet) addIPv6Subnet(subnet netfilterTools.IPv6Subnet, ttl netfilterTools.IPSetTimeout) error {
 	return g.ipset.AddIPv6Subnet(subnet, ttl)
 }
 
-func (g *Group) AddIPv6Subnet(subnet netfilterTools.IPv6Subnet, ttl netfilterTools.IPSetTimeout) error {
+func (g *RuleSet) AddIPv6Subnet(subnet netfilterTools.IPv6Subnet, ttl netfilterTools.IPSetTimeout) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
 	return g.addIPv6Subnet(subnet, ttl)
 }
 
-func (g *Group) delIPv4Subnet(subnet netfilterTools.IPv4Subnet) error {
+func (g *RuleSet) delIPv4Subnet(subnet netfilterTools.IPv4Subnet) error {
 	return g.ipset.DelIPv4Subnet(subnet)
 }
 
-func (g *Group) DelIPv4Subnet(subnet netfilterTools.IPv4Subnet) error {
+func (g *RuleSet) DelIPv4Subnet(subnet netfilterTools.IPv4Subnet) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
 	return g.delIPv4Subnet(subnet)
 }
 
-func (g *Group) delIPv6Subnet(subnet netfilterTools.IPv6Subnet) error {
+func (g *RuleSet) delIPv6Subnet(subnet netfilterTools.IPv6Subnet) error {
 	return g.ipset.DelIPv6Subnet(subnet)
 }
 
-func (g *Group) DelIPv6Subnet(subnet netfilterTools.IPv6Subnet) error {
+func (g *RuleSet) DelIPv6Subnet(subnet netfilterTools.IPv6Subnet) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
 	return g.delIPv6Subnet(subnet)
 }
 
-func (g *Group) listIPv4Subnets() (map[netfilterTools.IPv4Subnet]netfilterTools.IPSetTimeout, error) {
+func (g *RuleSet) listIPv4Subnets() (map[netfilterTools.IPv4Subnet]netfilterTools.IPSetTimeout, error) {
 	return g.ipset.ListIPv4Subnets()
 }
 
-func (g *Group) ListIPv4Subnets() (map[netfilterTools.IPv4Subnet]netfilterTools.IPSetTimeout, error) {
+func (g *RuleSet) ListIPv4Subnets() (map[netfilterTools.IPv4Subnet]netfilterTools.IPSetTimeout, error) {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
 		return nil, nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil, nil
 	}
 
 	return g.listIPv4Subnets()
 }
 
-func (g *Group) listIPv6Subnets() (map[netfilterTools.IPv6Subnet]netfilterTools.IPSetTimeout, error) {
+func (g *RuleSet) listIPv6Subnets() (map[netfilterTools.IPv6Subnet]netfilterTools.IPSetTimeout, error) {
 	return g.ipset.ListIPv6Subnets()
 }
 
-func (g *Group) ListIPv6Subnets() (map[netfilterTools.IPv6Subnet]netfilterTools.IPSetTimeout, error) {
+func (g *RuleSet) ListIPv6Subnets() (map[netfilterTools.IPv6Subnet]netfilterTools.IPSetTimeout, error) {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if !g.Enabled() {
 		return nil, nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil, nil
 	}
 
 	return g.listIPv6Subnets()
 }
 
-func (g *Group) enable() error {
+func (g *RuleSet) enable() error {
 	if !g.enabled.CompareAndSwap(false, true) {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
-	ipset := g.app.nfHelper.IPSet(g.ID.String())
-	ipsetToLink := g.app.nfHelper.IPSetToLink(g.ID.String(), g.Interface, ipset)
+	ipset := g.app.nfHelper.IPSet(g.RuntimeKey())
+	ipsetToLink := g.app.nfHelper.IPSetToLink(g.RuntimeKey(), g.RouteInterface(), ipset)
 	if err := ipsetToLink.ClearIfDisabled(); err != nil {
 		return fmt.Errorf("failed to clear iptables: %w", err)
 	}
@@ -177,7 +222,7 @@ func (g *Group) enable() error {
 	return nil
 }
 
-func (g *Group) Enable() error {
+func (g *RuleSet) Enable() error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	if err := g.enable(); err != nil {
@@ -187,13 +232,13 @@ func (g *Group) Enable() error {
 	return nil
 }
 
-func (g *Group) disable() error {
+func (g *RuleSet) disable() error {
 	if !g.Enabled() {
 		return nil
 	}
 	defer g.enabled.Store(false)
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
@@ -221,18 +266,18 @@ func (g *Group) disable() error {
 	return errors.Join(errs...)
 }
 
-func (g *Group) Disable() error {
+func (g *RuleSet) Disable() error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 	return g.disable()
 }
 
-func (g *Group) sync() error {
+func (g *RuleSet) sync() error {
 	now := time.Now()
 	newIPv4SubnetList := make(map[netfilterTools.IPv4Subnet]netfilterTools.IPSetTimeout)
 	newIPv6SubnetList := make(map[netfilterTools.IPv6Subnet]netfilterTools.IPSetTimeout)
 	knownDomains := g.app.recordsCache.ListKnownDomains()
-	for _, domain := range g.Rules {
+	for _, domain := range g.RuleModels() {
 		if !domain.IsEnabled() {
 			continue
 		}
@@ -435,7 +480,7 @@ func (g *Group) sync() error {
 	return nil
 }
 
-func (g *Group) Sync() error {
+func (g *RuleSet) Sync() error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 
@@ -443,14 +488,14 @@ func (g *Group) Sync() error {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 
 	return g.sync()
 }
 
-func (g *Group) LinkUpHook(event netlink.LinkUpdate) error {
+func (g *RuleSet) LinkUpHook(event netlink.LinkUpdate) error {
 	g.locker.Lock()
 	defer g.locker.Unlock()
 
@@ -458,7 +503,7 @@ func (g *Group) LinkUpHook(event netlink.LinkUpdate) error {
 		return nil
 	}
 
-	if !g.Group.Enable {
+	if !g.ConfiguredEnabled() {
 		return nil
 	}
 

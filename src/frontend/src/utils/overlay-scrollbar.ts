@@ -154,9 +154,22 @@ export const initOverlayScrollbar = (options: OverlayScrollbarOptions = {}) => {
   const resolveTarget = () => {
     if (!options.targetSelector) return;
 
-    const target = document.querySelector<HTMLElement>(options.targetSelector);
+    const targets = Array.from(document.querySelectorAll<HTMLElement>(options.targetSelector));
+    const target =
+      targets.find((candidate) => {
+        const style = window.getComputedStyle(candidate);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        const rect = candidate.getBoundingClientRect();
+        return rect.height > 0 && rect.width > 0;
+      }) ?? null;
+
     if (target && target !== state.targetElement) {
       state.targetElement = target;
+      updateBounds(track, state);
+    }
+
+    if (!target && state.targetElement) {
+      state.targetElement = null;
       updateBounds(track, state);
     }
   };

@@ -32,7 +32,7 @@ func LoginHandler(app app.Main) http.HandlerFunc {
 			utils.WriteError(w, http.StatusNotFound, "Auth disabled")
 			return
 		}
-		
+
 		req, err := utils.ReadJson[LoginRequest](r)
 		if err != nil {
 			utils.WriteError(w, http.StatusBadRequest, err.Error())

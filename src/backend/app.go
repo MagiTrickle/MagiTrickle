@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"sync"
 	"sync/atomic"
 
 	"magitrickle/app"
 	"magitrickle/constant"
+	groupruntime "magitrickle/groups"
 	"magitrickle/models"
 	"magitrickle/utils/dnsMITMProxy"
+	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
 	"magitrickle/utils/recordsCache"
 
@@ -28,13 +31,18 @@ var (
 type App struct {
 	enabled atomic.Bool
 
-	config models.AppConfig
+	config  models.AppConfig
+	stateMu sync.RWMutex
 
-	dnsMITM      *dnsMITMProxy.DNSMITMProxy
-	nfHelper     *netfilterTools.Helper
-	recordsCache *recordsCache.Records
-	groups       []*Group
-	dnsOverrider *netfilterTools.PortRemap
+	subscriptionSyncMu sync.Mutex
+
+	dnsMITM              *dnsMITMProxy.DNSMITMProxy
+	nfHelper             *netfilterTools.Helper
+	recordsCache         *recordsCache.Records
+	userRuleSets         []*RuleSet
+	subscriptionRuleSets []*RuleSet
+	dnsOverrider         *netfilterTools.PortRemap
+	subscriptions        []*models.Subscription
 }
 
 // New создаёт новый экземпляр App
@@ -54,26 +62,45 @@ func (a *App) Config() models.AppConfig {
 }
 
 // Groups возвращает список групп
-func (a *App) Groups() []app.Group {
-	groups := make([]app.Group, len(a.groups))
-	for i, g := range a.groups {
+func (a *App) Groups() []app.RuleSet {
+	groupRefs := a.userRuleSetSnapshot()
+	groups := make([]app.RuleSet, len(groupRefs))
+	for i, g := range groupRefs {
 		groups[i] = g
 	}
 	return groups
 }
 
+// UserGroups returns only user-defined groups.
+func (a *App) UserGroups() []app.RuleSet {
+	groupRefs := a.userRuleSetSnapshot()
+	list := make([]app.RuleSet, len(groupRefs))
+	for i, g := range groupRefs {
+		list[i] = g
+	}
+	return list
+}
+
 // ClearGroups отключает все группы и очищает список
 func (a *App) ClearGroups() {
-	for _, g := range a.groups {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	for _, g := range a.userRuleSets {
 		_ = g.Disable()
 	}
-	a.groups = a.groups[:0]
+	a.userRuleSets = nil
 }
 
 // AddGroup добавляет новую группу
 func (a *App) AddGroup(groupModel *models.Group) error {
-	for _, group := range a.groups {
-		if groupModel.ID == group.ID {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	return a.addGroupLocked(groupModel)
+}
+
+func (a *App) addGroupLocked(groupModel *models.Group) error {
+	for _, group := range a.userRuleSets {
+		if groupModel.ID == group.IDValue() {
 			return ErrGroupIDConflict
 		}
 	}
@@ -86,23 +113,29 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 		dup[rule.ID] = struct{}{}
 	}
 
-	grp, err := NewGroup(groupModel, a)
+	grp, err := NewRuleSet(groupruntime.BuildRuntimeRuleSet(groupModel), a)
 	if err != nil {
 		return fmt.Errorf("failed to create group: %w", err)
 	}
-	a.groups = append(a.groups, grp)
+	a.userRuleSets = append(a.userRuleSets, grp)
+	removeAdded := func() {
+		a.userRuleSets = a.userRuleSets[:len(a.userRuleSets)-1]
+	}
 
 	log.Info().
-		Str("id", grp.ID.String()).
-		Str("name", grp.Name).
+		Str("id", grp.IDValue().String()).
+		Str("name", grp.DisplayName()).
 		Msg("added group")
 
 	// если приложение уже запущено – включаем группу и выполняем синхронизацию
 	if a.enabled.Load() {
 		if err = grp.Enable(); err != nil {
+			removeAdded()
 			return fmt.Errorf("failed to enable group: %w", err)
 		}
 		if err = grp.Sync(); err != nil {
+			_ = grp.Disable()
+			removeAdded()
 			return fmt.Errorf("failed to sync group: %w", err)
 		}
 	}
@@ -111,7 +144,99 @@ func (a *App) AddGroup(groupModel *models.Group) error {
 
 // RemoveGroupByIndex удаляет группу по индексу
 func (a *App) RemoveGroupByIndex(idx int) {
-	a.groups = append(a.groups[:idx], a.groups[idx+1:]...)
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	a.userRuleSets = append(a.userRuleSets[:idx], a.userRuleSets[idx+1:]...)
+}
+
+// RemoveGroupByID removes a group by ID.
+func (a *App) RemoveGroupByID(id intID.ID) bool {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	for idx, group := range a.userRuleSets {
+		if group.IDValue() == id {
+			a.userRuleSets = append(a.userRuleSets[:idx], a.userRuleSets[idx+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// Subscriptions returns the current subscriptions list.
+func (a *App) Subscriptions() []*models.Subscription {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	return cloneSubscriptions(a.subscriptions)
+}
+
+// ReplaceSubscriptions replaces the subscriptions list and rebuilds subscription rule sets.
+func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
+	a.subscriptionSyncMu.Lock()
+	defer a.subscriptionSyncMu.Unlock()
+
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	previous := a.subscriptions
+	a.subscriptions = cloneSubscriptions(subscriptions)
+	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
+		a.subscriptions = previous
+		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
+		}
+		return err
+	}
+	return nil
+}
+
+// AddSubscription adds a new subscription if ID is unique and rebuilds subscription rule sets.
+func (a *App) AddSubscription(subscription *models.Subscription) error {
+	a.subscriptionSyncMu.Lock()
+	defer a.subscriptionSyncMu.Unlock()
+
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	for _, sub := range a.subscriptions {
+		if sub.ID == subscription.ID {
+			return app.ErrSubscriptionConflict
+		}
+	}
+	next := cloneSubscription(subscription)
+	a.subscriptions = append(a.subscriptions, next)
+	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
+		a.subscriptions = a.subscriptions[:len(a.subscriptions)-1]
+		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
+		}
+		return err
+	}
+	return nil
+}
+
+// RemoveSubscriptionByID removes a subscription by ID.
+func (a *App) RemoveSubscriptionByID(id intID.ID) (bool, error) {
+	a.subscriptionSyncMu.Lock()
+	defer a.subscriptionSyncMu.Unlock()
+
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	for idx, sub := range a.subscriptions {
+		if sub.ID == id {
+			removed := sub
+			a.subscriptions = append(a.subscriptions[:idx], a.subscriptions[idx+1:]...)
+			if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
+				a.subscriptions = append(a.subscriptions[:idx], append([]*models.Subscription{removed}, a.subscriptions[idx:]...)...)
+				if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
+					return true, errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
+				}
+				return true, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ListInterfaces возвращает список сетевых интерфейсов, удовлетворяющих заданным критериям
@@ -138,4 +263,56 @@ func (a *App) ListInterfaces() ([]net.Interface, error) {
 // DnsOverrider возвращает dnsOverrider
 func (a *App) DnsOverrider() *netfilterTools.PortRemap {
 	return a.dnsOverrider
+}
+
+func (a *App) ruleSetSnapshot() []*RuleSet {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+
+	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
+	list = append(list, a.userRuleSets...)
+	list = append(list, a.subscriptionRuleSets...)
+	return list
+}
+
+func (a *App) userRuleSetSnapshot() []*RuleSet {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+
+	list := make([]*RuleSet, len(a.userRuleSets))
+	copy(list, a.userRuleSets)
+	return list
+}
+
+func cloneSubscriptionRule(rule *models.SubscriptionRule) *models.SubscriptionRule {
+	if rule == nil {
+		return nil
+	}
+	clone := *rule
+	return &clone
+}
+
+func cloneSubscription(sub *models.Subscription) *models.Subscription {
+	if sub == nil {
+		return nil
+	}
+	clone := *sub
+	if sub.Rules != nil {
+		clone.Rules = make([]*models.SubscriptionRule, len(sub.Rules))
+		for i, rule := range sub.Rules {
+			clone.Rules[i] = cloneSubscriptionRule(rule)
+		}
+	}
+	return &clone
+}
+
+func cloneSubscriptions(subs []*models.Subscription) []*models.Subscription {
+	if subs == nil {
+		return nil
+	}
+	list := make([]*models.Subscription, len(subs))
+	for i, sub := range subs {
+		list[i] = cloneSubscription(sub)
+	}
+	return list
 }

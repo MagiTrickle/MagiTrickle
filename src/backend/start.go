@@ -115,7 +115,7 @@ func (a *App) Start(ctx context.Context) (err error) {
 		}()
 	}
 
-	for _, group := range a.groups {
+	for _, group := range a.ruleSetSnapshot() {
 		if err := group.Enable(); err != nil {
 			return fmt.Errorf("failed to enable group: %w", err)
 		}
@@ -124,10 +124,12 @@ func (a *App) Start(ctx context.Context) (err error) {
 		}
 	}
 	defer func() {
-		for _, group := range a.groups {
+		for _, group := range a.ruleSetSnapshot() {
 			_ = group.Disable()
 		}
 	}()
+
+	go a.StartSubscriptionAutoUpdate(newCtx)
 
 	linkUpdateChannel, linkUpdateDone, err := subscribeLinkUpdates()
 	if err != nil {
@@ -192,20 +194,4 @@ func (a *App) setupLogging() {
 	default:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
-}
-
-func (a *App) getInterfaceAddresses() ([]netlink.Addr, error) {
-	var addrList []netlink.Addr
-	for _, linkName := range a.config.Link {
-		link, err := netlink.LinkByName(linkName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find link %s: %w", linkName, err)
-		}
-		linkAddrList, err := netlink.AddrList(link, nl.FAMILY_ALL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list address of interface %s: %w", linkName, err)
-		}
-		addrList = append(addrList, linkAddrList...)
-	}
-	return addrList, nil
 }

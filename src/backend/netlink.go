@@ -37,16 +37,15 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 				Int("type", int(event.Header.Type)).
 				Msg("interface up")
 		}
-
-		for _, group := range a.groups {
-			if group.Interface != ifaceName {
+		for _, group := range a.ruleSetSnapshot() {
+			if group.RouteInterface() != ifaceName {
 				continue
 			}
 
 			if err := group.LinkUpHook(event); err != nil {
 				log.Error().
 					Err(err).
-					Str("group", group.ID.String()).
+					Str("group", group.IDValue().String()).
 					Msg("error while handling interface up")
 			}
 		}
