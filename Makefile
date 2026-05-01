@@ -26,7 +26,7 @@ ifeq ($(strip $(PKG_VERSION)),)
 		PRERELEASE_DATE := $(shell date -u +%Y%m%d%H%M%S)
 		COMMIT := $(shell git rev-parse --short HEAD)
 
-		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
+		PKG_VERSION := $(PKG_VERSION_PRERELEASE)-$(COMMIT)
 	endif
 endif
 PKG_VERSION_APK := $(shell echo "$(PKG_VERSION)" | sed -E 's/~git([0-9]+)\.[^.]+$$/_pre\1/')
