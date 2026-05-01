@@ -24,8 +24,8 @@
         <div class="text">
           {t("Official website")}
 
-          <a target="_blank" rel="noopener noreferrer" href="https://magitrickle.dev/"
-            >https://magitrickle.dev/</a
+          <a target="_blank" rel="noopener noreferrer" href="https://magitrickle.dev"
+            >https://magitrickle.dev</a
           >
         </div>
       </div>
