@@ -26,9 +26,14 @@
   }
 
   function onHide() {
-    hide = true;
-    previousFocus?.focus?.();
+    if (previousFocus && document.contains(previousFocus)) {
+      previousFocus.focus();
+    }
+    if (document.activeElement === overlayEl) {
+      overlayEl?.blur();
+    }
     previousFocus = null;
+    hide = true;
   }
 
   function preventDefaultScroll(event: WheelEvent | TouchEvent) {
