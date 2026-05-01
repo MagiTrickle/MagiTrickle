@@ -34,7 +34,7 @@ type Main interface {
 	ReplaceSubscriptions(subscriptions []*models.Subscription) error
 	AddSubscription(subscription *models.Subscription) error
 	RemoveSubscriptionByID(id intID.ID) (bool, error)
-	SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscription, error)
+	SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscription, bool, error)
 	SyncDueSubscriptions(now time.Time) (bool, error)
 	ListInterfaces() ([]net.Interface, error)
 	DnsOverrider() *netfilterTools.PortRemap

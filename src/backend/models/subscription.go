@@ -17,5 +17,6 @@ type Subscription struct {
 	URL        string
 	Interval   uint32
 	LastUpdate uint32
+	LastCheck  uint32
 	Rules      []*SubscriptionRule
 }

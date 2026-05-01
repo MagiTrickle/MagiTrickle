@@ -173,7 +173,7 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target, err := h.app.SyncSubscriptionByID(id, time.Now())
+	target, changed, err := h.app.SyncSubscriptionByID(id, time.Now())
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrSubscriptionNotFound):
@@ -188,7 +188,7 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.URL.Query().Get("save") != "false" {
+	if changed && r.URL.Query().Get("save") != "false" {
 		if err := h.app.SaveConfig(); err != nil {
 			log.Error().Err(err).Msg("failed to save config file")
 		}

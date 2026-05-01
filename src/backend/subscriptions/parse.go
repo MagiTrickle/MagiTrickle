@@ -79,6 +79,78 @@ func RefreshRules(list string, existing []*models.SubscriptionRule) []*models.Su
 	return parsed
 }
 
+type subscriptionRuleState struct {
+	ID     intID.ID
+	Enable bool
+	Count  int
+}
+
+func sameRulesKey(rule *models.SubscriptionRule) string {
+	if rule == nil {
+		return ""
+	}
+
+	ruleType := rule.Type
+	if ruleType == "" {
+		ruleType = detectSubscriptionRuleType(rule.Rule)
+	}
+
+	return ruleType + "|" + rule.Rule
+}
+
+func sameRules(left, right []*models.SubscriptionRule) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	if len(left) == 0 {
+		return true
+	}
+
+	states := make(map[string]subscriptionRuleState, len(left))
+	leftNilCount := 0
+	for _, rule := range left {
+		if rule == nil {
+			leftNilCount++
+			continue
+		}
+
+		key := sameRulesKey(rule)
+		state := states[key]
+		if state.Count > 0 && (state.ID != rule.ID || state.Enable != rule.Enable) {
+			return false
+		}
+		state.ID = rule.ID
+		state.Enable = rule.Enable
+		state.Count++
+		states[key] = state
+	}
+
+	rightNilCount := 0
+	for _, rule := range right {
+		if rule == nil {
+			rightNilCount++
+			continue
+		}
+
+		key := sameRulesKey(rule)
+		state, exists := states[key]
+		if !exists || state.Count == 0 {
+			return false
+		}
+		if state.ID != rule.ID || state.Enable != rule.Enable {
+			return false
+		}
+		state.Count--
+		if state.Count == 0 {
+			delete(states, key)
+			continue
+		}
+		states[key] = state
+	}
+
+	return leftNilCount == rightNilCount && len(states) == 0
+}
+
 func detectSubscriptionRuleType(pattern string) string {
 	p := strings.TrimSpace(pattern)
 
