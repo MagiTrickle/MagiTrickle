@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount, setContext } from "svelte";
 
-  import Button from "../../components/ui/Button.svelte";
+  import PageControls from "../../components/layout/PageControls.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
-  import Tooltip from "../../components/ui/Tooltip.svelte";
   import { t } from "../../data/locale.svelte";
   import SubscriptionPanel from "./components/SubscriptionPanel.svelte";
   import SubscriptionSearch from "./components/SubscriptionSearch.svelte";
@@ -15,7 +14,6 @@
     type SubscriptionDropSlotData,
   } from "./subscriptions.svelte";
 
-  import { Add, Save } from "../../components/ui/icons";
   import { droppable } from "../../lib/dnd";
   import type { SubscriptionRule } from "../../types";
 
@@ -52,25 +50,20 @@
 </script>
 
 <div class="subscriptions-page">
-  <div class="subscription-controls">
-    <SubscriptionSearch />
-
-    <div class="subscription-controls-actions">
-      <Tooltip value={t("Save Changes")}>
-        <Button
-          onclick={() => store.saveChanges()}
-          id="save-subscriptions"
-          class="accent"
-          inactive={!store.canSave}
-        >
-          <Save size={22} />
-        </Button>
-      </Tooltip>
-      <Tooltip value={t("Add Subscription")}>
-        <Button onclick={() => (addSubscriptionModal = true)}><Add size={22} /></Button>
-      </Tooltip>
-    </div>
-  </div>
+  <PageControls
+    actionsClass="subscription-controls-actions"
+    controlsClass="subscription-controls"
+    addLabel={t("Add Subscription")}
+    canSave={store.canSave}
+    onAdd={() => (addSubscriptionModal = true)}
+    onSave={() => store.saveChanges()}
+    saveButtonId="save-subscriptions"
+    saveLabel={t("Save Changes")}
+  >
+    {#snippet search()}
+      <SubscriptionSearch />
+    {/snippet}
+  </PageControls>
 
   {#if store.fetchError}
     <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
@@ -217,77 +210,5 @@
 
   :global(html[data-dnd-scope="subscription"]) .subscription-drop-slot:global(.dragover) {
     opacity: 1;
-  }
-
-  .subscription-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: nowrap;
-    gap: 0.75rem;
-    padding: 0.3rem 0rem;
-    margin-bottom: 1rem;
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
-  }
-
-  @media (max-width: 570px) {
-    .subscription-controls {
-      display: block;
-      padding: 0.3rem 0;
-      padding-bottom: 0;
-      transition: padding-bottom 220ms cubic-bezier(0.2, 0, 0.2, 1);
-      --row-h: 48px;
-      --gap: 10px;
-      --actions-top: 0px;
-      --actions-reserve: 108px;
-    }
-
-    .subscription-controls :global(.subscription-controls-search) {
-      padding-right: var(--actions-reserve);
-      transition: padding-right 220ms cubic-bezier(0.2, 0, 0.2, 1);
-    }
-
-    .subscription-controls-actions {
-      position: absolute;
-      right: 0;
-      top: var(--actions-top);
-      height: var(--row-h);
-      transition: top 220ms cubic-bezier(0.2, 0, 0.2, 1);
-    }
-
-    .subscription-controls:has(:global(.search-container:focus-within)),
-    .subscription-controls:has(:global(.search-input:not(:placeholder-shown))) {
-      padding-bottom: calc(var(--row-h) + var(--gap));
-      --actions-top: calc(var(--row-h) + var(--gap));
-      --actions-reserve: 0px;
-    }
-
-    .subscription-controls:has(:global(.search-container:focus-within)) :global(.search-container),
-    .subscription-controls:has(:global(.search-input:not(:placeholder-shown)))
-      :global(.search-container) {
-      width: 100%;
-    }
-
-    .subscription-controls:has(:global(.search-container:focus-within))
-      :global(.search-container .input-wrapper),
-    .subscription-controls:has(:global(.search-input:not(:placeholder-shown)))
-      :global(.search-container .input-wrapper) {
-      width: 100%;
-    }
-  }
-
-  @media (max-width: 700px) {
-    .subscription-controls {
-      margin-bottom: 1rem;
-    }
-  }
-
-  .subscription-controls-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
   }
 </style>
