@@ -12,6 +12,22 @@ const SEARCH_DEBOUNCE_MS = 150 as const;
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+export function normalizeSubscriptionUrl(value: string) {
+  return value.trim();
+}
+
+export function validateSubscriptionUrl(value: string) {
+  const normalized = normalizeSubscriptionUrl(value);
+  if (!normalized) return false;
+
+  try {
+    new URL(normalized);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export type VisibleSubscription = {
   group_index: number;
   ruleIndices: number[] | null;
@@ -48,7 +64,34 @@ export class SubscriptionsStore {
   data = $derived.by(() => this.tracker.data);
   dataRevision = $state(0);
   valid_rules = $state(true);
-  canSave = $derived(this.tracker.isDirty && this.valid_rules);
+  subscriptionUrlErrors = $derived.by(() => {
+    const errors = new Map<string, string>();
+    const idsByUrl = new Map<string, string[]>();
+
+    for (const subscription of this.data) {
+      const normalizedUrl = normalizeSubscriptionUrl(subscription.url ?? "");
+
+      if (!validateSubscriptionUrl(normalizedUrl)) {
+        errors.set(subscription.id, "Invalid URL");
+        continue;
+      }
+
+      const ids = idsByUrl.get(normalizedUrl) ?? [];
+      ids.push(subscription.id);
+      idsByUrl.set(normalizedUrl, ids);
+    }
+
+    for (const ids of idsByUrl.values()) {
+      if (ids.length <= 1) continue;
+      for (const id of ids) {
+        errors.set(id, "Subscription already exists");
+      }
+    }
+
+    return errors;
+  });
+  valid_subscription_urls = $derived(this.subscriptionUrlErrors.size === 0);
+  canSave = $derived(this.tracker.isDirty && this.valid_rules && this.valid_subscription_urls);
 
   open_state = $state<Record<string, boolean>>({});
 
@@ -208,8 +251,9 @@ export class SubscriptionsStore {
     this.finishedSubscriptionsCount = 0;
     this.fetchError = false;
     try {
-      const fetched = (await fetcher.get<{ subscriptions: Subscription[] }>("/subscriptions"))
-        ?.subscriptions ?? [];
+      const fetched =
+        (await fetcher.get<{ subscriptions: Subscription[] }>("/subscriptions"))?.subscriptions ??
+        [];
       this.tracker = new ChangeTracker(fetched);
       this.dataRevision = 0;
       if (typeof window !== "undefined") {
@@ -339,10 +383,13 @@ export class SubscriptionsStore {
   }
 
   saveChanges() {
-    if (!this.tracker.isDirty) return;
+    if (!this.canSave) return;
     overlay.show(t("saving changes..."));
 
-    const rawData = $state.snapshot(this.data);
+    const rawData = $state.snapshot(this.data).map((subscription) => ({
+      ...subscription,
+      url: normalizeSubscriptionUrl(subscription.url),
+    }));
 
     fetcher
       .put("/subscriptions", { subscriptions: rawData })
@@ -365,18 +412,39 @@ export class SubscriptionsStore {
     this.dataRevision += 1;
   };
 
+  normalizeSubscriptionUrl(index: number) {
+    const subscription = this.data[index];
+    if (!subscription) return;
+
+    const normalizedUrl = normalizeSubscriptionUrl(subscription.url);
+    if (subscription.url === normalizedUrl) return;
+
+    subscription.url = normalizedUrl;
+    this.markDataRevision();
+  }
+
   async syncSubscription(index: number) {
     const subscription = this.data[index];
     if (!subscription) return;
 
+    this.normalizeSubscriptionUrl(index);
+    const normalizedUrl = normalizeSubscriptionUrl(subscription.url);
+    const urlError = this.subscriptionUrlErrors.get(subscription.id);
+    if (urlError) {
+      toast.error(t(urlError));
+      return;
+    }
+
     overlay.show(t("syncing..."));
     try {
-      const updated = await fetcher.post<{ rules: SubscriptionRule[]; lastUpdate: number }>(
-        `/subscriptions/${subscription.id}/sync`,
-        {},
-      );
+      const updated = await fetcher.post<{
+        rules: SubscriptionRule[];
+        lastUpdate: number;
+        url?: string;
+      }>(`/subscriptions/${subscription.id}/sync`, { url: normalizedUrl });
 
       this.tracker.acknowledgeUpdate(subscription, {
+        url: updated.url ?? normalizedUrl,
         rules: updated.rules,
         lastUpdate: updated.lastUpdate,
       });

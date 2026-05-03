@@ -106,7 +106,7 @@ func (a *App) StartSubscriptionAutoUpdate(ctx context.Context) {
 	}
 }
 
-func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscription, bool, error) {
+func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride string) (*models.Subscription, bool, error) {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
 
@@ -116,6 +116,10 @@ func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscrip
 	if target == nil {
 		return nil, false, app.ErrSubscriptionNotFound
 	}
+	if urlOverride == "" {
+		urlOverride = target.URL
+	}
+	target.URL = urlOverride
 	if target.URL == "" {
 		return nil, false, app.ErrSubscriptionInvalid
 	}
@@ -134,19 +138,18 @@ func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time) (*models.Subscrip
 	if current == nil {
 		return nil, false, app.ErrSubscriptionNotFound
 	}
-	previousRules := cloneSubscriptions([]*models.Subscription{current})[0].Rules
-	previousLastUpdate := current.LastUpdate
-	previousLastCheck := current.LastCheck
+	previous := cloneSubscription(current)
+	urlChanged := current.URL != target.URL
+
 	current.LastCheck = target.LastCheck
+	current.URL = target.URL
 	if !changed {
-		return cloneSubscription(current), false, nil
+		return cloneSubscription(current), urlChanged, nil
 	}
 	current.Rules = target.Rules
 	current.LastUpdate = target.LastUpdate
 	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-		current.Rules = previousRules
-		current.LastUpdate = previousLastUpdate
-		current.LastCheck = previousLastCheck
+		*current = *previous
 		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
 			return nil, true, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))
 		}

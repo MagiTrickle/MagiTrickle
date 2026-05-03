@@ -36,12 +36,12 @@
   import SubscriptionRuleRow from "./SubscriptionRuleRow.svelte";
 
   import {
+    CloudSync,
     Delete,
     Dots,
     Grip,
     GroupCollapse,
     GroupExpand,
-    History,
     Link,
     Refresh,
   } from "../../../components/ui/icons";
@@ -60,6 +60,17 @@
   }
 
   const PAGE_SIZE = 50;
+  const lastUpdateDateFormatter = new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const lastUpdateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
   let currentPage = $state(1);
 
   let client_width = $state<number>(Infinity);
@@ -69,6 +80,7 @@
   let searchActive = $derived(store.searchActive);
   let visibleRuleIndices = $derived(store.visibilityMap.get(subscription_index));
   let effectiveOpen = $derived(subscription ? (store.open_state[subscription.id] ?? false) : false);
+  let urlError = $derived(subscription ? store.subscriptionUrlErrors.get(subscription.id) : null);
 
   function toggleOpen() {
     if (!subscription) return;
@@ -138,7 +150,7 @@
   function formatTime(timestamp: number | undefined | null) {
     if (!timestamp) return t("Never updated");
     const date = new Date(timestamp * 1000);
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+    return `${lastUpdateDateFormatter.format(date)} ${lastUpdateTimeFormatter.format(date)}`;
   }
 
   type SubscriptionDnD = {
@@ -220,13 +232,23 @@
               class="subscription-name"
               bind:value={subscription.name}
             />
-            <div class="subscription-url" title={subscription.url}>
-              <span class="url-line">
+            <div class="subscription-url">
+              <label class="url-line" for={`subscription-url-${subscription.id}`}>
                 <span class="icon-wrap"><Link size={14} /></span>
-                <span class="url-text">{subscription.url}</span>
-              </span>
+                <input
+                  id={`subscription-url-${subscription.id}`}
+                  type="url"
+                  class="subscription-url-input"
+                  class:invalid={Boolean(urlError)}
+                  bind:value={subscription.url}
+                  placeholder="https://example.com/list.txt"
+                  aria-label={t("URL")}
+                  title={subscription.url}
+                  onblur={() => store.normalizeSubscriptionUrl(subscription_index)}
+                />
+              </label>
               <span class="update-line">
-                <span class="icon-wrap"><History size={14} /></span>
+                <span class="icon-wrap"><CloudSync size={14} /></span>
                 <span class="update-text">{formatTime(subscription.lastUpdate)}</span>
                 <span class="update-sep">•</span>
                 <span class="update-interval">
@@ -428,14 +450,35 @@
     align-items: center;
     gap: 0.3rem;
     min-width: 0;
+    width: 100%;
     max-width: 100%;
     overflow: hidden;
   }
 
-  .url-text {
+  .subscription-url-input {
+    min-width: 0;
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid transparent;
+    background: transparent;
+    color: var(--text-2);
+    font: inherit;
+    line-height: 1.3;
+    padding: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .subscription-url-input:focus-visible {
+    outline: none;
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+
+  .subscription-url-input.invalid {
+    color: var(--red);
+    border-bottom-color: var(--red);
   }
 
   .update-line {
@@ -596,7 +639,7 @@
       white-space: nowrap;
     }
 
-    .url-text {
+    .subscription-url-input {
       max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
