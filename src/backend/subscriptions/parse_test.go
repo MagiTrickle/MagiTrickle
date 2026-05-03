@@ -51,3 +51,18 @@ func TestRefreshRulesPreservesExistingOverrides(t *testing.T) {
 		t.Fatalf("expected new rule to default to enabled, got %v", refreshed[1].Enable)
 	}
 }
+
+func TestSameRulesIgnoresOrder(t *testing.T) {
+	left := []*models.SubscriptionRule{
+		{ID: intID.ID{0x01, 0x02, 0x03, 0x04}, Rule: "example.com", Type: models.RuleTypeDomain, Enable: true},
+		{ID: intID.ID{0x05, 0x06, 0x07, 0x08}, Rule: "*.example.org", Type: models.RuleTypeWildcard, Enable: false},
+	}
+	right := []*models.SubscriptionRule{
+		{ID: intID.ID{0x05, 0x06, 0x07, 0x08}, Rule: "*.example.org", Type: models.RuleTypeWildcard, Enable: false},
+		{ID: intID.ID{0x01, 0x02, 0x03, 0x04}, Rule: "example.com", Type: models.RuleTypeDomain, Enable: true},
+	}
+
+	if !sameRules(left, right) {
+		t.Fatal("expected rule comparison to ignore order for equal content")
+	}
+}
