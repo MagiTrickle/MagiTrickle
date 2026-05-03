@@ -1,7 +1,9 @@
 package v1
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -156,6 +158,7 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Param			subscriptionID	path		string	true	"ID подписки"
 //	@Param			save			query		bool	false	"Сохранить изменения в конфигурационный файл"
+//	@Param			json			body		types.SubscriptionSyncReq	false	"Переопределение URL для синхронизации"
 //	@Success		200				{object}	map[string]interface{}
 //	@Failure		400				{object}	types.ErrorRes
 //	@Failure		404				{object}	types.ErrorRes
@@ -173,7 +176,13 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target, changed, err := h.app.SyncSubscriptionByID(id, time.Now())
+	var req types.SubscriptionSyncReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		utils.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	target, changed, err := h.app.SyncSubscriptionByID(id, time.Now(), req.URL)
 	if err != nil {
 		switch {
 		case errors.Is(err, app.ErrSubscriptionNotFound):
@@ -202,6 +211,7 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJson(w, http.StatusOK, map[string]interface{}{
 		"rules":      rules,
 		"lastUpdate": target.LastUpdate,
+		"url":        target.URL,
 	})
 }
 

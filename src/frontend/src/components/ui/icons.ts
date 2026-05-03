@@ -49,7 +49,7 @@ export { default as Refresh } from "lucide-svelte/icons/refresh-cw";
 export { default as Link } from "lucide-svelte/icons/link";
 export { default as Type } from "lucide-svelte/icons/type";
 export { default as Network } from "lucide-svelte/icons/network";
-export { default as History } from "lucide-svelte/icons/history";
+export { default as CloudSync } from "lucide-svelte/icons/cloud-sync";
 export { default as RSS } from "lucide-svelte/icons/rss";
 export { default as Globe } from "lucide-svelte/icons/globe";
 export { default as Scan } from "lucide-svelte/icons/scan";

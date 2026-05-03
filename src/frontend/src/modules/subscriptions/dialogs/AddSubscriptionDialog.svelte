@@ -7,6 +7,7 @@
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
   import { handleIntervalChange, intervals } from "../components/SubscriptionPanel.svelte";
+  import { normalizeSubscriptionUrl, validateSubscriptionUrl } from "../subscriptions.svelte";
 
   import { Info, Link, LoaderCircle, Network, Refresh, Type } from "../../../components/ui/icons";
   import type { SubscriptionRule } from "../../../types";
@@ -59,25 +60,17 @@
     dispatch("close");
   }
 
-  function validateUrl(val: string) {
-    if (!val) return false;
-    try {
-      new URL(val);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  let isDuplicate = $derived(existingUrls.includes(url));
-  let isValidUrl = $derived(validateUrl(url) && !isDuplicate);
+  let normalizedUrl = $derived(normalizeSubscriptionUrl(url));
+  let existingNormalizedUrls = $derived(existingUrls.map(normalizeSubscriptionUrl));
+  let isDuplicate = $derived(existingNormalizedUrls.includes(normalizedUrl));
+  let isValidUrl = $derived(validateSubscriptionUrl(url) && !isDuplicate);
 
   let displayedError = $derived(
     isDuplicate ? t("Subscription already exists") : error || t("Request failed"),
   );
   let isErrorVisible = $derived(isDuplicate || fetchError);
   async function handleNext() {
-    if (!url || !isValidUrl) {
+    if (!normalizedUrl || !isValidUrl) {
       error = t("Invalid URL");
       fetchError = true;
       setTimeout(() => {
@@ -90,8 +83,9 @@
     error = null;
     fetchError = false;
     try {
+      url = normalizedUrl;
       const res = await fetcher.get<{ rules: SubscriptionRule[] }>(
-        `/subscriptions/rules?url=${encodeURIComponent(url)}`,
+        `/subscriptions/rules?url=${encodeURIComponent(normalizedUrl)}`,
       );
       rules = res.rules;
       step = 2;
@@ -112,7 +106,7 @@
 
   function handleAdd() {
     dispatch("add", {
-      url,
+      url: normalizedUrl,
       name,
       rules,
       interface: selectedInterface,
