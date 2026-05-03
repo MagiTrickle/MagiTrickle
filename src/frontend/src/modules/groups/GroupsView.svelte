@@ -1,25 +1,23 @@
 <script lang="ts">
   import { onDestroy, onMount, setContext, tick } from "svelte";
 
-  import Button from "../../components/ui/Button.svelte";
+  import PageControls from "../../components/layout/PageControls.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
-  import Tooltip from "../../components/ui/Tooltip.svelte";
   import { t } from "../../data/locale.svelte";
   import GroupPanel from "./components/GroupPanel.svelte";
   import Search from "./components/Search.svelte";
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
   import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
-
-  import { Add, Export, Import, Save } from "../../components/ui/icons";
-  import { droppable } from "../../lib/dnd";
-  import { toast } from "../../utils/events";
-  import { parseConfig, type Group, type Rule } from "../../types";
   import {
     GROUPS_STORE_CONTEXT,
     GroupsStore,
     type GroupDragData,
     type GroupDropSlotData,
   } from "./groups.svelte";
+
+  import { droppable } from "../../lib/dnd";
+  import { parseConfig, type Group, type Rule } from "../../types";
+  import { toast } from "../../utils/events";
 
   type Props = {
     onRenderComplete?: () => void;
@@ -72,8 +70,8 @@
     document.body.removeChild(link);
   }
 
-  function importConfig() {
-    const input = document.getElementById("import-config") as HTMLInputElement;
+  function importConfig(event: Event) {
+    const input = event?.currentTarget as HTMLInputElement;
     const file = input?.files?.[0];
     if (!file) {
       alert(t("Please select a CONFIG file to load."));
@@ -182,36 +180,24 @@
 </script>
 
 <div class="groups-page">
-  <div class="group-controls">
-    <Search />
-
-    <div class="group-controls-actions">
-      <Tooltip value={t("Save Changes")}>
-        <Button
-          onclick={() => store.saveChanges()}
-          id="save-changes"
-          class="accent"
-          inactive={!store.canSave}
-        >
-          <Save size={22} />
-        </Button>
-      </Tooltip>
-      <Tooltip value={t("Import Config")}>
-        <input type="file" id="import-config" hidden accept=".mtrickle" onchange={importConfig} />
-        <Button onclick={() => document.getElementById("import-config")!.click()}>
-          <Import size={22} />
-        </Button>
-      </Tooltip>
-      <Tooltip value={t("Export Config")}>
-        <Button onclick={exportConfig}>
-          <Export size={22} />
-        </Button>
-      </Tooltip>
-      <Tooltip value={t("Add Group")}>
-        <Button onclick={() => store.addGroup()}><Add size={22} /></Button>
-      </Tooltip>
-    </div>
-  </div>
+  <PageControls
+    actionsClass="group-controls-actions"
+    controlsClass="group-controls"
+    addLabel={t("Add Group")}
+    canSave={store.canSave}
+    exportLabel={t("Export Config")}
+    importLabel={t("Import Config")}
+    onAdd={() => store.addGroup()}
+    onExport={exportConfig}
+    onImport={importConfig}
+    onSave={() => store.saveChanges()}
+    saveButtonId="save-changes"
+    saveLabel={t("Save Changes")}
+  >
+    {#snippet search()}
+      <Search />
+    {/snippet}
+  </PageControls>
 
   {#if store.fetchError}
     <Placeholder variant="error" minHeight="auto" subtitle={t("Check connection or try again")}>
@@ -345,78 +331,5 @@
 
   :global(html[data-dnd-scope="group"]) .group-drop-slot:global(.dragover) {
     opacity: 1;
-  }
-
-  .group-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: nowrap;
-    gap: 0.75rem;
-    padding: 0.3rem 0rem;
-    margin-bottom: 1rem;
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
-  }
-
-  @media (max-width: 570px) {
-    .group-controls {
-      display: block;
-      padding: 0.3rem 0;
-      padding-bottom: 0;
-      transition: padding-bottom 220ms cubic-bezier(0.2, 0, 0.2, 1);
-      --row-h: 43px;
-      --gap: 10px;
-      --actions-top: 0.3rem;
-    }
-
-    .group-controls :global(.group-controls-search) {
-      width: max-content;
-      transition: width 220ms cubic-bezier(0.2, 0, 0.2, 1);
-    }
-
-    .group-controls-actions {
-      position: absolute;
-      right: 0;
-      top: var(--actions-top);
-      height: var(--row-h);
-      transition: top 220ms cubic-bezier(0.2, 0, 0.2, 1);
-    }
-
-    .group-controls:has(:global(.search-container:focus-within)),
-    .group-controls:has(:global(.search-input:not(:placeholder-shown))) {
-      padding-bottom: calc(var(--row-h) + var(--gap));
-      --actions-top: calc(0.3rem + var(--row-h) + var(--gap));
-    }
-
-    .group-controls:has(:global(.search-container:focus-within)) :global(.group-controls-search),
-    .group-controls:has(:global(.search-input:not(:placeholder-shown))) :global(.group-controls-search) {
-      width: 100%;
-    }
-
-    .group-controls:has(:global(.search-container:focus-within)) :global(.search-container),
-    .group-controls:has(:global(.search-input:not(:placeholder-shown))) :global(.search-container) {
-      width: 100%;
-    }
-
-    .group-controls:has(:global(.search-container:focus-within)) :global(.search-container .input-wrapper),
-    .group-controls:has(:global(.search-input:not(:placeholder-shown)))
-      :global(.search-container .input-wrapper) {
-      width: 100%;
-    }
-  }
-
-  @media (max-width: 700px) {
-    .group-controls {
-      margin-bottom: 1rem;
-    }
-  }
-
-  .group-controls-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
   }
 </style>
