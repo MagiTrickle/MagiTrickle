@@ -29,6 +29,13 @@ ifeq ($(strip $(PKG_VERSION)),)
 		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
 	endif
 endif
+ifeq ($(strip $(PKG_VERSION_DISPLAY)),)
+	ifeq ($(strip $(PKG_VERSION_PRERELEASE)),)
+		PKG_VERSION_DISPLAY := $(PKG_VERSION)
+	else
+		PKG_VERSION_DISPLAY := $(PKG_VERSION_PRERELEASE) ($(COMMIT))
+	endif
+endif
 PKG_VERSION_APK := $(shell echo "$(PKG_VERSION)" | sed -E 's/~git([0-9]+)\.[^.]+$$/_pre\1/')
 PKG_REVISION ?= 1
 
@@ -119,6 +126,7 @@ _return_export_dynamic_env:
 	@echo "COMMITS_SINCE_TAG=$(COMMITS_SINCE_TAG)"
 	@echo "PKG_REVISION=$(PKG_REVISION)"
 	@echo "PKG_VERSION=$(PKG_VERSION)"
+	@echo "PKG_VERSION_DISPLAY=$(PKG_VERSION_DISPLAY)"
 	@echo "PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)"
 	@echo "PRERELEASE_DATE=$(PRERELEASE_DATE)"
 	@echo "TAG=$(TAG)"
@@ -192,7 +200,7 @@ $(STAMPS_DIR)/build-properties-frontend: FORCE
 	@echo "$(FRONTEND_BUILD_PROPERTIES)" | cmp -s - $@ || echo "$(FRONTEND_BUILD_PROPERTIES)" > $@
 
 $(STAMPS_DIR)/build-frontend: $(STAMPS_DIR)/download-frontend $(FRONTEND_SOURCES) $(STAMPS_DIR)/build-properties-frontend
-	cd ./src/frontend && VITE_PKG_VERSION="$(PKG_VERSION)" VITE_PKG_VERSION_IS_DEV=$(if $(PKG_VERSION_PRERELEASE),true,false) npm run build
+	cd ./src/frontend && VITE_PKG_VERSION="$(PKG_VERSION_DISPLAY)" VITE_PKG_VERSION_IS_DEV=$(if $(PKG_VERSION_PRERELEASE),true,false) npm run build
 
 	@mkdir -p $(STAMPS_DIR)
 	@touch "$(STAMPS_DIR)/build-frontend"
