@@ -158,7 +158,7 @@ download_backend: $(STAMPS_DIR)/download-backend
 
 redownload_backend:
 	@rm -f "$(STAMPS_DIR)/download-backend"
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) download_backend
+	PKG_VERSION="$(PKG_VERSION)" $(MAKE) download_backend
 
 $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME): FORCE
 	@mkdir -p $(STAMPS_DIR)
@@ -178,7 +178,7 @@ build_backend: $(STAMPS_DIR)/build-backend-$(UNIQUE_NAME)
 
 rebuild_backend:
 	@rm -f "$(STAMPS_DIR)/build-backend"
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) build_backend
+	PKG_VERSION="$(PKG_VERSION)" $(MAKE) build_backend
 
 # Frontend
 
@@ -192,7 +192,7 @@ download_frontend: $(STAMPS_DIR)/download-frontend
 
 redownload_frontend:
 	@rm -f "$(STAMPS_DIR)/download-frontend"
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) download_frontend
+	PKG_VERSION="$(PKG_VERSION)" $(MAKE) download_frontend
 
 $(STAMPS_DIR)/build-properties-frontend: FORCE
 	@mkdir -p $(STAMPS_DIR)
@@ -241,11 +241,11 @@ $(BUILD_KEY_APK_PUB): $(BUILD_KEY_APK_SEC)
 
 package:
 ifeq ($(PLATFORM),openwrt)
-	PKG_VERSION=$(PKG_VERSION) PKG_REVISION=$(PKG_REVISION) PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE) $(MAKE) package_ipk
-	PKG_VERSION=$(PKG_VERSION) PKG_REVISION=$(PKG_REVISION) PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE) $(MAKE) package_apk
+	PKG_VERSION="$(PKG_VERSION)" PKG_REVISION="$(PKG_REVISION)" PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) package_ipk
+	PKG_VERSION="$(PKG_VERSION)" PKG_REVISION="$(PKG_REVISION)" PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) package_apk
 endif
 ifeq ($(PLATFORM),entware)
-	PKG_VERSION=$(PKG_VERSION) PKG_REVISION=$(PKG_REVISION) PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE) $(MAKE) package_ipk
+	PKG_VERSION="$(PKG_VERSION)" PKG_REVISION="$(PKG_REVISION)" PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) package_ipk
 endif
 
 package_ipk: prepare_files
