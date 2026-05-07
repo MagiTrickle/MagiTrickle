@@ -106,7 +106,7 @@ FRONTEND_DEPENDENCIES := ./src/frontend/package.json ./src/frontend/package-lock
 FRONTEND_SOURCES := $(shell find ./src/frontend/src -type f 2>/dev/null)
 FRONTEND_SOURCES += ./src/frontend/vite.config.ts ./src/frontend/tsconfig.json
 FRONTEND_SOURCES += $(FRONTEND_DEPENDENCIES)
-FRONTEND_BUILD_PROPERTIES := PKG_VERSION=$(PKG_VERSION) PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)
+FRONTEND_BUILD_PROPERTIES := PKG_VERSION_DISPLAY=$(PKG_VERSION_DISPLAY) PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)
 
 # Packaging data
 
@@ -209,7 +209,7 @@ build_frontend: $(STAMPS_DIR)/build-frontend
 
 rebuild_frontend:
 	@rm -f "$(STAMPS_DIR)/build-frontend"
-	PKG_VERSION=$(PKG_VERSION) $(MAKE) build_frontend
+	PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) build_frontend
 
 # Packaging
 
