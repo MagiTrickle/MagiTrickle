@@ -122,15 +122,15 @@ BUILD_KEY_APK_PUB ?= public-key.pem
 all: download build package
 
 _return_export_dynamic_env:
-	@echo "COMMIT=$(COMMIT)"
-	@echo "COMMITS_SINCE_TAG=$(COMMITS_SINCE_TAG)"
-	@echo "PKG_REVISION=$(PKG_REVISION)"
-	@echo "PKG_VERSION=$(PKG_VERSION)"
-	@echo "PKG_VERSION_DISPLAY=$(PKG_VERSION_DISPLAY)"
-	@echo "PKG_VERSION_PRERELEASE=$(PKG_VERSION_PRERELEASE)"
-	@echo "PRERELEASE_DATE=$(PRERELEASE_DATE)"
-	@echo "TAG=$(TAG)"
-	@echo "TAG_RELEASE=$(TAG_RELEASE)"
+	@bash -c 'printf "COMMIT=%q\n" "$(COMMIT)"'
+	@bash -c 'printf "COMMITS_SINCE_TAG=%q\n" "$(COMMITS_SINCE_TAG)"'
+	@bash -c 'printf "PKG_REVISION=%q\n" "$(PKG_REVISION)"'
+	@bash -c 'printf "PKG_VERSION=%q\n" "$(PKG_VERSION)"'
+	@bash -c 'printf "PKG_VERSION_DISPLAY=%q\n" "$(PKG_VERSION_DISPLAY)"'
+	@bash -c 'printf "PKG_VERSION_PRERELEASE=%q\n" "$(PKG_VERSION_PRERELEASE)"'
+	@bash -c 'printf "PRERELEASE_DATE=%q\n" "$(PRERELEASE_DATE)"'
+	@bash -c 'printf "TAG=%q\n" "$(TAG)"'
+	@bash -c 'printf "TAG_RELEASE=%q\n" "$(TAG_RELEASE)"'
 
 clear:
 	rm -rf ./src/frontend/dist
