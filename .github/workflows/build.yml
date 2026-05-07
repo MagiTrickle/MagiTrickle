@@ -81,7 +81,7 @@ jobs:
         env:
           BUILD_KEY_APK_SEC_CONTENT: ${{ secrets.BUILD_KEY_APK_SEC }}
         run: |
-          export $(make _return_export_dynamic_env);
+          eval export $(make _return_export_dynamic_env);
           cp "${{ matrix.config }}" .config
           if [ -n "$BUILD_KEY_APK_SEC_CONTENT" ]; then
             KEY_FILE=$(mktemp)
