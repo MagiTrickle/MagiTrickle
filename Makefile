@@ -130,7 +130,6 @@ _return_export_dynamic_env:
 	@bash -c 'printf "PKG_VERSION_PRERELEASE=%q\n" "$(PKG_VERSION_PRERELEASE)"'
 	@bash -c 'printf "PRERELEASE_DATE=%q\n" "$(PRERELEASE_DATE)"'
 	@bash -c 'printf "TAG=%q\n" "$(TAG)"'
-	@bash -c 'printf "TAG_RELEASE=%q\n" "$(TAG_RELEASE)"'
 
 clear:
 	rm -rf ./src/frontend/dist
