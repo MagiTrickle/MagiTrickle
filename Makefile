@@ -39,6 +39,13 @@ endif
 PKG_VERSION_APK := $(shell echo "$(PKG_VERSION)" | sed -E 's/~git([0-9]+)\.[^.]+$$/_pre\1/')
 PKG_REVISION ?= 1
 
+# Export variables for recursive make executions
+
+export PKG_VERSION
+export PKG_REVISION
+export PKG_VERSION_DISPLAY
+export PKG_VERSION_PRERELEASE
+
 # Directories
 
 BUILDS_DIR := ./.build
@@ -158,7 +165,7 @@ download_backend: $(STAMPS_DIR)/download-backend
 
 redownload_backend:
 	@rm -f "$(STAMPS_DIR)/download-backend"
-	PKG_VERSION="$(PKG_VERSION)" $(MAKE) download_backend
+	$(MAKE) download_backend
 
 $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME): FORCE
 	@mkdir -p $(STAMPS_DIR)
@@ -178,7 +185,7 @@ build_backend: $(STAMPS_DIR)/build-backend-$(UNIQUE_NAME)
 
 rebuild_backend:
 	@rm -f "$(STAMPS_DIR)/build-backend"
-	PKG_VERSION="$(PKG_VERSION)" $(MAKE) build_backend
+	$(MAKE) build_backend
 
 # Frontend
 
@@ -192,7 +199,7 @@ download_frontend: $(STAMPS_DIR)/download-frontend
 
 redownload_frontend:
 	@rm -f "$(STAMPS_DIR)/download-frontend"
-	PKG_VERSION="$(PKG_VERSION)" $(MAKE) download_frontend
+	$(MAKE) download_frontend
 
 $(STAMPS_DIR)/build-properties-frontend: FORCE
 	@mkdir -p $(STAMPS_DIR)
@@ -208,7 +215,7 @@ build_frontend: $(STAMPS_DIR)/build-frontend
 
 rebuild_frontend:
 	@rm -f "$(STAMPS_DIR)/build-frontend"
-	PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) build_frontend
+	$(MAKE) build_frontend
 
 # Packaging
 
@@ -241,11 +248,11 @@ $(BUILD_KEY_APK_PUB): $(BUILD_KEY_APK_SEC)
 
 package:
 ifeq ($(PLATFORM),openwrt)
-	PKG_VERSION="$(PKG_VERSION)" PKG_REVISION="$(PKG_REVISION)" PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) package_ipk
-	PKG_VERSION="$(PKG_VERSION)" PKG_REVISION="$(PKG_REVISION)" PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) package_apk
+	$(MAKE) package_ipk
+	$(MAKE) package_apk
 endif
 ifeq ($(PLATFORM),entware)
-	PKG_VERSION="$(PKG_VERSION)" PKG_REVISION="$(PKG_REVISION)" PKG_VERSION_DISPLAY="$(PKG_VERSION_DISPLAY)" PKG_VERSION_PRERELEASE="$(PKG_VERSION_PRERELEASE)" $(MAKE) package_ipk
+	$(MAKE) package_ipk
 endif
 
 package_ipk: prepare_files
