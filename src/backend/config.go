@@ -61,7 +61,7 @@ func applyIfSet[T any](dst *T, src *T) {
 }
 
 func (a *App) ImportConfig(cfg config.Config) error {
-	if !strings.HasPrefix(cfg.ConfigVersion, "0.1.") {
+	if !strings.HasPrefix(cfg.ConfigVersion, "0.") {
 		return ErrConfigUnsupportedVersion
 	}
 
@@ -227,7 +227,7 @@ func (a *App) ExportConfig() config.Config {
 	subscriptions := a.Subscriptions()
 
 	return config.Config{
-		ConfigVersion: "0.1.3",
+		ConfigVersion: constant.Version,
 		App: &config.App{
 			HTTPWeb: &config.HTTPWeb{
 				Enabled: &a.config.HTTPWeb.Enabled,
