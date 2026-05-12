@@ -12,7 +12,7 @@ import (
 	"magitrickle/models"
 
 	"github.com/dlclark/regexp2"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v2"
 )
 
 var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
