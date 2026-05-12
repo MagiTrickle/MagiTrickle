@@ -169,7 +169,7 @@ func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
 	defer a.stateMu.Unlock()
 
 	previous := a.subscriptions
-	a.subscriptions = cloneSubscriptions(subscriptions)
+	a.subscriptions = subscriptions
 	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		a.subscriptions = previous
 		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
@@ -193,8 +193,7 @@ func (a *App) AddSubscription(subscription *models.Subscription) error {
 			return app.ErrSubscriptionConflict
 		}
 	}
-	next := cloneSubscription(subscription)
-	a.subscriptions = append(a.subscriptions, next)
+	a.subscriptions = append(a.subscriptions, subscription)
 	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		a.subscriptions = a.subscriptions[:len(a.subscriptions)-1]
 		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
