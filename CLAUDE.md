@@ -52,6 +52,7 @@ go test ./tests/ -run TestInteg  # specific integration test
 The root package (`src/backend/*.go`) contains the `App` struct — the central coordinator:
 
 - **`app.go`** — `App` struct and CRUD methods for groups and subscriptions
+- **`config.go`** — `LoadConfig`/`SaveConfig`: load reads YAML directly into `models.Group`/`models.Subscription` (no intermediate config copies); save marshals live data under `stateMu.RLock()`
 - **`start.go`** — `App.Start()`: wires up DNS MITM proxy, iptables helper, HTTP/Unix API servers, and the netlink watcher
 - **`dns.go`** — DNS request/response hooks; on each resolved A/AAAA record, matched IPs are added to the appropriate ipset
 - **`rule_set.go`** — `RuleSet` wraps a group spec with ipset + iptables lifecycle (Enable/Disable/Sync)
@@ -63,8 +64,8 @@ Key sub-packages:
 |---|---|
 | `app/` | `Main` and `RuleSet` interfaces (used for testing and API layer) |
 | `api/` | HTTP server (chi, port 8080) and Unix socket; mounts `api/v1` |
-| `models/` | Data types: `Group`, `Rule`, `Subscription`, `AppConfig` |
-| `config/` | YAML-serializable config structs (imported/exported separately from runtime models) |
+| `models/` | Data types: `Group`, `Rule`, `Subscription`, `AppConfig`; `Group`, `Rule`, `Subscription` carry YAML struct tags and custom `UnmarshalYAML` (absent `enable` defaults to `true`) |
+| `config/` | YAML-serializable structs for app-level settings only (`App`, `HTTPWeb`, `DNSProxy`, etc.); groups and subscriptions are stored directly as `models.Group`/`models.Subscription` — no separate config types for them |
 | `constant/` | Default config values; platform-conditional paths and ignored interfaces via build tags (`entware`, `entware_kn`, `openwrt`) |
 | `groups/` | Builds `rulesets.Spec` from a `models.Group` for user-defined groups |
 | `subscriptions/` | Fetches, parses, and validates external domain lists; builds subscription rule sets |
