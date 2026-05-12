@@ -12,7 +12,7 @@ import (
 	"magitrickle/models"
 
 	"github.com/dlclark/regexp2"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v2"
 )
 
 var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
@@ -54,108 +54,77 @@ func (a *App) SaveConfig() error {
 	return nil
 }
 
+func applyIfSet[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
+}
+
 func (a *App) ImportConfig(cfg config.Config) error {
-	if !strings.HasPrefix(cfg.ConfigVersion, "0.1.") {
+	if !strings.HasPrefix(cfg.ConfigVersion, "0.") {
 		return ErrConfigUnsupportedVersion
 	}
 
 	if cfg.App != nil {
 		if cfg.App.HTTPWeb != nil {
-			if cfg.App.HTTPWeb.Enabled != nil {
-				a.config.HTTPWeb.Enabled = *cfg.App.HTTPWeb.Enabled
-			}
+			applyIfSet(&a.config.HTTPWeb.Enabled, cfg.App.HTTPWeb.Enabled)
+			applyIfSet(&a.config.HTTPWeb.Skin, cfg.App.HTTPWeb.Skin)
 			if cfg.App.HTTPWeb.Host != nil {
-				if cfg.App.HTTPWeb.Host.Address != nil {
-					a.config.HTTPWeb.Host.Address = *cfg.App.HTTPWeb.Host.Address
-				}
-				if cfg.App.HTTPWeb.Host.Port != nil {
-					a.config.HTTPWeb.Host.Port = *cfg.App.HTTPWeb.Host.Port
-				}
+				applyIfSet(&a.config.HTTPWeb.Host.Address, cfg.App.HTTPWeb.Host.Address)
+				applyIfSet(&a.config.HTTPWeb.Host.Port, cfg.App.HTTPWeb.Host.Port)
 			}
-			if cfg.App.HTTPWeb.Skin != nil {
-				a.config.HTTPWeb.Skin = *cfg.App.HTTPWeb.Skin
-			}
-		}
-
-		if cfg.App.HTTPWeb != nil && cfg.App.HTTPWeb.Auth != nil {
-			if cfg.App.HTTPWeb.Auth.Enabled != nil {
-				a.config.HTTPWeb.Auth.Enabled = *cfg.App.HTTPWeb.Auth.Enabled
+			if cfg.App.HTTPWeb.Auth != nil {
+				applyIfSet(&a.config.HTTPWeb.Auth.Enabled, cfg.App.HTTPWeb.Auth.Enabled)
 			}
 		}
 
 		if cfg.App.DNSProxy != nil {
 			if cfg.App.DNSProxy.Upstream != nil {
-				if cfg.App.DNSProxy.Upstream.Address != nil {
-					a.config.DNSProxy.Upstream.Address = *cfg.App.DNSProxy.Upstream.Address
-				}
-				if cfg.App.DNSProxy.Upstream.Port != nil {
-					a.config.DNSProxy.Upstream.Port = *cfg.App.DNSProxy.Upstream.Port
-				}
+				applyIfSet(&a.config.DNSProxy.Upstream.Address, cfg.App.DNSProxy.Upstream.Address)
+				applyIfSet(&a.config.DNSProxy.Upstream.Port, cfg.App.DNSProxy.Upstream.Port)
 			}
 			if cfg.App.DNSProxy.Host != nil {
-				if cfg.App.DNSProxy.Host.Address != nil {
-					a.config.DNSProxy.Host.Address = *cfg.App.DNSProxy.Host.Address
-				}
-				if cfg.App.DNSProxy.Host.Port != nil {
-					a.config.DNSProxy.Host.Port = *cfg.App.DNSProxy.Host.Port
-				}
+				applyIfSet(&a.config.DNSProxy.Host.Address, cfg.App.DNSProxy.Host.Address)
+				applyIfSet(&a.config.DNSProxy.Host.Port, cfg.App.DNSProxy.Host.Port)
 			}
-			if cfg.App.DNSProxy.DisableRemap53 != nil {
-				a.config.DNSProxy.DisableRemap53 = *cfg.App.DNSProxy.DisableRemap53
-			}
-			if cfg.App.DNSProxy.DisableFakePTR != nil {
-				a.config.DNSProxy.DisableFakePTR = *cfg.App.DNSProxy.DisableFakePTR
-			}
-			if cfg.App.DNSProxy.DisableDropAAAA != nil {
-				a.config.DNSProxy.DisableDropAAAA = *cfg.App.DNSProxy.DisableDropAAAA
-			}
-			if cfg.App.DNSProxy.MaxIdleConns != nil {
-				a.config.DNSProxy.MaxIdleConns = *cfg.App.DNSProxy.MaxIdleConns
-			}
-			if cfg.App.DNSProxy.MaxConcurrent != nil {
-				a.config.DNSProxy.MaxConcurrent = *cfg.App.DNSProxy.MaxConcurrent
-			}
+			applyIfSet(&a.config.DNSProxy.DisableRemap53, cfg.App.DNSProxy.DisableRemap53)
+			applyIfSet(&a.config.DNSProxy.DisableFakePTR, cfg.App.DNSProxy.DisableFakePTR)
+			applyIfSet(&a.config.DNSProxy.DisableDropAAAA, cfg.App.DNSProxy.DisableDropAAAA)
+			applyIfSet(&a.config.DNSProxy.MaxIdleConns, cfg.App.DNSProxy.MaxIdleConns)
+			applyIfSet(&a.config.DNSProxy.MaxConcurrent, cfg.App.DNSProxy.MaxConcurrent)
 			if cfg.App.DNSProxy.Timeout != nil {
-				a.config.DNSProxy.Timeout = time.Duration(*cfg.App.DNSProxy.Timeout) * time.Millisecond
+				// TODO: Remove this align to milliseconds before release 1.0.0
+				t := *cfg.App.DNSProxy.Timeout
+				if t < time.Millisecond {
+					t *= time.Millisecond
+				}
+				a.config.DNSProxy.Timeout = t
 			}
 		}
 
 		if cfg.App.Netfilter != nil {
 			if cfg.App.Netfilter.IPTables != nil {
-				if cfg.App.Netfilter.IPTables.ChainPrefix != nil {
-					a.config.Netfilter.IPTables.ChainPrefix = *cfg.App.Netfilter.IPTables.ChainPrefix
-				}
+				applyIfSet(&a.config.Netfilter.IPTables.ChainPrefix, cfg.App.Netfilter.IPTables.ChainPrefix)
 			}
 			if cfg.App.Netfilter.IPSet != nil {
-				if cfg.App.Netfilter.IPSet.TablePrefix != nil {
-					a.config.Netfilter.IPSet.TablePrefix = *cfg.App.Netfilter.IPSet.TablePrefix
-				}
+				applyIfSet(&a.config.Netfilter.IPSet.TablePrefix, cfg.App.Netfilter.IPSet.TablePrefix)
 				if cfg.App.Netfilter.IPSet.AdditionalTTL != nil {
-					a.config.Netfilter.IPSet.AdditionalTTL = *cfg.App.Netfilter.IPSet.AdditionalTTL
+					// TODO: Remove this align to seconds before release 1.0.0
+					t := *cfg.App.Netfilter.IPSet.AdditionalTTL
+					if t < time.Second {
+						t *= time.Second
+					}
+					a.config.Netfilter.IPSet.AdditionalTTL = t
 				}
 			}
-			if cfg.App.Netfilter.DisableIPv4 != nil {
-				a.config.Netfilter.DisableIPv4 = *cfg.App.Netfilter.DisableIPv4
-			}
-			if cfg.App.Netfilter.DisableIPv6 != nil {
-				a.config.Netfilter.DisableIPv6 = *cfg.App.Netfilter.DisableIPv6
-			}
-			if cfg.App.Netfilter.StartMarkTableIndex != nil {
-				a.config.Netfilter.StartMarkTableIndex = *cfg.App.Netfilter.StartMarkTableIndex
-			}
+			applyIfSet(&a.config.Netfilter.DisableIPv4, cfg.App.Netfilter.DisableIPv4)
+			applyIfSet(&a.config.Netfilter.DisableIPv6, cfg.App.Netfilter.DisableIPv6)
+			applyIfSet(&a.config.Netfilter.StartMarkTableIndex, cfg.App.Netfilter.StartMarkTableIndex)
 		}
 
-		if cfg.App.Link != nil {
-			a.config.Link = *cfg.App.Link
-		}
-
-		if cfg.App.ShowAllInterfaces != nil {
-			a.config.ShowAllInterfaces = *cfg.App.ShowAllInterfaces
-		}
-
-		if cfg.App.LogLevel != nil {
-			a.config.LogLevel = *cfg.App.LogLevel
-		}
+		applyIfSet(&a.config.Link, cfg.App.Link)
+		applyIfSet(&a.config.ShowAllInterfaces, cfg.App.ShowAllInterfaces)
+		applyIfSet(&a.config.LogLevel, cfg.App.LogLevel)
 	}
 
 	a.subscriptionSyncMu.Lock()
@@ -270,7 +239,7 @@ func (a *App) ExportConfig() config.Config {
 	subscriptions := a.Subscriptions()
 
 	return config.Config{
-		ConfigVersion: "0.1.3",
+		ConfigVersion: constant.Version,
 		App: &config.App{
 			HTTPWeb: &config.HTTPWeb{
 				Enabled: &a.config.HTTPWeb.Enabled,
@@ -297,7 +266,7 @@ func (a *App) ExportConfig() config.Config {
 				DisableDropAAAA: &a.config.DNSProxy.DisableDropAAAA,
 				MaxIdleConns:    &a.config.DNSProxy.MaxIdleConns,
 				MaxConcurrent:   &a.config.DNSProxy.MaxConcurrent,
-				Timeout:         func(u uint) *uint { return &u }(uint(a.config.DNSProxy.Timeout.Milliseconds())),
+				Timeout:         &a.config.DNSProxy.Timeout,
 			},
 			Netfilter: &config.Netfilter{
 				IPTables: &config.IPTables{

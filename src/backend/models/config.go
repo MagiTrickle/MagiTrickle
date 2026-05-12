@@ -57,5 +57,5 @@ type AppConfigIPTables struct {
 
 type AppConfigIPSet struct {
 	TablePrefix   string
-	AdditionalTTL uint32
+	AdditionalTTL time.Duration
 }

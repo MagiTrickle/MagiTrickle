@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 type App struct {
 	HTTPWeb           *HTTPWeb   `yaml:"httpWeb"`
 	DNSProxy          *DNSProxy  `yaml:"dnsProxy"`
@@ -33,7 +35,7 @@ type DNSProxy struct {
 	DisableDropAAAA *bool           `yaml:"disableDropAAAA"`
 	MaxIdleConns    *uint           `yaml:"maxIdleConns"`
 	MaxConcurrent   *uint           `yaml:"maxConcurrent"`
-	Timeout         *uint           `yaml:"timeout"`
+	Timeout         *time.Duration  `yaml:"timeout"`
 }
 
 type DNSProxyServer struct {
@@ -54,6 +56,6 @@ type IPTables struct {
 }
 
 type IPSet struct {
-	TablePrefix   *string `yaml:"tablePrefix"`
-	AdditionalTTL *uint32 `yaml:"additionalTTL"`
+	TablePrefix   *string        `yaml:"tablePrefix"`
+	AdditionalTTL *time.Duration `yaml:"additionalTTL"`
 }
