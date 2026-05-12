@@ -93,7 +93,12 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			applyIfSet(&a.config.DNSProxy.MaxIdleConns, cfg.App.DNSProxy.MaxIdleConns)
 			applyIfSet(&a.config.DNSProxy.MaxConcurrent, cfg.App.DNSProxy.MaxConcurrent)
 			if cfg.App.DNSProxy.Timeout != nil {
-				a.config.DNSProxy.Timeout = time.Duration(*cfg.App.DNSProxy.Timeout) * time.Millisecond
+				// TODO: Remove this align to milliseconds before release 1.0.0
+				t := *cfg.App.DNSProxy.Timeout
+				if t < time.Millisecond {
+					t *= time.Millisecond
+				}
+				a.config.DNSProxy.Timeout = t
 			}
 		}
 
@@ -254,7 +259,7 @@ func (a *App) ExportConfig() config.Config {
 				DisableDropAAAA: &a.config.DNSProxy.DisableDropAAAA,
 				MaxIdleConns:    &a.config.DNSProxy.MaxIdleConns,
 				MaxConcurrent:   &a.config.DNSProxy.MaxConcurrent,
-				Timeout:         func(u uint) *uint { return &u }(uint(a.config.DNSProxy.Timeout.Milliseconds())),
+				Timeout:         &a.config.DNSProxy.Timeout,
 			},
 			Netfilter: &config.Netfilter{
 				IPTables: &config.IPTables{
