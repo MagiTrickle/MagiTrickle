@@ -140,68 +140,20 @@ func (a *App) ImportConfig(cfg config.Config) error {
 		}
 		a.userRuleSets = a.userRuleSets[:0]
 
-		// импортируем новые группы
 		for _, group := range *cfg.Groups {
-			rules := make([]*models.Rule, len(group.Rules))
-			for idx, rule := range group.Rules {
-				rules[idx] = &models.Rule{
-					ID:     rule.ID,
-					Name:   rule.Name,
-					Type:   rule.Type,
-					Rule:   rule.Rule,
-					Enable: rule.Enable,
-				}
-			}
 			if match, _ := colorRegExp.MatchString(group.Color); !match {
 				group.Color = "#ffffff"
 			} else {
 				group.Color = strings.ToLower(group.Color)
 			}
-			enable := true
-			if group.Enable != nil {
-				enable = *group.Enable
-			}
-			err := a.addGroupLocked(&models.Group{
-				ID:        group.ID,
-				Name:      group.Name,
-				Color:     group.Color,
-				Interface: group.Interface,
-				Enable:    enable,
-				Rules:     rules,
-			})
-			if err != nil {
+			if err := a.addGroupLocked(group); err != nil {
 				return err
 			}
 		}
 	}
 
 	if cfg.Subscriptions != nil {
-		a.subscriptions = a.subscriptions[:0]
-		for _, sub := range *cfg.Subscriptions {
-			enable := true
-			if sub.Enable != nil {
-				enable = *sub.Enable
-			}
-			rules := make([]*models.SubscriptionRule, len(sub.Rules))
-			for idx, rule := range sub.Rules {
-				rules[idx] = &models.SubscriptionRule{
-					ID:     rule.ID,
-					Rule:   rule.Rule,
-					Type:   rule.Type,
-					Enable: rule.Enable,
-				}
-			}
-			a.subscriptions = append(a.subscriptions, &models.Subscription{
-				ID:         sub.ID,
-				Name:       sub.Name,
-				Interface:  sub.Interface,
-				Enable:     enable,
-				URL:        sub.URL,
-				Interval:   sub.Interval,
-				LastUpdate: sub.LastUpdate,
-				Rules:      rules,
-			})
-		}
+		a.subscriptions = append(a.subscriptions[:0], *cfg.Subscriptions...)
 	} else {
 		a.subscriptions = a.subscriptions[:0]
 	}
@@ -211,32 +163,15 @@ func (a *App) ImportConfig(cfg config.Config) error {
 
 func (a *App) ExportConfig() config.Config {
 	groupRefs := a.userRuleSetSnapshot()
-	groups := make([]config.Group, 0, len(groupRefs))
+	groups := make([]*models.Group, 0, len(groupRefs))
 	for _, group := range groupRefs {
 		groupModel := group.Model()
 		if groupModel == nil {
 			continue
 		}
-		groupCfg := config.Group{
-			ID:        groupModel.ID,
-			Name:      groupModel.Name,
-			Color:     groupModel.Color,
-			Interface: groupModel.Interface,
-			Enable:    &groupModel.Enable,
-			Rules:     make([]config.Rule, len(groupModel.Rules)),
-		}
-		for idx, rule := range groupModel.Rules {
-			groupCfg.Rules[idx] = config.Rule{
-				ID:     rule.ID,
-				Name:   rule.Name,
-				Type:   rule.Type,
-				Rule:   rule.Rule,
-				Enable: rule.Enable,
-			}
-		}
-		groups = append(groups, groupCfg)
+		groups = append(groups, groupModel)
 	}
-	subscriptions := a.Subscriptions()
+	subs := a.Subscriptions()
 
 	return config.Config{
 		ConfigVersion: constant.Version,
@@ -285,32 +220,6 @@ func (a *App) ExportConfig() config.Config {
 			LogLevel:          &a.config.LogLevel,
 		},
 		Groups:        &groups,
-		Subscriptions: exportSubscriptions(subscriptions),
+		Subscriptions: &subs,
 	}
-}
-
-func exportSubscriptions(subs []*models.Subscription) *[]config.Subscription {
-	list := make([]config.Subscription, len(subs))
-	for idx, sub := range subs {
-		rules := make([]config.SubscriptionRule, len(sub.Rules))
-		for rIdx, rule := range sub.Rules {
-			rules[rIdx] = config.SubscriptionRule{
-				ID:     rule.ID,
-				Rule:   rule.Rule,
-				Type:   rule.Type,
-				Enable: rule.Enable,
-			}
-		}
-		list[idx] = config.Subscription{
-			ID:         sub.ID,
-			Name:       sub.Name,
-			Interface:  sub.Interface,
-			Enable:     &sub.Enable,
-			URL:        sub.URL,
-			Interval:   sub.Interval,
-			LastUpdate: sub.LastUpdate,
-			Rules:      rules,
-		}
-	}
-	return &list
 }

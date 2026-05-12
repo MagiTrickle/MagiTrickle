@@ -19,11 +19,11 @@ const (
 )
 
 type Rule struct {
-	ID     intID.ID
-	Name   string
-	Type   string
-	Rule   string
-	Enable bool
+	ID     intID.ID `yaml:"id"`
+	Name   string   `yaml:"name"`
+	Type   string   `yaml:"type"`
+	Rule   string   `yaml:"rule"`
+	Enable bool     `yaml:"enable"`
 
 	compileOnce sync.Once
 	compileWait sync.WaitGroup
