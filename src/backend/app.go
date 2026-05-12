@@ -61,21 +61,12 @@ func (a *App) Config() models.AppConfig {
 	return a.config
 }
 
-// Groups возвращает список групп
-func (a *App) Groups() []app.RuleSet {
-	groupRefs := a.userRuleSetSnapshot()
-	groups := make([]app.RuleSet, len(groupRefs))
-	for i, g := range groupRefs {
-		groups[i] = g
-	}
-	return groups
-}
-
 // UserGroups returns only user-defined groups.
 func (a *App) UserGroups() []app.RuleSet {
-	groupRefs := a.userRuleSetSnapshot()
-	list := make([]app.RuleSet, len(groupRefs))
-	for i, g := range groupRefs {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	list := make([]app.RuleSet, len(a.userRuleSets))
+	for i, g := range a.userRuleSets {
 		list[i] = g
 	}
 	return list
@@ -272,15 +263,6 @@ func (a *App) ruleSetSnapshot() []*RuleSet {
 	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
 	list = append(list, a.userRuleSets...)
 	list = append(list, a.subscriptionRuleSets...)
-	return list
-}
-
-func (a *App) userRuleSetSnapshot() []*RuleSet {
-	a.stateMu.RLock()
-	defer a.stateMu.RUnlock()
-
-	list := make([]*RuleSet, len(a.userRuleSets))
-	copy(list, a.userRuleSets)
 	return list
 }
 

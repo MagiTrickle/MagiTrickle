@@ -22,7 +22,6 @@ var (
 
 type Main interface {
 	Config() models.AppConfig
-	Groups() []RuleSet
 	UserGroups() []RuleSet
 	ClearGroups()
 	AddGroup(groupModel *models.Group) error
