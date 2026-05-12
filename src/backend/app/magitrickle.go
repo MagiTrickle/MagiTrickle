@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"magitrickle/config"
 	"magitrickle/models"
 	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
@@ -40,8 +39,6 @@ type Main interface {
 	DnsOverrider() *netfilterTools.PortRemap
 	LoadConfig() error
 	SaveConfig() error
-	ImportConfig(cfg config.Config) error
-	ExportConfig() config.Config
 	ForceCommitIPTables() error
 	Start(ctx context.Context) (err error)
 }

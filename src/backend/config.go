@@ -20,6 +20,12 @@ var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
 const cfgFolderLocation = constant.AppStateDir
 const cfgFileLocation = cfgFolderLocation + "/config.yaml"
 
+func applyIfSet[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
+}
+
 func (a *App) LoadConfig() error {
 	cfgFile, err := os.ReadFile(cfgFileLocation)
 	if err != nil {
@@ -33,34 +39,7 @@ func (a *App) LoadConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config file: %w", err)
 	}
-	err = a.ImportConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to import config file: %w", err)
-	}
-	return nil
-}
 
-func (a *App) SaveConfig() error {
-	out, err := yaml.Marshal(a.ExportConfig())
-	if err != nil {
-		return fmt.Errorf("failed to marshal config file: %w", err)
-	}
-	if err := os.MkdirAll(cfgFolderLocation, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create config folder: %w", err)
-	}
-	if err := os.WriteFile(cfgFileLocation, out, 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-	return nil
-}
-
-func applyIfSet[T any](dst *T, src *T) {
-	if src != nil {
-		*dst = *src
-	}
-}
-
-func (a *App) ImportConfig(cfg config.Config) error {
 	if !strings.HasPrefix(cfg.ConfigVersion, "0.") {
 		return ErrConfigUnsupportedVersion
 	}
@@ -161,19 +140,18 @@ func (a *App) ImportConfig(cfg config.Config) error {
 	return a.syncSubscriptionRuleSetsLocked()
 }
 
-func (a *App) ExportConfig() config.Config {
-	groupRefs := a.userRuleSetSnapshot()
-	groups := make([]*models.Group, 0, len(groupRefs))
-	for _, group := range groupRefs {
-		groupModel := group.Model()
-		if groupModel == nil {
-			continue
-		}
-		groups = append(groups, groupModel)
-	}
-	subs := a.Subscriptions()
+func (a *App) SaveConfig() error {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
 
-	return config.Config{
+	groups := make([]*models.Group, 0, len(a.userRuleSets))
+	for _, rs := range a.userRuleSets {
+		if gm := rs.Model(); gm != nil {
+			groups = append(groups, gm)
+		}
+	}
+
+	cfg := config.Config{
 		ConfigVersion: constant.Version,
 		App: &config.App{
 			HTTPWeb: &config.HTTPWeb{
@@ -220,6 +198,17 @@ func (a *App) ExportConfig() config.Config {
 			LogLevel:          &a.config.LogLevel,
 		},
 		Groups:        &groups,
-		Subscriptions: &subs,
+		Subscriptions: &a.subscriptions,
 	}
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config file: %w", err)
+	}
+	if err := os.MkdirAll(cfgFolderLocation, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create config folder: %w", err)
+	}
+	if err := os.WriteFile(cfgFileLocation, out, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	return nil
 }
