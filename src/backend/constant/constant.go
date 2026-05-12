@@ -34,7 +34,7 @@ var DefaultAppConfig = models.AppConfig{
 		},
 		IPSet: models.AppConfigIPSet{
 			TablePrefix:   "mt_",
-			AdditionalTTL: 3600,
+			AdditionalTTL: 1 * time.Hour,
 		},
 		DisableIPv4:         false,
 		DisableIPv6:         false,

@@ -178,7 +178,7 @@ func (a *App) processARecord(aRecord dns.A, idStr, clientAddrStr, network string
 		Str("network", network).
 		Msg("processing A record")
 
-	ttlDuration := aRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
+	ttlDuration := aRecord.Hdr.Ttl + uint32(a.config.Netfilter.IPSet.AdditionalTTL.Seconds())
 
 	a.recordsCache.AddAddress(domainName, aRecord.A, ttlDuration)
 
@@ -249,7 +249,7 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, idStr, clientAddrStr, netwo
 		Str("network", network).
 		Msg("processing AAAA record")
 
-	ttlDuration := aaaaRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
+	ttlDuration := aaaaRecord.Hdr.Ttl + uint32(a.config.Netfilter.IPSet.AdditionalTTL.Seconds())
 
 	a.recordsCache.AddAddress(domainName, aaaaRecord.AAAA, ttlDuration)
 
@@ -308,7 +308,7 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, idStr, clientAddrStr, ne
 		Str("network", network).
 		Msg("processing CNAME record")
 
-	ttlDuration := cNameRecord.Hdr.Ttl + a.config.Netfilter.IPSet.AdditionalTTL
+	ttlDuration := cNameRecord.Hdr.Ttl + uint32(a.config.Netfilter.IPSet.AdditionalTTL.Seconds())
 
 	a.recordsCache.AddAlias(domainName, targetName, ttlDuration)
 

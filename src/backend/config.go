@@ -108,7 +108,14 @@ func (a *App) ImportConfig(cfg config.Config) error {
 			}
 			if cfg.App.Netfilter.IPSet != nil {
 				applyIfSet(&a.config.Netfilter.IPSet.TablePrefix, cfg.App.Netfilter.IPSet.TablePrefix)
-				applyIfSet(&a.config.Netfilter.IPSet.AdditionalTTL, cfg.App.Netfilter.IPSet.AdditionalTTL)
+				if cfg.App.Netfilter.IPSet.AdditionalTTL != nil {
+					// TODO: Remove this align to seconds before release 1.0.0
+					t := *cfg.App.Netfilter.IPSet.AdditionalTTL
+					if t < time.Second {
+						t *= time.Second
+					}
+					a.config.Netfilter.IPSet.AdditionalTTL = t
+				}
 			}
 			applyIfSet(&a.config.Netfilter.DisableIPv4, cfg.App.Netfilter.DisableIPv4)
 			applyIfSet(&a.config.Netfilter.DisableIPv6, cfg.App.Netfilter.DisableIPv6)

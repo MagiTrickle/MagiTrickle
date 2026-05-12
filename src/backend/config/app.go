@@ -56,6 +56,6 @@ type IPTables struct {
 }
 
 type IPSet struct {
-	TablePrefix   *string `yaml:"tablePrefix"`
-	AdditionalTTL *uint32 `yaml:"additionalTTL"`
+	TablePrefix   *string        `yaml:"tablePrefix"`
+	AdditionalTTL *time.Duration `yaml:"additionalTTL"`
 }
