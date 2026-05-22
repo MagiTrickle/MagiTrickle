@@ -5,10 +5,10 @@ import (
 )
 
 type Group struct {
-	ID        intID.ID
-	Name      string
-	Color     string
-	Interface string
-	Enable    bool
-	Rules     []*Rule
+	ID        intID.ID `yaml:"id"`
+	Name      string   `yaml:"name"`
+	Color     string   `yaml:"color"`
+	Interface string   `yaml:"interface"`
+	Enable    bool     `yaml:"enable"`
+	Rules     []*Rule  `yaml:"rules"`
 }

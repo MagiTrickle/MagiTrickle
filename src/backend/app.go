@@ -61,21 +61,12 @@ func (a *App) Config() models.AppConfig {
 	return a.config
 }
 
-// Groups возвращает список групп
-func (a *App) Groups() []app.RuleSet {
-	groupRefs := a.userRuleSetSnapshot()
-	groups := make([]app.RuleSet, len(groupRefs))
-	for i, g := range groupRefs {
-		groups[i] = g
-	}
-	return groups
-}
-
 // UserGroups returns only user-defined groups.
 func (a *App) UserGroups() []app.RuleSet {
-	groupRefs := a.userRuleSetSnapshot()
-	list := make([]app.RuleSet, len(groupRefs))
-	for i, g := range groupRefs {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	list := make([]app.RuleSet, len(a.userRuleSets))
+	for i, g := range a.userRuleSets {
 		list[i] = g
 	}
 	return list
@@ -162,11 +153,14 @@ func (a *App) RemoveGroupByID(id intID.ID) bool {
 	return false
 }
 
-// Subscriptions returns the current subscriptions list.
-func (a *App) Subscriptions() []*models.Subscription {
+// WithSubscriptions invokes fn while holding the state read lock so the slice
+// passed in is a stable snapshot of the live subscriptions. Callers must treat
+// the slice and its elements as read-only and must not retain references past
+// the callback.
+func (a *App) WithSubscriptions(fn func([]*models.Subscription)) {
 	a.stateMu.RLock()
 	defer a.stateMu.RUnlock()
-	return cloneSubscriptions(a.subscriptions)
+	fn(a.subscriptions)
 }
 
 // ReplaceSubscriptions replaces the subscriptions list and rebuilds subscription rule sets.
@@ -178,7 +172,7 @@ func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
 	defer a.stateMu.Unlock()
 
 	previous := a.subscriptions
-	a.subscriptions = cloneSubscriptions(subscriptions)
+	a.subscriptions = subscriptions
 	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		a.subscriptions = previous
 		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
@@ -202,8 +196,7 @@ func (a *App) AddSubscription(subscription *models.Subscription) error {
 			return app.ErrSubscriptionConflict
 		}
 	}
-	next := cloneSubscription(subscription)
-	a.subscriptions = append(a.subscriptions, next)
+	a.subscriptions = append(a.subscriptions, subscription)
 	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
 		a.subscriptions = a.subscriptions[:len(a.subscriptions)-1]
 		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
@@ -272,47 +265,5 @@ func (a *App) ruleSetSnapshot() []*RuleSet {
 	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
 	list = append(list, a.userRuleSets...)
 	list = append(list, a.subscriptionRuleSets...)
-	return list
-}
-
-func (a *App) userRuleSetSnapshot() []*RuleSet {
-	a.stateMu.RLock()
-	defer a.stateMu.RUnlock()
-
-	list := make([]*RuleSet, len(a.userRuleSets))
-	copy(list, a.userRuleSets)
-	return list
-}
-
-func cloneSubscriptionRule(rule *models.SubscriptionRule) *models.SubscriptionRule {
-	if rule == nil {
-		return nil
-	}
-	clone := *rule
-	return &clone
-}
-
-func cloneSubscription(sub *models.Subscription) *models.Subscription {
-	if sub == nil {
-		return nil
-	}
-	clone := *sub
-	if sub.Rules != nil {
-		clone.Rules = make([]*models.SubscriptionRule, len(sub.Rules))
-		for i, rule := range sub.Rules {
-			clone.Rules[i] = cloneSubscriptionRule(rule)
-		}
-	}
-	return &clone
-}
-
-func cloneSubscriptions(subs []*models.Subscription) []*models.Subscription {
-	if subs == nil {
-		return nil
-	}
-	list := make([]*models.Subscription, len(subs))
-	for i, sub := range subs {
-		list[i] = cloneSubscription(sub)
-	}
 	return list
 }

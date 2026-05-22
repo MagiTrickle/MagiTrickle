@@ -56,14 +56,15 @@ func TestSyncSubscriptionByIDUsesOverrideURLAndPersistsURL(t *testing.T) {
 		t.Fatalf("updated rules = %#v, want new.example.com", updated.Rules)
 	}
 
-	snapshot := app.Subscriptions()
-	if len(snapshot) != 1 {
-		t.Fatalf("stored subscriptions = %d, want 1", len(snapshot))
-	}
-	if snapshot[0].URL != server.URL+"/new" {
-		t.Fatalf("stored URL = %q, want %q", snapshot[0].URL, server.URL+"/new")
-	}
-	if len(snapshot[0].Rules) != 1 || snapshot[0].Rules[0].Rule != "new.example.com" {
-		t.Fatalf("stored rules = %#v, want new.example.com", snapshot[0].Rules)
-	}
+	app.WithSubscriptions(func(snapshot []*models.Subscription) {
+		if len(snapshot) != 1 {
+			t.Fatalf("stored subscriptions = %d, want 1", len(snapshot))
+		}
+		if snapshot[0].URL != server.URL+"/new" {
+			t.Fatalf("stored URL = %q, want %q", snapshot[0].URL, server.URL+"/new")
+		}
+		if len(snapshot[0].Rules) != 1 || snapshot[0].Rules[0].Rule != "new.example.com" {
+			t.Fatalf("stored rules = %#v, want new.example.com", snapshot[0].Rules)
+		}
+	})
 }

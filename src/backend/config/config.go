@@ -1,8 +1,10 @@
 package config
 
+import "magitrickle/models"
+
 type Config struct {
-	ConfigVersion string          `yaml:"configVersion"`
-	App           *App            `yaml:"app"`
-	Groups        *[]Group        `yaml:"groups"`
-	Subscriptions *[]Subscription `yaml:"subscriptions"`
+	ConfigVersion string                  `yaml:"configVersion"`
+	App           *App                    `yaml:"app"`
+	Groups        *[]*models.Group        `yaml:"groups"`
+	Subscriptions *[]*models.Subscription `yaml:"subscriptions"`
 }

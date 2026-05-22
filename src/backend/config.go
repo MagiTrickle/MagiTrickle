@@ -20,6 +20,12 @@ var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
 const cfgFolderLocation = constant.AppStateDir
 const cfgFileLocation = cfgFolderLocation + "/config.yaml"
 
+func applyIfSet[T any](dst *T, src *T) {
+	if src != nil {
+		*dst = *src
+	}
+}
+
 func (a *App) LoadConfig() error {
 	cfgFile, err := os.ReadFile(cfgFileLocation)
 	if err != nil {
@@ -33,34 +39,7 @@ func (a *App) LoadConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config file: %w", err)
 	}
-	err = a.ImportConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to import config file: %w", err)
-	}
-	return nil
-}
 
-func (a *App) SaveConfig() error {
-	out, err := yaml.Marshal(a.ExportConfig())
-	if err != nil {
-		return fmt.Errorf("failed to marshal config file: %w", err)
-	}
-	if err := os.MkdirAll(cfgFolderLocation, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create config folder: %w", err)
-	}
-	if err := os.WriteFile(cfgFileLocation, out, 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-	return nil
-}
-
-func applyIfSet[T any](dst *T, src *T) {
-	if src != nil {
-		*dst = *src
-	}
-}
-
-func (a *App) ImportConfig(cfg config.Config) error {
 	if !strings.HasPrefix(cfg.ConfigVersion, "0.") {
 		return ErrConfigUnsupportedVersion
 	}
@@ -140,68 +119,20 @@ func (a *App) ImportConfig(cfg config.Config) error {
 		}
 		a.userRuleSets = a.userRuleSets[:0]
 
-		// импортируем новые группы
 		for _, group := range *cfg.Groups {
-			rules := make([]*models.Rule, len(group.Rules))
-			for idx, rule := range group.Rules {
-				rules[idx] = &models.Rule{
-					ID:     rule.ID,
-					Name:   rule.Name,
-					Type:   rule.Type,
-					Rule:   rule.Rule,
-					Enable: rule.Enable,
-				}
-			}
 			if match, _ := colorRegExp.MatchString(group.Color); !match {
 				group.Color = "#ffffff"
 			} else {
 				group.Color = strings.ToLower(group.Color)
 			}
-			enable := true
-			if group.Enable != nil {
-				enable = *group.Enable
-			}
-			err := a.addGroupLocked(&models.Group{
-				ID:        group.ID,
-				Name:      group.Name,
-				Color:     group.Color,
-				Interface: group.Interface,
-				Enable:    enable,
-				Rules:     rules,
-			})
-			if err != nil {
+			if err := a.addGroupLocked(group); err != nil {
 				return err
 			}
 		}
 	}
 
 	if cfg.Subscriptions != nil {
-		a.subscriptions = a.subscriptions[:0]
-		for _, sub := range *cfg.Subscriptions {
-			enable := true
-			if sub.Enable != nil {
-				enable = *sub.Enable
-			}
-			rules := make([]*models.SubscriptionRule, len(sub.Rules))
-			for idx, rule := range sub.Rules {
-				rules[idx] = &models.SubscriptionRule{
-					ID:     rule.ID,
-					Rule:   rule.Rule,
-					Type:   rule.Type,
-					Enable: rule.Enable,
-				}
-			}
-			a.subscriptions = append(a.subscriptions, &models.Subscription{
-				ID:         sub.ID,
-				Name:       sub.Name,
-				Interface:  sub.Interface,
-				Enable:     enable,
-				URL:        sub.URL,
-				Interval:   sub.Interval,
-				LastUpdate: sub.LastUpdate,
-				Rules:      rules,
-			})
-		}
+		a.subscriptions = append(a.subscriptions[:0], *cfg.Subscriptions...)
 	} else {
 		a.subscriptions = a.subscriptions[:0]
 	}
@@ -209,36 +140,18 @@ func (a *App) ImportConfig(cfg config.Config) error {
 	return a.syncSubscriptionRuleSetsLocked()
 }
 
-func (a *App) ExportConfig() config.Config {
-	groupRefs := a.userRuleSetSnapshot()
-	groups := make([]config.Group, 0, len(groupRefs))
-	for _, group := range groupRefs {
-		groupModel := group.Model()
-		if groupModel == nil {
-			continue
-		}
-		groupCfg := config.Group{
-			ID:        groupModel.ID,
-			Name:      groupModel.Name,
-			Color:     groupModel.Color,
-			Interface: groupModel.Interface,
-			Enable:    &groupModel.Enable,
-			Rules:     make([]config.Rule, len(groupModel.Rules)),
-		}
-		for idx, rule := range groupModel.Rules {
-			groupCfg.Rules[idx] = config.Rule{
-				ID:     rule.ID,
-				Name:   rule.Name,
-				Type:   rule.Type,
-				Rule:   rule.Rule,
-				Enable: rule.Enable,
-			}
-		}
-		groups = append(groups, groupCfg)
-	}
-	subscriptions := a.Subscriptions()
+func (a *App) SaveConfig() error {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
 
-	return config.Config{
+	groups := make([]*models.Group, 0, len(a.userRuleSets))
+	for _, rs := range a.userRuleSets {
+		if gm := rs.Model(); gm != nil {
+			groups = append(groups, gm)
+		}
+	}
+
+	cfg := config.Config{
 		ConfigVersion: constant.Version,
 		App: &config.App{
 			HTTPWeb: &config.HTTPWeb{
@@ -285,32 +198,17 @@ func (a *App) ExportConfig() config.Config {
 			LogLevel:          &a.config.LogLevel,
 		},
 		Groups:        &groups,
-		Subscriptions: exportSubscriptions(subscriptions),
+		Subscriptions: &a.subscriptions,
 	}
-}
-
-func exportSubscriptions(subs []*models.Subscription) *[]config.Subscription {
-	list := make([]config.Subscription, len(subs))
-	for idx, sub := range subs {
-		rules := make([]config.SubscriptionRule, len(sub.Rules))
-		for rIdx, rule := range sub.Rules {
-			rules[rIdx] = config.SubscriptionRule{
-				ID:     rule.ID,
-				Rule:   rule.Rule,
-				Type:   rule.Type,
-				Enable: rule.Enable,
-			}
-		}
-		list[idx] = config.Subscription{
-			ID:         sub.ID,
-			Name:       sub.Name,
-			Interface:  sub.Interface,
-			Enable:     &sub.Enable,
-			URL:        sub.URL,
-			Interval:   sub.Interval,
-			LastUpdate: sub.LastUpdate,
-			Rules:      rules,
-		}
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config file: %w", err)
 	}
-	return &list
+	if err := os.MkdirAll(cfgFolderLocation, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create config folder: %w", err)
+	}
+	if err := os.WriteFile(cfgFileLocation, out, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	return nil
 }
