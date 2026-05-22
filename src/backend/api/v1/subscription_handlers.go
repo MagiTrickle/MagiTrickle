@@ -28,7 +28,11 @@ import (
 //	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/subscriptions [get]
 func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
-	utils.WriteJson(w, http.StatusOK, RespFromSubscriptions(h.app.Subscriptions()))
+	var res types.SubscriptionsRes
+	h.app.WithSubscriptions(func(subs []*models.Subscription) {
+		res = RespFromSubscriptions(subs)
+	})
+	utils.WriteJson(w, http.StatusOK, res)
 }
 
 // PutSubscriptions
@@ -55,27 +59,36 @@ func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existingByID := make(map[intID.ID]*models.Subscription, len(h.app.Subscriptions()))
-	for _, sub := range h.app.Subscriptions() {
-		existingByID[sub.ID] = sub
-	}
-
 	newSubs := make([]*models.Subscription, len(*req.Subscriptions))
-	for i, subReq := range *req.Subscriptions {
-		if subReq.URL == "" {
-			utils.WriteError(w, http.StatusBadRequest, "subscription url is required")
-			return
+	var buildErr error
+	var buildErrStatus int
+	h.app.WithSubscriptions(func(subs []*models.Subscription) {
+		existingByID := make(map[intID.ID]*models.Subscription, len(subs))
+		for _, sub := range subs {
+			existingByID[sub.ID] = sub
 		}
-		var existing *models.Subscription
-		if subReq.ID != nil {
-			existing = existingByID[*subReq.ID]
+		for i, subReq := range *req.Subscriptions {
+			if subReq.URL == "" {
+				buildErr = errors.New("subscription url is required")
+				buildErrStatus = http.StatusBadRequest
+				return
+			}
+			var existing *models.Subscription
+			if subReq.ID != nil {
+				existing = existingByID[*subReq.ID]
+			}
+			sub, err := SubscriptionFromReq(subReq, existing)
+			if err != nil {
+				buildErr = err
+				buildErrStatus = http.StatusBadRequest
+				return
+			}
+			newSubs[i] = sub
 		}
-		sub, err := SubscriptionFromReq(subReq, existing)
-		if err != nil {
-			utils.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		newSubs[i] = sub
+	})
+	if buildErr != nil {
+		utils.WriteError(w, buildErrStatus, buildErr.Error())
+		return
 	}
 	if err := ensureUniqueSubscriptionIDs(newSubs); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, err.Error())

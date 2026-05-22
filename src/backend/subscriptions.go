@@ -106,84 +106,170 @@ func (a *App) StartSubscriptionAutoUpdate(ctx context.Context) {
 	}
 }
 
-func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride string) (*models.Subscription, bool, error) {
+func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride string) (app.SubscriptionSyncResult, bool, error) {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
 
 	a.stateMu.RLock()
-	target := cloneSubscription(findSubscriptionByID(a.subscriptions, id))
+	sub := findSubscriptionByID(a.subscriptions, id)
+	if sub == nil {
+		a.stateMu.RUnlock()
+		return app.SubscriptionSyncResult{}, false, app.ErrSubscriptionNotFound
+	}
+	fetchURL := urlOverride
+	if fetchURL == "" {
+		fetchURL = sub.URL
+	}
+	existingRules := sub.Rules
 	a.stateMu.RUnlock()
-	if target == nil {
-		return nil, false, app.ErrSubscriptionNotFound
-	}
-	if urlOverride == "" {
-		urlOverride = target.URL
-	}
-	target.URL = urlOverride
-	if target.URL == "" {
-		return nil, false, app.ErrSubscriptionInvalid
+
+	if fetchURL == "" {
+		return app.SubscriptionSyncResult{}, false, app.ErrSubscriptionInvalid
 	}
 
-	list, err := subscriptions.FetchList(target.URL)
+	list, err := subscriptions.FetchList(fetchURL)
 	if err != nil {
-		return nil, false, fmt.Errorf("%w: %v", app.ErrSubscriptionFetch, err)
+		return app.SubscriptionSyncResult{}, false, fmt.Errorf("%w: %v", app.ErrSubscriptionFetch, err)
 	}
 
-	changed := subscriptions.ApplyFetchedRules(target, list, now)
+	refreshed, rulesChanged := subscriptions.PlanRefresh(existingRules, list)
+	nowSeconds := uint32(now.Unix())
 
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
 
 	current := findSubscriptionByID(a.subscriptions, id)
 	if current == nil {
-		return nil, false, app.ErrSubscriptionNotFound
+		return app.SubscriptionSyncResult{}, false, app.ErrSubscriptionNotFound
 	}
-	previous := cloneSubscription(current)
-	urlChanged := current.URL != target.URL
 
-	current.LastCheck = target.LastCheck
-	current.URL = target.URL
-	if !changed {
-		return cloneSubscription(current), urlChanged, nil
-	}
-	current.Rules = target.Rules
-	current.LastUpdate = target.LastUpdate
-	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-		*current = *previous
-		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
-			return nil, true, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))
+	urlChanged := current.URL != fetchURL
+	prevURL := current.URL
+	prevLastCheck := current.LastCheck
+	prevLastUpdate := current.LastUpdate
+	prevRules := current.Rules
+
+	current.URL = fetchURL
+	current.LastCheck = nowSeconds
+
+	if rulesChanged {
+		current.Rules = refreshed
+		current.LastUpdate = nowSeconds
+		if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
+			current.URL = prevURL
+			current.LastCheck = prevLastCheck
+			current.LastUpdate = prevLastUpdate
+			current.Rules = prevRules
+			if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
+				return app.SubscriptionSyncResult{}, true, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))
+			}
+			return app.SubscriptionSyncResult{}, true, err
 		}
-		return nil, true, err
 	}
-	return cloneSubscription(current), true, nil
+
+	return app.SubscriptionSyncResult{
+		URL:        current.URL,
+		LastUpdate: current.LastUpdate,
+		Rules:      current.Rules,
+	}, urlChanged || rulesChanged, nil
 }
 
 func (a *App) SyncDueSubscriptions(now time.Time) (bool, error) {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
 
+	type dueRef struct {
+		id            intID.ID
+		url           string
+		existingRules []*models.SubscriptionRule
+	}
+
 	a.stateMu.RLock()
-	nextSubscriptions := cloneSubscriptions(a.subscriptions)
+	var due []dueRef
+	for _, sub := range a.subscriptions {
+		if !subscriptions.IsDue(sub, now) {
+			continue
+		}
+		due = append(due, dueRef{
+			id:            sub.ID,
+			url:           sub.URL,
+			existingRules: sub.Rules,
+		})
+	}
 	a.stateMu.RUnlock()
-	checked, changed := subscriptions.SyncDueSubscriptions(nextSubscriptions, now)
-	if !checked {
+
+	if len(due) == 0 {
 		return false, nil
 	}
-	if !changed {
-		a.stateMu.Lock()
-		a.subscriptions = nextSubscriptions
+
+	type planResult struct {
+		id        intID.ID
+		refreshed []*models.SubscriptionRule
+		changed   bool
+	}
+	plans := make([]planResult, 0, len(due))
+	for _, item := range due {
+		list, err := subscriptions.FetchList(item.url)
+		if err != nil {
+			log.Error().Err(err).Str("subscription", item.id.String()).Msg("failed to fetch subscription")
+			continue
+		}
+		refreshed, changed := subscriptions.PlanRefresh(item.existingRules, list)
+		plans = append(plans, planResult{
+			id:        item.id,
+			refreshed: refreshed,
+			changed:   changed,
+		})
+	}
+
+	if len(plans) == 0 {
+		return false, nil
+	}
+
+	nowSeconds := uint32(now.Unix())
+
+	type rollbackEntry struct {
+		sub        *models.Subscription
+		rules      []*models.SubscriptionRule
+		lastCheck  uint32
+		lastUpdate uint32
+	}
+
+	a.stateMu.Lock()
+
+	var rollback []rollbackEntry
+	anyChanged := false
+
+	for _, p := range plans {
+		sub := findSubscriptionByID(a.subscriptions, p.id)
+		if sub == nil {
+			continue
+		}
+		rollback = append(rollback, rollbackEntry{
+			sub:        sub,
+			rules:      sub.Rules,
+			lastCheck:  sub.LastCheck,
+			lastUpdate: sub.LastUpdate,
+		})
+		sub.LastCheck = nowSeconds
+		if p.changed {
+			sub.Rules = p.refreshed
+			sub.LastUpdate = nowSeconds
+			anyChanged = true
+		}
+	}
+
+	if !anyChanged {
 		a.stateMu.Unlock()
 		return false, nil
 	}
 
-	a.stateMu.Lock()
-	previousSubscriptions := a.subscriptions
-	a.subscriptions = nextSubscriptions
-	err := a.syncSubscriptionRuleSetsLocked()
-	a.stateMu.Unlock()
-	if err != nil {
-		a.stateMu.Lock()
-		a.subscriptions = previousSubscriptions
+	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
+		for _, r := range rollback {
+			r.sub.Rules = r.rules
+			r.sub.LastCheck = r.lastCheck
+			r.sub.LastUpdate = r.lastUpdate
+		}
 		rollbackErr := a.syncSubscriptionRuleSetsLocked()
 		a.stateMu.Unlock()
 		if rollbackErr != nil {
@@ -191,6 +277,8 @@ func (a *App) SyncDueSubscriptions(now time.Time) (bool, error) {
 		}
 		return true, err
 	}
+	a.stateMu.Unlock()
+
 	if err := a.SaveConfig(); err != nil {
 		log.Error().Err(err).Msg("failed to save config file")
 	}

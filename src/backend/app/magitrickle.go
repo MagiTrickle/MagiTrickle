@@ -20,6 +20,12 @@ var (
 	ErrSubscriptionFetch    = errors.New("subscription fetch failed")
 )
 
+type SubscriptionSyncResult struct {
+	URL        string
+	LastUpdate uint32
+	Rules      []*models.SubscriptionRule
+}
+
 type Main interface {
 	Config() models.AppConfig
 	UserGroups() []RuleSet
@@ -28,11 +34,11 @@ type Main interface {
 	RemoveGroupByIndex(idx int)
 	RemoveGroupByID(id intID.ID) bool
 	SyncSubscriptionRuleSets() error
-	Subscriptions() []*models.Subscription
+	WithSubscriptions(fn func([]*models.Subscription))
 	ReplaceSubscriptions(subscriptions []*models.Subscription) error
 	AddSubscription(subscription *models.Subscription) error
 	RemoveSubscriptionByID(id intID.ID) (bool, error)
-	SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride string) (*models.Subscription, bool, error)
+	SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride string) (result SubscriptionSyncResult, changed bool, err error)
 	SyncDueSubscriptions(now time.Time) (bool, error)
 	ListInterfaces() ([]net.Interface, error)
 	DnsOverrider() *netfilterTools.PortRemap

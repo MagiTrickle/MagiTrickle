@@ -9,11 +9,13 @@ import (
 )
 
 func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscription) (*models.Subscription, error) {
-	var sub *models.Subscription
-	if existing == nil {
-		sub = &models.Subscription{ID: intID.RandomID()}
+	sub := &models.Subscription{}
+	if existing != nil {
+		sub.ID = existing.ID
+		sub.LastUpdate = existing.LastUpdate
+		sub.LastCheck = existing.LastCheck
 	} else {
-		sub = existing
+		sub.ID = intID.RandomID()
 	}
 	if req.ID != nil {
 		if existing != nil && sub.ID != *req.ID {
@@ -38,34 +40,38 @@ func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscriptio
 	}
 
 	if req.Rules != nil {
+		var existingRules []*models.SubscriptionRule
+		if existing != nil {
+			existingRules = existing.Rules
+		}
 		newRules := make([]*models.SubscriptionRule, len(*req.Rules))
 		for i, ruleReq := range *req.Rules {
-			r, err := SubscriptionRuleFromReq(ruleReq, sub.Rules)
+			r, err := SubscriptionRuleFromReq(ruleReq, existingRules)
 			if err != nil {
 				return nil, err
 			}
 			newRules[i] = r
 		}
 		sub.Rules = newRules
+	} else if existing != nil {
+		sub.Rules = existing.Rules
 	}
 
 	return sub, nil
 }
 
 func SubscriptionRuleFromReq(ruleReq types.SubscriptionRuleReq, existingRules []*models.SubscriptionRule) (*models.SubscriptionRule, error) {
-	var rule *models.SubscriptionRule
+	rule := &models.SubscriptionRule{}
 	if ruleReq.ID != nil {
 		for _, r := range existingRules {
 			if r.ID == *ruleReq.ID {
-				rule = r
+				rule.ID = r.ID
 				break
 			}
 		}
 	}
-	if rule == nil {
-		rule = &models.SubscriptionRule{
-			ID: intID.RandomID(),
-		}
+	if rule.ID.IsZero() {
+		rule.ID = intID.RandomID()
 	}
 	rule.Rule = ruleReq.Rule
 	rule.Type = ruleReq.Type

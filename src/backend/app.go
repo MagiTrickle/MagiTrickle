@@ -153,11 +153,14 @@ func (a *App) RemoveGroupByID(id intID.ID) bool {
 	return false
 }
 
-// Subscriptions returns the current subscriptions list.
-func (a *App) Subscriptions() []*models.Subscription {
+// WithSubscriptions invokes fn while holding the state read lock so the slice
+// passed in is a stable snapshot of the live subscriptions. Callers must treat
+// the slice and its elements as read-only and must not retain references past
+// the callback.
+func (a *App) WithSubscriptions(fn func([]*models.Subscription)) {
 	a.stateMu.RLock()
 	defer a.stateMu.RUnlock()
-	return cloneSubscriptions(a.subscriptions)
+	fn(a.subscriptions)
 }
 
 // ReplaceSubscriptions replaces the subscriptions list and rebuilds subscription rule sets.
@@ -262,38 +265,5 @@ func (a *App) ruleSetSnapshot() []*RuleSet {
 	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
 	list = append(list, a.userRuleSets...)
 	list = append(list, a.subscriptionRuleSets...)
-	return list
-}
-
-func cloneSubscriptionRule(rule *models.SubscriptionRule) *models.SubscriptionRule {
-	if rule == nil {
-		return nil
-	}
-	clone := *rule
-	return &clone
-}
-
-func cloneSubscription(sub *models.Subscription) *models.Subscription {
-	if sub == nil {
-		return nil
-	}
-	clone := *sub
-	if sub.Rules != nil {
-		clone.Rules = make([]*models.SubscriptionRule, len(sub.Rules))
-		for i, rule := range sub.Rules {
-			clone.Rules[i] = cloneSubscriptionRule(rule)
-		}
-	}
-	return &clone
-}
-
-func cloneSubscriptions(subs []*models.Subscription) []*models.Subscription {
-	if subs == nil {
-		return nil
-	}
-	list := make([]*models.Subscription, len(subs))
-	for i, sub := range subs {
-		list[i] = cloneSubscription(sub)
-	}
 	return list
 }
