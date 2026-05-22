@@ -509,3 +509,18 @@ func (g *RuleSet) LinkUpHook(event netlink.LinkUpdate) error {
 
 	return g.ipsetToLink.LinkUpHook(event)
 }
+
+func (g *RuleSet) AddrChangeHook(event netlink.AddrUpdate) error {
+	g.locker.Lock()
+	defer g.locker.Unlock()
+
+	if !g.Enabled() {
+		return nil
+	}
+
+	if !g.ConfiguredEnabled() {
+		return nil
+	}
+
+	return g.ipsetToLink.AddrChangeHook(event)
+}

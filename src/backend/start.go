@@ -79,7 +79,13 @@ func (a *App) Start(ctx context.Context) (err error) {
 		return err
 	}
 	defer close(linkUpdateDone)
-	
+
+	addrUpdateChannel, addrUpdateDone, err := subscribeAddrUpdates()
+	if err != nil {
+		return err
+	}
+	defer close(addrUpdateDone)
+
 	newCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errChan := make(chan error)
@@ -141,6 +147,8 @@ func (a *App) Start(ctx context.Context) (err error) {
 		select {
 		case event := <-linkUpdateChannel:
 			a.handleLink(event)
+		case event := <-addrUpdateChannel:
+			a.handleAddr(event)
 		case err := <-errChan:
 			return err
 		case <-ctx.Done():
