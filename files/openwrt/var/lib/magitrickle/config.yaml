@@ -1,4 +1,4 @@
-configVersion: 0.1.3
+configVersion: 0.7.0
 app:
   httpWeb:
     enabled: true
@@ -20,13 +20,13 @@ app:
     disableDropAAAA: false
     maxIdleConns: 10
     maxConcurrent: 100
-    timeout: 5000
+    timeout: 5s
   netfilter:
     iptables:
       chainPrefix: MT_
     ipset:
       tablePrefix: mt_
-      additionalTTL: 3600
+      additionalTTL: 1h0m0s
     disableIPv4: false
     disableIPv6: false
     startMarkTableIndex: 1298229097
