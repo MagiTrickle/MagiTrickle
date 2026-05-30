@@ -19,7 +19,7 @@
     "test:unit": "deno test --no-check --ignore=tests/e2e tests/"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
+    "@playwright/test": "1.60.0",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tsconfig/svelte": "^5.0.4",
