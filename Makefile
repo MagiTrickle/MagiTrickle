@@ -14,18 +14,22 @@ PKG_MAINTAINER := Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
 
 ifeq ($(strip $(PKG_VERSION)),)
 	TAG := $(shell git describe --tags --abbrev=0 2> /dev/null)
-	PKG_VERSION := $(if $(TAG),$(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//'),0.0.0)
-	TAG_REVISION := $(shell echo "$(TAG)" | grep -oE 'rev[0-9]+$$' | sed 's/rev//')
-	ifneq ($(strip $(TAG_REVISION)),)
-		PKG_REVISION ?= $(TAG_REVISION)
+	COMMITS_SINCE_TAG := $(shell [ -n "$(TAG)" ] && git rev-list $(TAG)..HEAD --count 2>/dev/null || echo 0)
+
+	ifneq ($(strip $(TAG)),)
+		ifeq ($(strip $(COMMITS_SINCE_TAG)),0)
+			PKG_VERSION := $(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//')
+			TAG_REVISION := $(shell echo "$(TAG)" | grep -oE 'rev[0-9]+$$' | sed 's/rev//')
+			ifneq ($(strip $(TAG_REVISION)),)
+				PKG_REVISION ?= $(TAG_REVISION)
+			endif
+		endif
 	endif
 
-	COMMITS_SINCE_TAG := $(shell [ -n "$(TAG)" ] && git rev-list $(TAG)..HEAD --count 2>/dev/null || echo 0)
-	ifneq ($(or $(filter-out 0,$(COMMITS_SINCE_TAG)),$(if $(TAG),,1)),)
-		PKG_VERSION_PRERELEASE := $(shell echo "$(PKG_VERSION)" | awk -F. 'BEGIN{OFS="."} {$$NF=$$NF+1; print}')
+	ifeq ($(strip $(PKG_VERSION)),)
+		PKG_VERSION_PRERELEASE := $(if $(TAG),$(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//' | awk -F. 'BEGIN{OFS="."} {$$NF=$$NF+1; print}'),0.0.0)
 		PRERELEASE_DATE := $(shell date -u +%Y%m%d%H%M%S)
 		COMMIT := $(shell git rev-parse --short HEAD)
-
 		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
 	endif
 endif
