@@ -354,7 +354,11 @@
 
         <div class="group-actions">
           <Select
-            options={interfaces.list.map((item) => ({ value: item, label: item }))}
+            options={interfaces.list.map((item) => ({
+              value: item.id,
+              label: item.id,
+              description: item.name,
+            }))}
             bind:selected={group.interface}
           />
 

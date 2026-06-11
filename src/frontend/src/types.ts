@@ -89,5 +89,6 @@ export const RULE_TYPES = [
 export type Interfaces = {
   interfaces: {
     id: string;
+    name?: string;
   }[];
 };

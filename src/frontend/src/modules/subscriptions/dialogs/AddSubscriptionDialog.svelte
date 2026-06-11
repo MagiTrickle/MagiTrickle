@@ -47,7 +47,7 @@
     step = 1;
     url = "";
     name = "";
-    selectedInterface = interfaces.list[0] || "";
+    selectedInterface = interfaces.list[0]?.id || "";
     selectedInterval = 86400;
     rules = [];
     isLoading = false;
@@ -90,7 +90,7 @@
       rules = res.rules;
       step = 2;
       if (!selectedInterface) {
-        selectedInterface = interfaces.list[0] || "";
+        selectedInterface = interfaces.list[0]?.id || "";
       }
     } catch (e) {
       console.error(e);
@@ -209,7 +209,11 @@
               <span class="icon"><Network size={18} /></span>
               <Select
                 id="sub-interface"
-                options={interfaces.list.map((i) => ({ value: i, label: i }))}
+                options={interfaces.list.map((item) => ({
+                  value: item.id,
+                  label: item.id,
+                  description: item.name,
+                }))}
                 bind:selected={selectedInterface}
                 class="interface-select"
               />

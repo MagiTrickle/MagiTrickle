@@ -3,7 +3,7 @@
 
   import { Check, SelectOpen } from "./icons";
 
-  type Option = { value: string; label: string };
+  type Option = { value: string; label: string; description?: string };
   type Props = {
     options?: Option[];
     selected?: string;
@@ -20,9 +20,9 @@
     ...rest
   }: Props = $props();
 
-  const selected_label = $derived(
-    options.find((o) => o.value === selected)?.label ?? selected ?? "",
-  );
+  const selected_option = $derived(options.find((o) => o.value === selected));
+  const selected_label = $derived(selected_option?.label ?? selected ?? "");
+  const selected_description = $derived(selected_option?.description ?? "");
   const missing_selection = $derived(
     Boolean(selected) && !options.some((o) => o.value === selected),
   );
@@ -32,7 +32,12 @@
   <Select.Root type="single" {onValueChange} items={options} bind:value={selected}>
     <Select.Trigger aria-label={ariaLabel}>
       <div class="selected">
-        <div class="selected-value">{selected_label}</div>
+        <div class="selected-text">
+          <div class="selected-value">{selected_label}</div>
+          {#if selected_description}
+            <div class="selected-description">{selected_description}</div>
+          {/if}
+        </div>
         <div class="selected-open" aria-hidden="true">
           <SelectOpen size={16} />
         </div>
@@ -44,7 +49,12 @@
         <Select.Item value={option.value} label={option.label}>
           {#snippet children({ selected })}
             <div class="option">
-              <div class="option-label">{option.label}</div>
+              <div class="option-text">
+                <span class="option-label">{option.label}</span>
+                {#if option.description}
+                  <span class="option-description">{option.description}</span>
+                {/if}
+              </div>
               <div class="option-check">
                 {#if selected}<Check size={16} />{/if}
               </div>
@@ -127,10 +137,27 @@
     gap: 0.35rem;
     width: max-content;
   }
+  .selected-text {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.05;
+  }
   .selected-value {
     flex: 0 1 auto;
     min-width: 0;
     padding-left: 0.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .selected-description {
+    max-width: 10rem;
+    padding-left: 0.3rem;
+    color: var(--text-2);
+    font-size: 0.72em;
+    font-style: italic;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -163,8 +190,19 @@
     width: max-content;
     white-space: nowrap;
   }
-  .option-label {
+  .option-text {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.42rem;
+    min-width: 0;
+  }
+  .option-label,
+  .option-description {
     white-space: nowrap;
+  }
+  .option-description {
+    color: var(--text-2);
+    font-size: 0.9em;
   }
   .option-check {
     color: var(--text-2);
