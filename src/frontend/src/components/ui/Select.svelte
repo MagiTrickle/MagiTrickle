@@ -31,7 +31,10 @@
 <div class="select-wrap" class:missing={missing_selection} {...rest}>
   <Select.Root type="single" {onValueChange} items={options} bind:value={selected}>
     <Select.Trigger aria-label={ariaLabel}>
-      <div class="selected">
+      <div
+        class="selected"
+        class:has-description={selected_description}
+      >
         <div class="selected-text">
           <div class="selected-value">{selected_label}</div>
           {#if selected_description}
@@ -136,18 +139,22 @@
     align-items: center;
     gap: 0.35rem;
     width: max-content;
+    max-width: 100%;
   }
   .selected-text {
     display: flex;
     min-width: 0;
+    max-width: 100%;
     flex-direction: column;
-    align-items: center;
-    line-height: 1.05;
+    align-items: end;
+    gap: 0.08rem;
   }
   .selected-value {
     flex: 0 1 auto;
     min-width: 0;
+    max-width: 100%;
     padding-left: 0.3rem;
+    line-height: 1.05;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -156,7 +163,7 @@
     max-width: 10rem;
     padding-left: 0.3rem;
     color: var(--text-2);
-    font-size: 0.72em;
+    font-size: 0.55em;
     font-style: italic;
     white-space: nowrap;
     overflow: hidden;
@@ -211,5 +218,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  @media (max-width: 700px) {
+    .selected-text {
+      align-items: start;
+    }
   }
 </style>
