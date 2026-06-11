@@ -60,6 +60,10 @@ func (ipt *FakeIPTables) Proto() Protocol {
 	return ipt.proto
 }
 
+func (ipt *FakeIPTables) HasTable(table string) bool {
+	return true
+}
+
 func (ipt *FakeIPTables) Save() ([]byte, error) {
 	buf := new(bytes.Buffer)
 

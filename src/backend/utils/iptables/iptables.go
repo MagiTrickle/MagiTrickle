@@ -41,6 +41,10 @@ func (ipt *IPTables) Proto() Protocol {
 	return ipt.executable.Proto()
 }
 
+func (ipt *IPTables) HasTable(table string) bool {
+	return ipt.executable.HasTable(table)
+}
+
 func (ipt *IPTables) RegisterChainDelete(table, chainName string) error {
 	ipt.sync.Lock()
 	defer ipt.sync.Unlock()

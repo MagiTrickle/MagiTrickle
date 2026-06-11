@@ -7,6 +7,7 @@ import (
 )
 
 type realIPTables struct {
+	cmd        string
 	saveCmd    string
 	restoreCmd string
 	proto      Protocol
@@ -14,6 +15,7 @@ type realIPTables struct {
 
 func NewRealIPTables() *realIPTables {
 	return &realIPTables{
+		cmd:        "iptables",
 		saveCmd:    "iptables-save",
 		restoreCmd: "iptables-restore",
 		proto:      ProtocolIPv4,
@@ -22,6 +24,7 @@ func NewRealIPTables() *realIPTables {
 
 func NewRealIP6Tables() *realIPTables {
 	return &realIPTables{
+		cmd:        "ip6tables",
 		saveCmd:    "ip6tables-save",
 		restoreCmd: "ip6tables-restore",
 		proto:      ProtocolIPv6,
@@ -30,6 +33,10 @@ func NewRealIP6Tables() *realIPTables {
 
 func (ipt *realIPTables) Proto() Protocol {
 	return ipt.proto
+}
+
+func (ipt *realIPTables) HasTable(table string) bool {
+	return exec.Command(ipt.cmd, "-t", table, "-S").Run() == nil
 }
 
 func (ipt *realIPTables) Save() ([]byte, error) {

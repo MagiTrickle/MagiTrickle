@@ -65,7 +65,7 @@ func (a *App) Start(ctx context.Context) (err error) {
 			continue
 		}
 		ipt.RegisterChainPatch("filter", "FORWARD")
-		ipt.RegisterChainPatch("mangle", "PREROUTING")
+		ipt.RegisterChainPatch(a.nfHelper.MarkTable, "PREROUTING")
 		ipt.RegisterChainPatch("nat", "PREROUTING")
 		ipt.RegisterChainPatch("nat", "POSTROUTING")
 	}
