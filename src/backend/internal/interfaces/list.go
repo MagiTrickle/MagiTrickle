@@ -21,9 +21,9 @@ func List(showAll bool) ([]models.InterfaceInfo, error) {
 		networkInterfaces = filterManaged(networkInterfaces)
 	}
 
-	friendlyNames, err := descriptions()
+	friendlyNames, err := routerSpecificAPI().GetIfaceAliases()
 	if err != nil {
-		log.Debug().Err(err).Msg("failed to load interface descriptions")
+		log.Debug().Err(err).Msg("failed to load interface aliases")
 	}
 
 	interfaces := make([]models.InterfaceInfo, 0, len(networkInterfaces))
