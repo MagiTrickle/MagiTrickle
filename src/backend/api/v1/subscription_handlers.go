@@ -147,11 +147,11 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.app.AddSubscription(sub); err != nil {
-		if err.Error() == "subscription id conflict" {
-			utils.WriteError(w, http.StatusConflict, "subscription id conflict")
-			return
+		status := http.StatusInternalServerError
+		if errors.Is(err, app.ErrSubscriptionConflict) {
+			status = http.StatusConflict
 		}
-		utils.WriteError(w, http.StatusInternalServerError, err.Error())
+		utils.WriteError(w, status, err.Error())
 		return
 	}
 	if r.URL.Query().Get("save") != "false" {

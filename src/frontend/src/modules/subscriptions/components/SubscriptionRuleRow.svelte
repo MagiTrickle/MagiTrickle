@@ -5,10 +5,13 @@
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { t } from "../../../data/locale.svelte";
-  import { SUBSCRIPTIONS_STORE_CONTEXT, type SubscriptionsStore } from "../subscriptions.svelte";
 
   import { RULE_TYPES, type SubscriptionRule } from "../../../types";
   import { VALIDATOP_MAP } from "../../../utils/rule-validators";
+  import {
+    SUBSCRIPTIONS_STORE_CONTEXT,
+    type SubscriptionsStore,
+  } from "../subscriptions.svelte";
 
   type Props = {
     rule: SubscriptionRule;

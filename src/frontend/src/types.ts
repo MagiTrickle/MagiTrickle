@@ -86,11 +86,8 @@ export const RULE_TYPES = [
   { value: "subnet6", label: "IPv6 subnet" },
 ];
 
-export type InterfaceInfo = {
-  id: string;
-  name?: string;
-};
-
 export type Interfaces = {
-  interfaces: InterfaceInfo[];
+  interfaces: {
+    id: string;
+  }[];
 };

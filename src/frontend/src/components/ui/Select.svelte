@@ -3,7 +3,7 @@
 
   import { Check, SelectOpen } from "./icons";
 
-  type Option = { value: string; label: string; description?: string };
+  type Option = { value: string; label: string };
   type Props = {
     options?: Option[];
     selected?: string;
@@ -44,12 +44,7 @@
         <Select.Item value={option.value} label={option.label}>
           {#snippet children({ selected })}
             <div class="option">
-              <div class="option-copy">
-                <div class="option-label">{option.label}</div>
-                {#if option.description}
-                  <div class="option-description">{option.description}</div>
-                {/if}
-              </div>
+              <div class="option-label">{option.label}</div>
               <div class="option-check">
                 {#if selected}<Check size={16} />{/if}
               </div>
@@ -163,25 +158,12 @@
     display: inline-flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.2rem;
     padding: 0.1rem;
     width: max-content;
     white-space: nowrap;
   }
-  .option-copy {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.45rem;
-    min-width: 0;
-  }
   .option-label {
-    white-space: nowrap;
-    font-weight: 600;
-  }
-  .option-description {
-    color: var(--text-2);
-    font-size: 0.78rem;
-    font-style: italic;
     white-space: nowrap;
   }
   .option-check {

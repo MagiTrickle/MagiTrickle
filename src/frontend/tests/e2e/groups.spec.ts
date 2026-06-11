@@ -20,11 +20,7 @@ test.describe("Groups Management", () => {
 
     // Mock Interfaces fetch (it's called in App.svelte)
     await page.route("**/interfaces", async (route) => {
-      await route.fulfill({
-        json: {
-          interfaces: [{ id: "nwg0", name: "WireGuard tunnel" }, { id: "longinterf" }],
-        },
-      });
+      await route.fulfill({ json: { interfaces: ["eth0", "wlan0"] } });
     });
 
     await groupsPage.goto();
@@ -54,21 +50,6 @@ test.describe("Groups Management", () => {
     // Verify input value
     const input = (await groupsPage.getGroupHeader(0)).locator("input.group-name");
     await expect(input).toHaveValue(newName);
-  });
-
-  test("should show friendly interface labels and keep system id", async ({ page }) => {
-    await groupsPage.createGroup();
-
-    const groupHeader = await groupsPage.getGroupHeader(0);
-    const interfaceSelect = groupHeader.locator("[data-select-trigger]");
-
-    await expect(interfaceSelect.locator(".selected-value")).toHaveText("nwg0");
-
-    await interfaceSelect.click();
-    const homeOption = page.getByRole("option", { name: /nwg0/ });
-    await expect(homeOption).toContainText("nwg0");
-    await expect(homeOption).toContainText("WireGuard tunnel");
-    await expect(page.getByRole("option", { name: "longinterf" })).toBeVisible();
   });
 
   test("should add a rule to a group", async ({ page }) => {
@@ -115,9 +96,7 @@ test.describe("Groups Management", () => {
     expect(saveRequestReceived).toBe(true);
   });
 
-  test("should enable save after switching rule type to IPv6 for IPv6 pattern", async ({
-    page,
-  }) => {
+  test("should enable save after switching rule type to IPv6 for IPv6 pattern", async ({ page }) => {
     await groupsPage.createGroup();
 
     await groupsPage.setGroupName(0, "IPv6 Group");

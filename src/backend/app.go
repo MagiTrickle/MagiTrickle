@@ -192,7 +192,7 @@ func (a *App) AddSubscription(subscription *models.Subscription) error {
 
 	for _, sub := range a.subscriptions {
 		if sub.ID == subscription.ID {
-			return errors.New("subscription id conflict")
+			return app.ErrSubscriptionConflict
 		}
 	}
 	a.subscriptions = append(a.subscriptions, subscription)
