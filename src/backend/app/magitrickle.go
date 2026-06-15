@@ -61,4 +61,5 @@ type RuleSet interface {
 	Disable() error
 	Sync() error
 	LinkUpHook(event netlink.LinkUpdate) error
+	AddrChangeHook(event netlink.AddrUpdate) error
 }

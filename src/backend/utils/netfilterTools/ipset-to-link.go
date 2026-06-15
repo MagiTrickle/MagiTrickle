@@ -226,114 +226,121 @@ func (r *IPSetToLink) deleteIPRule() error {
 }
 
 func (r *IPSetToLink) insertIPRoute() error {
-	var route *netlink.Route
-
 	if r.nh.IPTables4 != nil {
-		route = &netlink.Route{
+		route := &netlink.Route{
 			Priority: 20,
 			Dst:      &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
 			Table:    r.table,
 			Type:     unix.RTN_BLACKHOLE,
 			Family:   nl.FAMILY_V4,
 		}
-		err := netlink.RouteAdd(route)
-		if err != nil && !errors.Is(err, unix.EEXIST) {
+		if err := netlink.RouteAdd(route); err != nil && !errors.Is(err, unix.EEXIST) {
 			return fmt.Errorf("error while adding ipv4 blackhole route: %w", err)
 		}
 		r.ip4Route[0] = route
-
-		if r.ifaceName != Blackhole {
-			iface, err := netlink.LinkByName(r.ifaceName)
-			if err != nil {
-				if errors.As(err, &netlink.LinkNotFoundError{}) {
-					log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
-					return nil
-				}
-				return fmt.Errorf("error while getting interface: %w", err)
-			}
-			if iface.Attrs().Flags&net.FlagUp == 0 {
-				log.Warn().Str("iface", r.ifaceName).Msg("interface is down")
-				return nil
-			}
-
-			route = &netlink.Route{
-				Priority:  10,
-				LinkIndex: iface.Attrs().Index,
-				Table:     r.table,
-				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
-			}
-
-			if iface.Attrs().Flags&net.FlagPointToPoint == 0 {
-				gw, err := getGwFromIface(iface, nl.FAMILY_V4)
-				if err != nil {
-					log.Warn().Str("iface", r.ifaceName).Err(err).Msg("IPv4 gateway not found")
-				} else {
-					route.Gw = gw
-				}
-			}
-
-			err = netlink.RouteAdd(route)
-			if err != nil && !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("error while adding ipv4 iface route: %w", err)
-			}
-			r.ip4Route[1] = route
-		}
 	}
 
 	if r.nh.IPTables6 != nil {
-		route = &netlink.Route{
+		route := &netlink.Route{
 			Priority: 20,
 			Dst:      &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 			Table:    r.table,
 			Type:     unix.RTN_BLACKHOLE,
 			Family:   nl.FAMILY_V6,
 		}
-		err := netlink.RouteAdd(route)
-		if err != nil && !errors.Is(err, unix.EEXIST) {
+		if err := netlink.RouteAdd(route); err != nil && !errors.Is(err, unix.EEXIST) {
 			return fmt.Errorf("error while adding ipv6 blackhole route: %w", err)
 		}
 		r.ip6Route[0] = route
+	}
 
-		if r.ifaceName != Blackhole {
-			iface, err := netlink.LinkByName(r.ifaceName)
-			if err != nil {
-				if errors.As(err, &netlink.LinkNotFoundError{}) {
-					log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
-					return nil
-				}
-				return fmt.Errorf("error while getting interface: %w", err)
-			}
-			if iface.Attrs().Flags&net.FlagUp == 0 {
-				log.Warn().Str("iface", r.ifaceName).Msg("interface is down")
-				return nil
-			}
+	if r.ifaceName == Blackhole {
+		return nil
+	}
 
-			route = &netlink.Route{
-				Priority:  10,
-				LinkIndex: iface.Attrs().Index,
-				Table:     r.table,
-				Dst:       &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
-				Family:    nl.FAMILY_V6,
-			}
+	iface, err := netlink.LinkByName(r.ifaceName)
+	if err != nil {
+		if errors.As(err, &netlink.LinkNotFoundError{}) {
+			log.Warn().Str("iface", r.ifaceName).Msg("interface not found, it can be catched later")
+			return nil
+		}
+		return fmt.Errorf("error while getting interface: %w", err)
+	}
+	if iface.Attrs().Flags&net.FlagUp == 0 {
+		log.Warn().Str("iface", r.ifaceName).Msg("interface is down")
+		return nil
+	}
 
-			if iface.Attrs().Flags&net.FlagPointToPoint == 0 {
-				gw, err := getGwFromIface(iface, nl.FAMILY_V6)
-				if err != nil {
-					log.Warn().Str("iface", r.ifaceName).Err(err).Msg("IPv6 gateway not found")
-				} else {
-					route.Gw = gw
-				}
-			}
+	var errs []error
+	if r.nh.IPTables4 != nil {
+		r.ip4Route[1], err = r.updateIfaceRoute(iface, nl.FAMILY_V4, r.ip4Route[1])
+		errs = append(errs, err)
+	}
+	if r.nh.IPTables6 != nil {
+		r.ip6Route[1], err = r.updateIfaceRoute(iface, nl.FAMILY_V6, r.ip6Route[1])
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
 
-			err = netlink.RouteAdd(route)
-			if err != nil && !errors.Is(err, unix.EEXIST) {
-				return fmt.Errorf("error while adding ipv6 iface route: %w", err)
-			}
-			r.ip6Route[1] = route
+func (r *IPSetToLink) updateIfaceRoute(iface netlink.Link, family int, current *netlink.Route) (*netlink.Route, error) {
+	addrs, err := netlink.AddrList(iface, family)
+	if err != nil {
+		strFamily := "unknown"
+		switch family {
+		case nl.FAMILY_ALL:
+			strFamily = "all"
+		case nl.FAMILY_V4:
+			strFamily = "IPv4"
+		case nl.FAMILY_V6:
+			strFamily = "IPv6"
+		case nl.FAMILY_MPLS:
+			strFamily = "MPLS"
+		}
+		return current, fmt.Errorf("error while listing %s addresses: %w", strFamily, err)
+	}
+	if len(addrs) == 0 {
+		log.Warn().Str("iface", r.ifaceName).Int("family", family).Msgf("no addresses on interface for current IP family, skipping route")
+		return current, nil
+	}
+
+	ipLen := net.IPv4len
+	if family == nl.FAMILY_V6 {
+		ipLen = net.IPv6len
+	}
+
+	route := &netlink.Route{
+		Priority:  10,
+		LinkIndex: iface.Attrs().Index,
+		Table:     r.table,
+		Family:    family,
+		Dst:       &net.IPNet{IP: make(net.IP, ipLen), Mask: make(net.IPMask, ipLen)},
+	}
+
+	if iface.Attrs().Flags&net.FlagPointToPoint == 0 {
+		gateway, err := getGwFromIface(iface, family)
+		if err != nil {
+			log.Warn().Str("iface", r.ifaceName).Err(err).Int("family", family).Msg("gateway not found")
+		} else {
+			route.Gw = gateway
 		}
 	}
 
-	return nil
+	if current != nil {
+		if route.Gw != nil && route.Gw.Equal(current.Gw) {
+			return current, nil
+		}
+		if route.Gw != nil {
+			if err := netlink.RouteDel(current); err != nil {
+				return current, fmt.Errorf("error deleting iface route: %w", err)
+			}
+		}
+	}
+
+	if err := netlink.RouteAdd(route); err != nil && !errors.Is(err, unix.EEXIST) {
+		return nil, fmt.Errorf("error adding iface route: %w", err)
+	}
+	return route, nil
 }
 
 func getGwFromIface(iface netlink.Link, family int) (net.IP, error) {
@@ -511,6 +518,34 @@ func (r *IPSetToLink) LinkUpHook(event netlink.LinkUpdate) error {
 
 	var errs []error
 	errs = append(errs, r.insertIPRoute())
+	return errors.Join(errs...)
+}
+
+func (r *IPSetToLink) AddrChangeHook(event netlink.AddrUpdate) error {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+
+	if !r.enabled.Load() || r.ifaceName == Blackhole {
+		return nil
+	}
+
+	iface, err := netlink.LinkByName(r.ifaceName)
+	if err != nil {
+		return fmt.Errorf("error while getting interface: %w", err)
+	}
+	if iface.Attrs().Index != event.LinkIndex {
+		return nil
+	}
+
+	var errs []error
+	if r.nh.IPTables4 != nil {
+		r.ip4Route[1], err = r.updateIfaceRoute(iface, nl.FAMILY_V4, r.ip4Route[1])
+		errs = append(errs, err)
+	}
+	if r.nh.IPTables6 != nil {
+		r.ip6Route[1], err = r.updateIfaceRoute(iface, nl.FAMILY_V6, r.ip6Route[1])
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
 
