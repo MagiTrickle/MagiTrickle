@@ -327,9 +327,10 @@ func (r *IPSetToLink) updateIfaceRoute(iface netlink.Link, family int, current *
 	}
 
 	if current != nil {
-		if route.Gw == nil || route.Gw.Equal(current.Gw) {
+		if route.Gw != nil && route.Gw.Equal(current.Gw) {
 			return current, nil
-		} else {
+		}
+		if route.Gw != nil {
 			if err := netlink.RouteDel(current); err != nil {
 				return current, fmt.Errorf("error deleting iface route: %w", err)
 			}
