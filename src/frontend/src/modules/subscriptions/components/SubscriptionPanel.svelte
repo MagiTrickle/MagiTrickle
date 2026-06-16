@@ -275,7 +275,11 @@
         <div class="subscription-actions">
           <div class="action interface">
             <Select
-              options={interfaces.list.map((item) => ({ value: item, label: item }))}
+              options={interfaces.list.map((item) => ({
+                value: item.id,
+                label: item.id,
+                description: item.name,
+              }))}
               bind:selected={subscription.interface}
               class="subscription-interface"
             />
