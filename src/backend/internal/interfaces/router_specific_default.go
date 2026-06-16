@@ -2,6 +2,6 @@
 
 package interfaces
 
-func routerSpecificAPI() RouterSpecificAPI {
+func initRouterSpecificAPI() RouterSpecificAPI {
 	return DummyRouterSpecificAPI{}
 }
