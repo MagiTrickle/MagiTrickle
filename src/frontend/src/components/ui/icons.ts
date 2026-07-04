@@ -10,6 +10,7 @@ export { default as Import } from "lucide-svelte/icons/upload";
 export { default as Export } from "lucide-svelte/icons/download";
 export { default as ClipboardCopy } from "lucide-svelte/icons/clipboard-copy";
 export { default as ClipboardPaste } from "lucide-svelte/icons/clipboard-paste";
+export { default as Copy } from "lucide-svelte/icons/copy";
 export { default as Locale } from "lucide-svelte/icons/languages";
 export { default as User } from "lucide-svelte/icons/user";
 export { default as Gitlab } from "lucide-svelte/icons/gitlab";

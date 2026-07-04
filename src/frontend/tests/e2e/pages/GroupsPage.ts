@@ -14,8 +14,12 @@ export class GroupsPage {
     this.groupList = page.locator(".group-list");
     // Select the wrapper that contains the tooltip text "Add Group", then find the button inside it.
     this.addGroupButton = page.locator('[data-value="Add Group"]').locator("button");
-    this.searchContainer = page.locator('[data-tabs-content][data-state="active"] .group-controls-search .search-container');
-    this.searchInput = page.locator('[data-tabs-content][data-state="active"] .group-controls-search .search-input');
+    this.searchContainer = page.locator(
+      '[data-tabs-content][data-state="active"] .group-controls-search .search-container',
+    );
+    this.searchInput = page.locator(
+      '[data-tabs-content][data-state="active"] .group-controls-search .search-input',
+    );
   }
 
   async goto() {
@@ -51,6 +55,12 @@ export class GroupsPage {
     const header = await this.getGroupHeader(groupIndex);
     const addRuleBtn = header.locator('[data-value="Add Rule"]').locator("button");
     await addRuleBtn.click();
+  }
+
+  async copyRulePatterns(groupIndex: number) {
+    const header = await this.getGroupHeader(groupIndex);
+    const copyBtn = header.locator('[data-value="Copy to Clipboard"]').locator("button");
+    await copyBtn.click();
   }
 
   async getRule(groupIndex: number, ruleIndex: number) {

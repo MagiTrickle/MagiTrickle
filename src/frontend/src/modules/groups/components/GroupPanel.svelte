@@ -11,10 +11,13 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
+  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
+  import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
   import RuleRow from "./RuleRow.svelte";
 
   import {
     Add,
+    Copy,
     Delete,
     Dots,
     Grip,
@@ -28,9 +31,8 @@
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
   import { defaultRule } from "../../../utils/defaults";
+  import { toast } from "../../../utils/events";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
-  import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
-  import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
 
   type Props = {
     group_index: number;
@@ -61,12 +63,30 @@
   );
   let hasGroupNameSearchHighlight = $derived(Boolean(groupNameHighlightParts));
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
-  let effectiveOpen = $derived(group ? store.open_state[group.id] ?? false : false);
+  let effectiveOpen = $derived(group ? (store.open_state[group.id] ?? false) : false);
   let duplicateConflicts = $derived(group ? store.getDuplicateConflictsForGroup(group.id) : []);
 
   function toggleOpen() {
     if (!group) return;
     store.open_state[group.id] = !effectiveOpen;
+  }
+
+  async function copyRulePatterns() {
+    if (!group) return;
+
+    const patterns = group.rules.map((rule) => rule.rule.trim()).filter(Boolean);
+
+    if (patterns.length === 0) {
+      toast.error(t("Nothing to copy"));
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(patterns.join("\n"));
+      toast.success(t("Copied to clipboard"));
+    } catch {
+      toast.error(t("Failed to copy"));
+    }
   }
 
   type GroupDnD = {
@@ -122,7 +142,7 @@
   let totalRulesCount = $derived(
     searchActive && Array.isArray(visibleRuleIndices)
       ? visibleRuleIndices.length
-      : group?.rules.length ?? 0,
+      : (group?.rules.length ?? 0),
   );
 
   let usePagination = $derived(totalRulesCount > PAGE_SIZE);
@@ -250,7 +270,9 @@
               row.scrollIntoView({ behavior: "smooth", block: "center" });
             }
           } else {
-            const targetGroup = document.querySelector<HTMLElement>(`.group[data-uuid="${group.id}"]`);
+            const targetGroup = document.querySelector<HTMLElement>(
+              `.group[data-uuid="${group.id}"]`,
+            );
             if (targetGroup) {
               const rect = targetGroup.getBoundingClientRect();
               const inView = rect.top >= 0 && rect.bottom <= window.innerHeight;
@@ -331,7 +353,11 @@
                 bind:value={group.name}
               />
               {#if hasGroupNameSearchHighlight && groupNameHighlightParts}
-                <div class="search-highlight-overlay group-name-search-overlay" class:has-warning={duplicateConflicts.length > 0} aria-hidden="true">
+                <div
+                  class="search-highlight-overlay group-name-search-overlay"
+                  class:has-warning={duplicateConflicts.length > 0}
+                  aria-hidden="true"
+                >
                   {#each groupNameHighlightParts as part}
                     {#if part.matched}
                       <mark>{part.text}</mark>
@@ -388,6 +414,11 @@
                 <ImportList size={20} />
               </Button>
             </Tooltip>
+            <Tooltip value={t("Copy to Clipboard")}>
+              <Button small onclick={copyRulePatterns}>
+                <Copy size={20} />
+              </Button>
+            </Tooltip>
           {:else}
             <DropdownMenu>
               {#snippet trigger()}
@@ -412,6 +443,12 @@
                 </Button>
               {/snippet}
               {#snippet item3()}
+                <Button general onclick={copyRulePatterns}>
+                  <div class="dd-icon"><Copy size={20} /></div>
+                  <div class="dd-label">{t("Copy to Clipboard")}</div>
+                </Button>
+              {/snippet}
+              {#snippet item4()}
                 <Button general onclick={() => store.deleteGroup(group_index)}>
                   <div class="dd-icon"><Delete size={20} /></div>
                   <div class="dd-label">{t("Delete Group")}</div>
@@ -458,7 +495,10 @@
               <div class="group-rules-header-column">{t("Type")}</div>
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="group-rules-header-column clickable" onclick={() => handleSort("pattern")}>
+              <div
+                class="group-rules-header-column clickable"
+                onclick={() => handleSort("pattern")}
+              >
                 {t("Pattern")}
                 <div class="sort-icon">
                   {#if sortField === "pattern" && sortDirection === "desc"}

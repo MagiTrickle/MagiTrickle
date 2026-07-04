@@ -96,7 +96,9 @@ test.describe("Groups Management", () => {
     expect(saveRequestReceived).toBe(true);
   });
 
-  test("should enable save after switching rule type to IPv6 for IPv6 pattern", async ({ page }) => {
+  test("should enable save after switching rule type to IPv6 for IPv6 pattern", async ({
+    page,
+  }) => {
     await groupsPage.createGroup();
 
     await groupsPage.setGroupName(0, "IPv6 Group");
@@ -241,6 +243,114 @@ test.describe("Groups Management", () => {
     // Expand
     await collapseTrigger.click();
     await expect(page.locator(".group-rules")).toBeVisible();
+  });
+
+  test("should copy non-empty rule patterns to clipboard", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: "http://localhost:5173",
+    });
+
+    await page.route("**/groups?with_rules=true", async (route) => {
+      await route.fulfill({
+        json: {
+          groups: [
+            {
+              id: "12345678",
+              name: "Clipboard Group",
+              rules: [
+                {
+                  id: "11111111",
+                  name: "First",
+                  rule: "example.com",
+                  type: "namespace",
+                  enable: true,
+                },
+                {
+                  id: "22222222",
+                  name: "Empty",
+                  rule: "   ",
+                  type: "namespace",
+                  enable: true,
+                },
+                {
+                  id: "33333333",
+                  name: "Second",
+                  rule: "192.168.1.1",
+                  type: "subnet",
+                  enable: true,
+                },
+              ],
+              color: "#000000",
+              enable: true,
+              interface: "",
+            },
+          ],
+        },
+      });
+    });
+
+    await groupsPage.goto();
+
+    await groupsPage.copyRulePatterns(0);
+
+    await expect(page.getByText("Copied to clipboard")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const text = await page.evaluate(() => navigator.clipboard.readText());
+        return text.replace(/\r\n/g, "\n");
+      })
+      .toBe("example.com\n192.168.1.1");
+  });
+
+  test("should show an error when there are no rule patterns to copy", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: "http://localhost:5173",
+    });
+
+    await page.route("**/groups?with_rules=true", async (route) => {
+      await route.fulfill({
+        json: {
+          groups: [
+            {
+              id: "12345678",
+              name: "Empty Clipboard Group",
+              rules: [
+                {
+                  id: "11111111",
+                  name: "Empty first",
+                  rule: "",
+                  type: "namespace",
+                  enable: true,
+                },
+                {
+                  id: "22222222",
+                  name: "Empty second",
+                  rule: "   ",
+                  type: "namespace",
+                  enable: true,
+                },
+              ],
+              color: "#000000",
+              enable: true,
+              interface: "",
+            },
+          ],
+        },
+      });
+    });
+
+    await groupsPage.goto();
+    await page.evaluate(() => navigator.clipboard.writeText("previous clipboard value"));
+
+    await groupsPage.copyRulePatterns(0);
+
+    await expect(page.getByText("Nothing to copy")).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("previous clipboard value");
   });
 
   test("should paginate rules", async ({ page }) => {
