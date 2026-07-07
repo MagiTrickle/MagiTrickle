@@ -141,6 +141,10 @@
     transition: opacity 0.2s ease;
   }
 
+  .search-input::-webkit-search-cancel-button {
+    cursor: pointer;
+  }
+
   .search-container:focus-within .search-input,
   .search-container:has(.search-input:not(:placeholder-shown)) .search-input {
     opacity: 1;
