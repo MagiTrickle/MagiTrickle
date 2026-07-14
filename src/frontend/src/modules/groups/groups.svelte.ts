@@ -935,15 +935,11 @@ export class GroupsStore {
     }
     if (!focus) return;
     await tick();
-    const el = document.querySelector(`.rule[data-group-index="${group_index}"][data-index="0"]`);
+    const el = document.querySelector(`.rule[data-group-uuid="${group.id}"][data-uuid="${rule.id}"]`);
     if (el) {
-      requestAnimationFrame(() => {
-        el.querySelector<HTMLInputElement>("div.name input")?.focus();
-        el
-          .querySelector<HTMLInputElement>("div.pattern input")
-          ?.classList.add("invalid");
-        this.checkRulesValidityState();
-      });
+      el.querySelector<HTMLInputElement>("div.name input")?.focus();
+      el.querySelector<HTMLInputElement>("div.pattern input")?.classList.add("invalid");
+      this.checkRulesValidityState();
     }
   }
 

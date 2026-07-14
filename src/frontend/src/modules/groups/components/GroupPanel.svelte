@@ -81,11 +81,26 @@
       return;
     }
 
+    const textarea = document.createElement("textarea");
+
     try {
-      await navigator.clipboard.writeText(patterns.join("\n"));
+      textarea.value = patterns.join("\n");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      if (!document.execCommand("copy")) {
+        throw new Error("Copy command failed");
+      }
+
       toast.success(t("Copied to clipboard"));
-    } catch {
+    } catch (e) {
+      console.error("Failed to copy to clipboard:", e);
       toast.error(t("Failed to copy"));
+    } finally {
+      textarea.remove();
     }
   }
 
