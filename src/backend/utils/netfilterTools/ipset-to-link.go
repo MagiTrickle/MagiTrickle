@@ -68,26 +68,26 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 		return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
 	}
 
-	markTable := r.nh.MarkTable
+	/*
+		Mangle Prerouting
+	*/
 
-	err = ipt.RegisterChainOverride(markTable, r.chainName)
+	err = ipt.RegisterChainOverride("mangle", r.chainName)
 	if err != nil {
 		return fmt.Errorf("failed to create chain: %w", err)
 	}
 
-	err = ipt.Append(markTable, r.chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "MARK", "--set-mark", strconv.Itoa(int(r.mark)))
-	if err != nil {
-		return fmt.Errorf("failed to append rule: %w", err)
-	}
-
-	if markTable == "mangle" {
-		err = ipt.Append(markTable, r.chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "CONNMARK", "--save-mark")
+	for _, iptablesArgs := range [][]string{
+		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "MARK", "--set-mark", strconv.Itoa(int(r.mark))},
+		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "CONNMARK", "--save-mark"},
+	} {
+		err = ipt.Append("mangle", r.chainName, iptablesArgs...)
 		if err != nil {
 			return fmt.Errorf("failed to append rule: %w", err)
 		}
 	}
 
-	err = ipt.Append(markTable, "PREROUTING", "-j", r.chainName)
+	err = ipt.Append("mangle", "PREROUTING", "-j", r.chainName)
 	if err != nil {
 		return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
 	}
@@ -138,14 +138,16 @@ func (r *IPSetToLink) deleteIPTablesRules(ipt *iptables.IPTables) error {
 		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
 	}
 
-	markTable := r.nh.MarkTable
+	/*
+		Mangle Prerouting
+	*/
 
-	err = ipt.RegisterChainDelete(markTable, r.chainName)
+	err = ipt.RegisterChainDelete("mangle", r.chainName)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to delete chain: %w", err))
 	}
 
-	err = ipt.Delete(markTable, "PREROUTING", "-j", r.chainName)
+	err = ipt.Delete("mangle", "PREROUTING", "-j", r.chainName)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
 	}
