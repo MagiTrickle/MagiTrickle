@@ -284,26 +284,6 @@ func (r *IPSetToLink) insertIPRoute() error {
 }
 
 func (r *IPSetToLink) updateIfaceRoute(iface netlink.Link, family int, current *netlink.Route) (*netlink.Route, error) {
-	addrs, err := netlink.AddrList(iface, family)
-	if err != nil {
-		strFamily := "unknown"
-		switch family {
-		case nl.FAMILY_ALL:
-			strFamily = "all"
-		case nl.FAMILY_V4:
-			strFamily = "IPv4"
-		case nl.FAMILY_V6:
-			strFamily = "IPv6"
-		case nl.FAMILY_MPLS:
-			strFamily = "MPLS"
-		}
-		return current, fmt.Errorf("error while listing %s addresses: %w", strFamily, err)
-	}
-	if len(addrs) == 0 {
-		log.Warn().Str("iface", r.ifaceName).Int("family", family).Msgf("no addresses on interface for current IP family, skipping route")
-		return current, nil
-	}
-
 	ipLen := net.IPv4len
 	if family == nl.FAMILY_V6 {
 		ipLen = net.IPv6len
@@ -326,6 +306,7 @@ func (r *IPSetToLink) updateIfaceRoute(iface netlink.Link, family int, current *
 		}
 	}
 
+	deleted := false
 	if current != nil {
 		if route.Gw != nil && route.Gw.Equal(current.Gw) {
 			return current, nil
@@ -334,11 +315,21 @@ func (r *IPSetToLink) updateIfaceRoute(iface netlink.Link, family int, current *
 			if err := netlink.RouteDel(current); err != nil {
 				return current, fmt.Errorf("error deleting iface route: %w", err)
 			}
+			deleted = true
 		}
 	}
 
-	if err := netlink.RouteAdd(route); err != nil && !errors.Is(err, unix.EEXIST) {
-		return nil, fmt.Errorf("error adding iface route: %w", err)
+	if err := netlink.RouteAdd(route); err != nil {
+		if errors.Is(err, unix.ENODEV) {
+			log.Warn().Str("iface", r.ifaceName).Int("family", family).Msg("interface not ready for this IP family, skipping route")
+			if deleted {
+				return nil, nil
+			}
+			return current, nil
+		}
+		if !errors.Is(err, unix.EEXIST) {
+			return nil, fmt.Errorf("error adding iface route: %w", err)
+		}
 	}
 	return route, nil
 }
