@@ -77,8 +77,12 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 		return fmt.Errorf("failed to create chain: %w", err)
 	}
 
+	markStr := strconv.Itoa(int(r.mark))
 	for _, iptablesArgs := range [][]string{
-		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "MARK", "--set-mark", strconv.Itoa(int(r.mark))},
+		{"-m", "conntrack", "--ctdir", "REPLY", "-j", "RETURN"},
+		{"-j", "CONNMARK", "--restore-mark"},
+		{"-m", "mark", "--mark", markStr, "-j", "RETURN"},
+		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "MARK", "--set-mark", markStr},
 		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "CONNMARK", "--save-mark"},
 	} {
 		err = ipt.Append("mangle", r.chainName, iptablesArgs...)
