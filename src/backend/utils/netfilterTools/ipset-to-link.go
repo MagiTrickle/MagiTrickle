@@ -80,10 +80,8 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 	markStr := strconv.Itoa(int(r.mark))
 	for _, iptablesArgs := range [][]string{
 		{"-m", "conntrack", "--ctdir", "REPLY", "-j", "RETURN"},
-		{"-j", "CONNMARK", "--restore-mark"},
-		{"-m", "mark", "--mark", markStr, "-j", "RETURN"},
 		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "MARK", "--set-mark", markStr},
-		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "CONNMARK", "--save-mark"},
+		{"-m", "set", "--match-set", ipsetName, "dst", "-j", "CONNMARK", "--save-mark"}, // Without this rule, routing on Keenetic routers did not work; DO NOT REMOVE!
 	} {
 		err = ipt.Append("mangle", r.chainName, iptablesArgs...)
 		if err != nil {
