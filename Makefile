@@ -124,6 +124,12 @@ FRONTEND_BUILD_PROPERTIES := PKG_VERSION_DISPLAY=\"$(PKG_VERSION_DISPLAY)\" PKG_
 BUILD_KEY_APK_SEC ?= private-key.pem
 BUILD_KEY_APK_PUB ?= public-key.pem
 
+ifeq ($(shell id -u),0)
+	ROOT_WRAP :=
+else
+	ROOT_WRAP := unshare -r --
+endif
+
 #
 # Targets
 #
@@ -304,7 +310,7 @@ package_apk: prepare_files $(BUILD_KEY_APK_SEC)
 	fi
 	(cd $(ROOT_APK_DIR) && find . -type f,l -printf "/%P\n") > $(ROOT_APK_DIR)/lib/apk/packages/$(PKG_NAME).list
 
-	apk mkpkg \
+	$(ROOT_WRAP) apk mkpkg \
 		-I "name:$(PKG_NAME)" \
 		-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
 		-I "description:$(PKG_DESCRIPTION)" \
