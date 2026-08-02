@@ -71,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y upx meson ninja-build pkg-config libssl-dev zlib1g-dev libzstd-dev
+          sudo apt-get install -y fakeroot upx meson ninja-build pkg-config libssl-dev zlib1g-dev libzstd-dev
 
       - name: Building apk-tools
         run: |
