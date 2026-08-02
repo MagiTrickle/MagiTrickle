@@ -71,11 +71,16 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y upx
+          sudo apt-get install -y upx meson ninja-build pkg-config libssl-dev zlib1g-dev libzstd-dev
 
-      - name: Install apk-tools
+      - name: Building apk-tools
         run: |
-          docker run --rm -v /usr/local/bin:/mnt alpine:edge sh -c "apk add --no-cache apk-tools-static && cp /sbin/apk.static /mnt/apk && chmod +x /mnt/apk"
+          git clone --depth 1 --branch v3.0.7 https://github.com/alpinelinux/apk-tools.git /tmp/apk-tools
+          cd /tmp/apk-tools
+          meson setup build -Dpython=disabled -Dtests=disabled -Ddocs=disabled
+          ninja -C build
+          sudo ninja -C build install
+          sudo ldconfig
 
       - name: Build and package
         env:
