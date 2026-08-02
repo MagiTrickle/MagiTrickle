@@ -106,6 +106,12 @@ GO_FLAGS := \
 
 GO_PARAMS = -v -trimpath -ldflags="-X 'magitrickle/constant.Version=$(PKG_VERSION)' -w -s" $(if $(GO_TAGS),-tags "$(GO_TAGS)")
 
+ifeq ($(shell id -u),0)
+	ROOT_WRAP :=
+else
+	ROOT_WRAP := fakeroot --
+endif
+
 # Incremental data
 
 BACKEND_DEPENDENCIES := ./src/backend/go.mod ./src/backend/go.sum
@@ -123,12 +129,6 @@ FRONTEND_BUILD_PROPERTIES := PKG_VERSION_DISPLAY=\"$(PKG_VERSION_DISPLAY)\" PKG_
 
 BUILD_KEY_APK_SEC ?= private-key.pem
 BUILD_KEY_APK_PUB ?= public-key.pem
-
-ifeq ($(shell id -u),0)
-	ROOT_WRAP :=
-else
-	ROOT_WRAP := unshare -r --
-endif
 
 #
 # Targets
