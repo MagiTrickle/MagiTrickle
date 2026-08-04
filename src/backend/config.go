@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"magitrickle/config"
 	"magitrickle/constant"
 	"magitrickle/models"
 
@@ -20,12 +19,6 @@ var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
 const cfgFolderLocation = constant.AppStateDir
 const cfgFileLocation = cfgFolderLocation + "/config.yaml"
 
-func applyIfSet[T any](dst *T, src *T) {
-	if src != nil {
-		*dst = *src
-	}
-}
-
 func (a *App) LoadConfig() error {
 	cfgFile, err := os.ReadFile(cfgFileLocation)
 	if err != nil {
@@ -34,7 +27,7 @@ func (a *App) LoadConfig() error {
 		}
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
-	cfg := config.Config{}
+	cfg := models.Config{App: &a.config}
 	err = yaml.Unmarshal(cfgFile, &cfg)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config file: %w", err)
@@ -44,66 +37,12 @@ func (a *App) LoadConfig() error {
 		return ErrConfigUnsupportedVersion
 	}
 
-	if cfg.App != nil {
-		if cfg.App.HTTPWeb != nil {
-			applyIfSet(&a.config.HTTPWeb.Enabled, cfg.App.HTTPWeb.Enabled)
-			applyIfSet(&a.config.HTTPWeb.Skin, cfg.App.HTTPWeb.Skin)
-			if cfg.App.HTTPWeb.Host != nil {
-				applyIfSet(&a.config.HTTPWeb.Host.Address, cfg.App.HTTPWeb.Host.Address)
-				applyIfSet(&a.config.HTTPWeb.Host.Port, cfg.App.HTTPWeb.Host.Port)
-			}
-			if cfg.App.HTTPWeb.Auth != nil {
-				applyIfSet(&a.config.HTTPWeb.Auth.Enabled, cfg.App.HTTPWeb.Auth.Enabled)
-			}
-		}
-
-		if cfg.App.DNSProxy != nil {
-			if cfg.App.DNSProxy.Upstream != nil {
-				applyIfSet(&a.config.DNSProxy.Upstream.Address, cfg.App.DNSProxy.Upstream.Address)
-				applyIfSet(&a.config.DNSProxy.Upstream.Port, cfg.App.DNSProxy.Upstream.Port)
-			}
-			if cfg.App.DNSProxy.Host != nil {
-				applyIfSet(&a.config.DNSProxy.Host.Address, cfg.App.DNSProxy.Host.Address)
-				applyIfSet(&a.config.DNSProxy.Host.Port, cfg.App.DNSProxy.Host.Port)
-			}
-			applyIfSet(&a.config.DNSProxy.DisableRemap53, cfg.App.DNSProxy.DisableRemap53)
-			applyIfSet(&a.config.DNSProxy.DisableFakePTR, cfg.App.DNSProxy.DisableFakePTR)
-			applyIfSet(&a.config.DNSProxy.DisableDropAAAA, cfg.App.DNSProxy.DisableDropAAAA)
-			applyIfSet(&a.config.DNSProxy.MaxIdleConns, cfg.App.DNSProxy.MaxIdleConns)
-			applyIfSet(&a.config.DNSProxy.MaxConcurrent, cfg.App.DNSProxy.MaxConcurrent)
-			if cfg.App.DNSProxy.Timeout != nil {
-				// TODO: Remove this align to milliseconds before release 1.0.0
-				t := *cfg.App.DNSProxy.Timeout
-				if t < time.Millisecond {
-					t *= time.Millisecond
-				}
-				a.config.DNSProxy.Timeout = t
-			}
-		}
-
-		if cfg.App.Netfilter != nil {
-			if cfg.App.Netfilter.IPTables != nil {
-				applyIfSet(&a.config.Netfilter.IPTables.ChainPrefix, cfg.App.Netfilter.IPTables.ChainPrefix)
-			}
-			if cfg.App.Netfilter.IPSet != nil {
-				applyIfSet(&a.config.Netfilter.IPSet.TablePrefix, cfg.App.Netfilter.IPSet.TablePrefix)
-				if cfg.App.Netfilter.IPSet.AdditionalTTL != nil {
-					// TODO: Remove this align to seconds before release 1.0.0
-					t := *cfg.App.Netfilter.IPSet.AdditionalTTL
-					if t < time.Second {
-						t *= time.Second
-					}
-					a.config.Netfilter.IPSet.AdditionalTTL = t
-				}
-			}
-			applyIfSet(&a.config.Netfilter.DisableIPv4, cfg.App.Netfilter.DisableIPv4)
-			applyIfSet(&a.config.Netfilter.DisableIPv6, cfg.App.Netfilter.DisableIPv6)
-			applyIfSet(&a.config.Netfilter.StartMarkTableIndex, cfg.App.Netfilter.StartMarkTableIndex)
-		}
-
-		applyIfSet(&a.config.Link, cfg.App.Link)
-		applyIfSet(&a.config.ShowAllInterfaces, cfg.App.ShowAllInterfaces)
-		applyIfSet(&a.config.LogLevel, cfg.App.LogLevel)
+	// TODO: Remove this align to milliseconds/seconds before release 1.0.0
+	if a.config.DNSProxy.Timeout < time.Millisecond {
+		a.config.DNSProxy.Timeout *= time.Millisecond
+	}
+	if a.config.Netfilter.IPSet.AdditionalTTL < time.Second {
+		a.config.Netfilter.IPSet.AdditionalTTL *= time.Second
 	}
 
 	a.subscriptionSyncMu.Lock()
@@ -151,52 +90,9 @@ func (a *App) SaveConfig() error {
 		}
 	}
 
-	cfg := config.Config{
+	cfg := models.Config{
 		ConfigVersion: constant.Version,
-		App: &config.App{
-			HTTPWeb: &config.HTTPWeb{
-				Enabled: &a.config.HTTPWeb.Enabled,
-				Auth: &config.Auth{
-					Enabled: &a.config.HTTPWeb.Auth.Enabled,
-				},
-				Host: &config.HTTPWebServer{
-					Address: &a.config.HTTPWeb.Host.Address,
-					Port:    &a.config.HTTPWeb.Host.Port,
-				},
-				Skin: &a.config.HTTPWeb.Skin,
-			},
-			DNSProxy: &config.DNSProxy{
-				Host: &config.DNSProxyServer{
-					Address: &a.config.DNSProxy.Host.Address,
-					Port:    &a.config.DNSProxy.Host.Port,
-				},
-				Upstream: &config.DNSProxyServer{
-					Address: &a.config.DNSProxy.Upstream.Address,
-					Port:    &a.config.DNSProxy.Upstream.Port,
-				},
-				DisableRemap53:  &a.config.DNSProxy.DisableRemap53,
-				DisableFakePTR:  &a.config.DNSProxy.DisableFakePTR,
-				DisableDropAAAA: &a.config.DNSProxy.DisableDropAAAA,
-				MaxIdleConns:    &a.config.DNSProxy.MaxIdleConns,
-				MaxConcurrent:   &a.config.DNSProxy.MaxConcurrent,
-				Timeout:         &a.config.DNSProxy.Timeout,
-			},
-			Netfilter: &config.Netfilter{
-				IPTables: &config.IPTables{
-					ChainPrefix: &a.config.Netfilter.IPTables.ChainPrefix,
-				},
-				IPSet: &config.IPSet{
-					TablePrefix:   &a.config.Netfilter.IPSet.TablePrefix,
-					AdditionalTTL: &a.config.Netfilter.IPSet.AdditionalTTL,
-				},
-				DisableIPv4:         &a.config.Netfilter.DisableIPv4,
-				DisableIPv6:         &a.config.Netfilter.DisableIPv6,
-				StartMarkTableIndex: &a.config.Netfilter.StartMarkTableIndex,
-			},
-			Link:              &a.config.Link,
-			ShowAllInterfaces: &a.config.ShowAllInterfaces,
-			LogLevel:          &a.config.LogLevel,
-		},
+		App:           &a.config,
 		Groups:        &groups,
 		Subscriptions: &a.subscriptions,
 	}
