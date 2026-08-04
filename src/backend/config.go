@@ -103,8 +103,13 @@ func (a *App) SaveConfig() error {
 	if err := os.MkdirAll(cfgFolderLocation, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create config folder: %w", err)
 	}
-	if err := os.WriteFile(cfgFileLocation, out, 0600); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+	tmpFileLocation := cfgFileLocation + ".tmp"
+	if err := os.WriteFile(tmpFileLocation, out, 0600); err != nil {
+		return fmt.Errorf("failed to write temporary config file: %w", err)
+	}
+	if err := os.Rename(tmpFileLocation, cfgFileLocation); err != nil {
+		_ = os.Remove(tmpFileLocation)
+		return fmt.Errorf("failed to replace config file: %w", err)
 	}
 	return nil
 }
