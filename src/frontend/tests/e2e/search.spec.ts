@@ -72,6 +72,43 @@ test.describe("Groups Search", () => {
     await expect(page.locator(".group-wrapper:visible")).toHaveCount(2);
   });
 
+  test("should focus the page search instead of browser search on Ctrl+F", async ({ page }) => {
+    await expect(groupsPage.searchInput).toBeAttached();
+    await page.keyboard.press("Control+f");
+
+    await expect(groupsPage.searchInput).toBeFocused();
+  });
+
+  test("should not intercept Ctrl+F while a dialog is open", async ({ page }) => {
+    await expect(groupsPage.searchInput).toBeAttached();
+    await page.locator(".info button").click();
+    await expect(page.locator('[data-dialog-content][data-state="open"]')).toBeVisible();
+
+    const browserSearchWasPrevented = await page.evaluate(() => {
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        code: "KeyF",
+        ctrlKey: true,
+      });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+
+    expect(browserSearchWasPrevented).toBe(false);
+  });
+
+  test("should clear and collapse page search on Escape", async ({ page }) => {
+    await groupsPage.search("Alpha");
+    await expect(page.locator(".group-wrapper:visible")).toHaveCount(1);
+
+    await page.keyboard.press("Escape");
+
+    await expect(groupsPage.searchInput).toHaveValue("");
+    await expect(groupsPage.searchInput).not.toBeFocused();
+    await expect(page.locator(".group-wrapper:visible")).toHaveCount(2);
+  });
+
   test("should filter rules by name", async ({ page }) => {
     // Override mock to have rules
     await page.route("**/groups?with_rules=true", async (route) => {
