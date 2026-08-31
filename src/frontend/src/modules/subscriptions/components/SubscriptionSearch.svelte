@@ -24,6 +24,14 @@
     event.preventDefault();
     inputRef?.focus();
   }
+
+  function handleInputKeydown(event: KeyboardEvent) {
+    if (event.key !== "Escape") return;
+
+    event.preventDefault();
+    store.searchValue = "";
+    inputRef?.blur();
+  }
 </script>
 
 <div class="subscription-controls-search">
@@ -43,8 +51,10 @@
         bind:this={inputRef}
         type="search"
         class="search-input"
+        data-page-search
         placeholder={t("Search subscriptions and rules...")}
         bind:value={store.searchValue}
+        onkeydown={handleInputKeydown}
       />
     </div>
   </div>
