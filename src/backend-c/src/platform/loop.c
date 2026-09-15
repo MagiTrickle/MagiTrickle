@@ -33,6 +33,8 @@ typedef enum watch_kind {
 
 typedef struct watch {
     watch_kind_t kind;
+    bool removed;
+    bool one_shot;
     int fd;
     int id; /* timer id */
     mt_fd_cb fd_cb;
@@ -52,6 +54,8 @@ struct mt_loop {
     int wakeup_fd;         /* eventfd for post + stop */
     _Atomic bool stopping;
     watch_t *watches;      /* singly-linked; loop-thread only */
+    watch_t *retired;      /* removed watches in the current epoll batch */
+    bool dispatching;
     int next_timer_id;
     mt_queue_t *posts;     /* bounded cross-thread post queue */
     watch_t wakeup_watch;
@@ -85,6 +89,30 @@ static void watch_unlink(mt_loop_t *loop, watch_t *w)
             return;
         }
         p = &(*p)->next;
+    }
+}
+
+/* epoll_wait has already copied pointers for the entire ready batch.
+ * EPOLL_CTL_DEL cannot revoke those pointers. Invalidate now, free only
+ * after every event in that batch has been considered. */
+static void watch_retire(mt_loop_t *loop, watch_t *w)
+{
+    watch_unlink(loop, w);
+    w->removed = true;
+    if (loop->dispatching) {
+        w->next = loop->retired;
+        loop->retired = w;
+    } else {
+        free(w);
+    }
+}
+
+static void collect_retired(mt_loop_t *loop)
+{
+    while (loop->retired) {
+        watch_t *w = loop->retired;
+        loop->retired = w->next;
+        free(w);
     }
 }
 
@@ -147,6 +175,7 @@ void mt_loop_destroy(mt_loop_t *loop)
         free(w);
         w = next;
     }
+    collect_retired(loop);
     if (loop->posts != NULL) {
         /* drain unexecuted posts: post items are loop-owned wrappers */
         void *item;
@@ -219,8 +248,7 @@ mt_err_t mt_loop_del_fd(mt_loop_t *loop, int fd)
     if (epoll_ctl(loop->epfd, EPOLL_CTL_DEL, fd, NULL) != 0) {
         return mt_err_from_errno(errno);
     }
-    watch_unlink(loop, w);
-    free(w);
+    watch_retire(loop, w);
     return MT_OK;
 }
 
@@ -254,6 +282,7 @@ mt_err_t mt_loop_add_timer(mt_loop_t *loop, uint64_t initial_ms,
         return MT_ERR_NOMEM;
     }
     w->kind = WATCH_TIMER;
+    w->one_shot = interval_ms == 0;
     w->fd = tfd;
     w->id = loop->next_timer_id++;
     w->timer_cb = cb;
@@ -277,8 +306,7 @@ mt_err_t mt_loop_del_timer(mt_loop_t *loop, int timer_id)
         if (w->kind == WATCH_TIMER && w->id == timer_id) {
             (void)epoll_ctl(loop->epfd, EPOLL_CTL_DEL, w->fd, NULL);
             close(w->fd);
-            watch_unlink(loop, w);
-            free(w);
+            watch_retire(loop, w);
             return MT_OK;
         }
     }
@@ -369,6 +397,11 @@ static void handle_timer(mt_loop_t *loop, watch_t *w)
         return;
     }
     w->timer_cb(loop, w->ud);
+    /* Callbacks may remove themselves; retired watches remain readable
+     * until this batch finishes. One-shot timerfds otherwise never close. */
+    if (w->one_shot && !w->removed) {
+        (void)mt_loop_del_timer(loop, w->id);
+    }
 }
 
 static void handle_signal(mt_loop_t *loop, watch_t *w)
@@ -391,11 +424,13 @@ mt_err_t mt_loop_run(mt_loop_t *loop)
             }
             return mt_err_from_errno(errno);
         }
+        loop->dispatching = true;
         for (int i = 0; i < n; i++) {
             if (atomic_load(&loop->stopping)) {
                 break;
             }
             watch_t *w = events[i].data.ptr;
+            if (w->removed) { continue; }
             switch (w->kind) {
             case WATCH_WAKEUP:
                 handle_wakeup(loop);
@@ -411,6 +446,8 @@ mt_err_t mt_loop_run(mt_loop_t *loop)
                 break;
             }
         }
+        loop->dispatching = false;
+        collect_retired(loop);
     }
     return MT_OK;
 }

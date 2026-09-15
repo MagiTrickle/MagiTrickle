@@ -30,7 +30,10 @@ typedef struct kv {
     char value[512];
 } kv_t;
 
+typedef struct mt_http_conn mt_http_conn_t;
+
 struct mt_http_req {
+    mt_http_conn_t *conn;
     char method[8];
     char path[512];
     kv_t query[MT_HTTPD_MAX_QUERY];
@@ -44,6 +47,7 @@ struct mt_http_req {
 };
 
 struct mt_http_res {
+    mt_http_deferred_t *deferred;
     int status;
     kv_t headers[MT_HTTPD_MAX_RES_HEADERS];
     size_t n_headers;
@@ -59,7 +63,9 @@ typedef struct route {
     void *ud;
 } route_t;
 
-typedef struct mt_http_conn mt_http_conn_t;
+struct mt_http_deferred {
+    mt_http_conn_t *conn; /* nulled when its peer disappears */
+};
 
 struct mt_httpd {
     mt_loop_t *loop;
@@ -77,6 +83,7 @@ struct mt_httpd {
 };
 
 struct mt_http_conn {
+    mt_http_deferred_t *pending;
     mt_httpd_t *server;
     mt_http_conn_t *next;
     int fd;
@@ -292,6 +299,18 @@ static route_t *match_route(mt_httpd_t *h, const char *method, const char *path,
 
 /* ---- connection lifecycle ----------------------------------------------------- */
 
+/* Release an already-unlinked connection. Keep registry mutation separate
+ * so bulk teardown never relies on an alias through c->server. */
+static void conn_destroy(mt_http_conn_t *c) {
+    if (c->pending) { c->pending->conn = NULL; c->pending = NULL; }
+    if (c->idle_timer_id) { mt_loop_del_timer(c->server->loop, c->idle_timer_id); }
+    mt_loop_del_fd(c->server->loop, c->fd);
+    close(c->fd);
+    free(c->rbuf);
+    free(c->wbuf);
+    free(c);
+}
+
 static void conn_close(mt_http_conn_t *c) {
     mt_http_conn_t **link = &c->server->conns;
     while (*link != NULL && *link != c) { link = &(*link)->next; }
@@ -299,12 +318,7 @@ static void conn_close(mt_http_conn_t *c) {
         *link = c->next;
         c->server->n_conns--;
     }
-    if (c->idle_timer_id) { mt_loop_del_timer(c->server->loop, c->idle_timer_id); }
-    mt_loop_del_fd(c->server->loop, c->fd);
-    close(c->fd);
-    free(c->rbuf);
-    free(c->wbuf);
-    free(c);
+    conn_destroy(c);
 }
 
 static void on_idle_timeout(mt_loop_t *loop, void *ud) {
@@ -396,6 +410,7 @@ static const char *reason_phrase(int status) {
     case 431: return "Request Header Fields Too Large";
     case 500: return "Internal Server Error";
     case 502: return "Bad Gateway";
+    case 503: return "Service Unavailable";
     default: return "";
     }
 }
@@ -424,6 +439,41 @@ static void build_response_bytes(mt_http_conn_t *c, const mt_http_res_t *res) {
     if (res->body_len > 0) { memcpy(c->wbuf + head_len, res->body, res->body_len); }
     c->wbuf_len = head_len + res->body_len;
     c->wbuf_sent = 0;
+}
+
+mt_http_deferred_t *mt_http_res_defer(mt_http_req_t *req, mt_http_res_t *res) {
+    if (!req->conn || req->conn->pending || res->deferred) { return NULL; }
+    mt_http_deferred_t *pending = calloc(1, sizeof(*pending));
+    if (!pending) { return NULL; }
+    pending->conn = req->conn;
+    req->conn->pending = pending;
+    res->deferred = pending;
+    return pending;
+}
+
+void mt_http_res_cancel_defer(mt_http_res_t *res) {
+    mt_http_deferred_t *p = res->deferred;
+    if (!p) { return; }
+    if (p->conn) { p->conn->pending = NULL; }
+    free(p);
+    res->deferred = NULL;
+}
+
+void mt_http_deferred_json(mt_http_deferred_t *p, int status, cJSON *obj) {
+    if (!p) { cJSON_Delete(obj); return; }
+    mt_http_conn_t *c = p->conn;
+    free(p);
+    if (!c) { cJSON_Delete(obj); return; }
+    c->pending = NULL;
+    mt_http_res_t res = {0};
+    mt_http_res_write_json(&res, status, obj);
+    build_response_bytes(c, &res);
+    free(res.body);
+    start_write(c);
+}
+
+void mt_http_deferred_error(mt_http_deferred_t *p, int status, const char *msg) {
+    mt_http_deferred_json(p, status, mt_json_error(msg));
 }
 
 /* Collapses "." and ".." segments the way Go's path.Clean does for a
@@ -562,6 +612,7 @@ static bool parse_headers(mt_http_conn_t *c, mt_http_req_t *req) {
 
 static void handle_complete_request(mt_http_conn_t *c) {
     mt_http_req_t *req = &c->req;
+    req->conn = c;
     req->body = c->content_length > 0 ? c->rbuf + c->header_end : NULL;
     req->body_len = c->content_length;
 
@@ -590,6 +641,13 @@ static void handle_complete_request(mt_http_conn_t *c) {
         } else {
             mt_http_res_write_error(&res, 404, "not found");
         }
+    }
+    if (res.deferred) {
+        /* Disable reads until the response completes; keep HUP/ERR and
+         * the idle timer so disconnect/timeout detaches the weak handle. */
+        free(res.body);
+        if (mt_loop_mod_fd(c->server->loop, c->fd, 0) != MT_OK) { conn_close(c); }
+        return;
     }
     if (!res.responded) { mt_http_res_write_error(&res, 500, "handler produced no response"); }
 
@@ -760,7 +818,12 @@ mt_err_t mt_httpd_create(mt_loop_t *loop, mt_httpd_t **out) {
 
 void mt_httpd_destroy(mt_httpd_t *h) {
     if (!h) { return; }
-    while (h->conns != NULL) { conn_close(h->conns); }
+    while (h->conns != NULL) {
+        mt_http_conn_t *c = h->conns;
+        h->conns = c->next;
+        h->n_conns--;
+        conn_destroy(c);
+    }
     if (h->tcp_fd >= 0) {
         mt_loop_del_fd(h->loop, h->tcp_fd);
         close(h->tcp_fd);

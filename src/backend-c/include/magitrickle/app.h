@@ -38,6 +38,7 @@
 #include "magitrickle/rtnl.h"
 #include "magitrickle/ruleset.h"
 #include "magitrickle/yamlio.h"
+#include "magitrickle/sub_fetch.h"
 
 typedef struct mt_app mt_app_t;
 
@@ -192,6 +193,17 @@ mt_err_t mt_app_replace_subscriptions(mt_app_t *app, mt_subscription_t **subs, s
  * requested and is what the caller should report) alongside the error. */
 mt_err_t mt_app_remove_subscription_by_id(mt_app_t *app, mt_id_t id, bool *out_found);
 
+/* Production asynchronous entry points: model mutation and done callbacks
+ * stay on the loop owner. Only immutable URL copies cross to I/O workers.
+ * MT_ERR_STATE rejects duplicate/stale syncs, MT_ERR_LIMIT bounds the queue.
+ * Destroy the fetcher before app and callback contexts. */
+typedef void (*mt_app_sync_done_fn)(void *ud, mt_id_t id, mt_err_t err, bool changed);
+mt_err_t mt_app_sync_subscription_async(mt_app_t *app, mt_sub_fetcher_t *fetcher,
+                                         mt_id_t id, int64_t now, const char *url_override,
+                                         mt_app_sync_done_fn done, void *ud);
+mt_err_t mt_app_sync_due_subscriptions_async(mt_app_t *app, mt_sub_fetcher_t *fetcher,
+                                             int64_t now, mt_app_sync_done_fn done, void *ud);
+
 /* ---- subscription sync (fetch-backed) --------------------------------------
  *
  * Ports of subscriptions.go's SyncSubscriptionByID/SyncDueSubscriptions:
@@ -201,14 +213,12 @@ mt_err_t mt_app_remove_subscription_by_id(mt_app_t *app, mt_id_t id, bool *out_f
  * ruleset array (rollback to the pre-sync state on failure, exactly like
  * the other subscription mutators above).
  *
- * Both perform a *blocking* network fetch on the calling thread. In this
- * port that thread is always the single event-loop thread (HTTP handlers
- * and the auto-update timer both run there -- see decisions.md D-33): a
- * slow or hanging upstream server stalls DNS resolution and HTTP serving
- * for up to MT_SUB_FETCH_TIMEOUT_SECONDS. D-02/D-17 already flagged a
- * worker-thread + mt_loop_post redesign as future work; scoped out here
- * given the size of the httpd.c refactor (deferred responses) it would
- * require. */
+ * These synchronous compatibility APIs block the calling thread. They
+ * remain for tests and single-threaded embeddings, NOT production event
+ * callbacks. main.c and subscription HTTP handlers use the asynchronous
+ * entry points above (D-66 supersedes D-33). A synchronous single sync
+ * rejects an already-pending async sync; batch sync skips pending items.
+ * Never call either flavor from a worker that shares this app. */
 
 /* Looks up the subscription, fetches url_override (or the subscription's
  * own URL if url_override is NULL/empty), refreshes its rules, and
@@ -277,6 +287,10 @@ bool mt_iface_is_ignored_for_test(const char *name);
 
 /* Writes the current config (cfg, already kept live-authoritative for
  * groups per the header comment above) to its file path. */
+/* Reload an app overlay and groups/subscriptions from a validated file.
+ * Captured listeners/netfilter helper names still require restart. */
+mt_err_t mt_app_reload_config(mt_app_t *app, const char *path);
+
 mt_err_t mt_app_save_config(mt_app_t *app, const char *path, const char *version);
 
 /* Called from the netfilterd webhook to bring the netfilter tables back

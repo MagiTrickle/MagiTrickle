@@ -4,8 +4,8 @@
  * /api/v1/subscriptions/rules — port of api/v1/subscription_handlers.go
  * and subscription_converters.go (compatibility-contract.md §2's
  * subscriptions row). The sync/rules routes (Phase 7) are fetch-backed:
- * see mt_app_sync_subscription_by_id (app.h) and mt_sub_fetch_list/
- * mt_sub_parse_rules (sub_fetch.h/subparse.h).
+ * production uses mt_app_sync_subscription_async and mt_sub_fetcher_submit
+ * with deferred HTTP responses; parsing/apply stay on the event loop.
  */
 #ifndef MAGITRICKLE_SUBSCRIPTIONS_API_H
 #define MAGITRICKLE_SUBSCRIPTIONS_API_H
@@ -15,6 +15,7 @@
 
 typedef struct mt_subs_ctx {
     mt_app_t *app;
+    mt_sub_fetcher_t *fetcher; /* production async I/O; NULL for synchronous embeddings */
     /* Same meaning as mt_groups_ctx_t's fields (groups.h). Note the
      * subscriptions handlers' ?save= default is the OPPOSITE of the
      * groups handlers': it saves unless save=false is explicit (matches
@@ -27,7 +28,8 @@ typedef struct mt_subs_ctx {
 
 /* Registers GET/PUT/POST /api/v1/subscriptions and DELETE
  * /api/v1/subscriptions/{subscriptionID} on `h`. `ctx` must outlive the
- * server. */
+ * server and every accepted fetch completion. Destroy the fetcher before
+ * freeing ctx or its app. */
 void mt_subs_register_routes(mt_httpd_t *h, mt_subs_ctx_t *ctx);
 
 #endif /* MAGITRICKLE_SUBSCRIPTIONS_API_H */

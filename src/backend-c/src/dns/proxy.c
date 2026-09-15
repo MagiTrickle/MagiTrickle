@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netdb.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,8 @@ typedef struct sock_pool {
     size_t cap;
 } sock_pool_t;
 
+typedef struct exchange exchange_t;
+
 struct mt_dnsproxy {
     mt_dnsproxy_config_t cfg;
     mt_loop_t *loop;
@@ -42,6 +45,7 @@ struct mt_dnsproxy {
     socklen_t upstream_sa_len;
 
     sock_pool_t udp_pool;
+    exchange_t *exchanges;
 
     _Atomic uint64_t inflight;
     _Atomic uint64_t dropped;
@@ -123,7 +127,8 @@ static int parse_listen(const char *addr, uint16_t port, int *family,
 
 /* ---- per-request exchange ---- */
 
-typedef struct exchange {
+struct exchange {
+    exchange_t *next;
     mt_dnsproxy_t *p;
     bool is_tcp;
     int upstream_fd;
@@ -159,7 +164,7 @@ typedef struct exchange {
     uint8_t *out;
     size_t out_len;
     size_t out_sent;
-} exchange_t;
+};
 
 static void exchange_free(exchange_t *ex)
 {
@@ -179,8 +184,8 @@ static bool rearm_fd(mt_loop_t *loop, int fd, uint32_t events, mt_fd_cb cb,
     return mt_loop_add_fd(loop, fd, events, cb, ud) == MT_OK;
 }
 
-/* Tear down: remove from loop, release slot, close fds. */
-static void exchange_finish(exchange_t *ex, bool pool_upstream)
+/* Release an already-unlinked exchange: remove watches and close fds. */
+static void exchange_release(exchange_t *ex, bool pool_upstream)
 {
     mt_dnsproxy_t *p = ex->p;
     if (ex->timer_id > 0) {
@@ -203,6 +208,14 @@ static void exchange_finish(exchange_t *ex, bool pool_upstream)
     }
     atomic_fetch_sub(&p->inflight, 1);
     exchange_free(ex);
+}
+
+static void exchange_finish(exchange_t *ex, bool pool_upstream)
+{
+    exchange_t **link = &ex->p->exchanges;
+    while (*link && *link != ex) { link = &(*link)->next; }
+    if (*link) { *link = ex->next; }
+    exchange_release(ex, pool_upstream);
 }
 
 /* Send a UDP reply to the client with the original destination as source. */
@@ -550,13 +563,13 @@ static void start_upstream(mt_dnsproxy_t *p, exchange_t *ex)
         }
     }
 
-    int tid = 0;
-    if (mt_loop_add_timer(p->loop, p->cfg.timeout_ms, 0, on_timeout, ex,
-                          &tid) != MT_OK) {
+    /* TCP already has a processing deadline, including local PTR replies.
+     * UDP arms its processing deadline here. */
+    if (ex->timer_id == 0 &&
+        mt_loop_add_timer(p->loop, p->cfg.timeout_ms, 0, on_timeout, ex,
+                          &ex->timer_id) != MT_OK) {
         exchange_finish(ex, false);
-        return;
     }
-    ex->timer_id = tid;
 }
 
 typedef enum request_disp {
@@ -691,11 +704,12 @@ static void on_udp_readable(mt_loop_t *loop, int fd, uint32_t events,
             }
         }
 
+        ex->next = p->exchanges;
+        p->exchanges = ex;
         atomic_fetch_add(&p->inflight, 1);
         /* UDP: fake-PTR replies synchronously, so only DROP/FORWARD occur */
         if (handle_request_common(p, ex) != REQ_FORWARD) {
-            atomic_fetch_sub(&p->inflight, 1);
-            exchange_free(ex);
+            exchange_finish(ex, false);
             continue;
         }
         start_upstream(p, ex);
@@ -754,6 +768,15 @@ static void on_tcp_client_read(mt_loop_t *loop, int fd, uint32_t events,
         ex->req_got += (size_t)n;
     }
 
+    /* Match Go's separate request-read and processing deadlines. */
+    (void)mt_loop_del_timer(ex->p->loop, ex->timer_id);
+    ex->timer_id = 0;
+    if (mt_loop_add_timer(ex->p->loop, ex->p->cfg.timeout_ms, 0,
+                          on_timeout, ex, &ex->timer_id) != MT_OK) {
+        exchange_finish(ex, false);
+        return;
+    }
+
     /* full request read; stop reading from the client */
     mt_loop_del_fd(ex->p->loop, ex->client_fd);
     /* re-register the client fd only when we have a response to write; keep
@@ -805,13 +828,19 @@ static void on_tcp_accept(mt_loop_t *loop, int fd, uint32_t events, void *ud)
         ex->is_tcp = true;
         ex->upstream_fd = -1;
         ex->client_fd = cfd;
+        ex->next = p->exchanges;
+        p->exchanges = ex;
         atomic_fetch_add(&p->inflight, 1);
         if (mt_loop_add_fd(p->loop, cfd, EPOLLIN, on_tcp_client_read, ex) !=
             MT_OK) {
-            atomic_fetch_sub(&p->inflight, 1);
-            close(cfd);
-            free(ex);
+            exchange_finish(ex, false);
             continue;
+        }
+        /* A peer that never finishes its length prefix/body must not
+         * retain a shared UDP/TCP concurrency slot indefinitely. */
+        if (mt_loop_add_timer(p->loop, p->cfg.timeout_ms, 0, on_timeout, ex,
+                              &ex->timer_id) != MT_OK) {
+            exchange_finish(ex, false);
         }
     }
 }
@@ -843,17 +872,48 @@ mt_err_t mt_dnsproxy_create(const mt_dnsproxy_config_t *cfg, mt_loop_t *loop,
     }
     p->family = fam_listen;
 
-    int fam_up;
-    if (parse_listen(cfg->upstream_addr, cfg->upstream_port, &fam_up,
-                     &p->upstream_sa, &p->upstream_sa_len) != 0) {
+    /* Unlike inet_pton, getaddrinfo accepts the hostnames accepted by
+     * Go's net.Dialer. Resolve once at startup, outside the event loop;
+     * upstream and listener families are independent. */
+    const char *upstream = cfg->upstream_addr;
+    char host[256];
+    if (!upstream || strlen(upstream) >= sizeof(host)) {
         free(p);
         return MT_ERR_INVAL;
     }
-    /* upstream family must match listen family for the pooled sockets;
-     * in practice both are the configured stack. */
-    p->family = fam_up;
+    snprintf(host, sizeof(host), "%s", upstream);
+    size_t host_len = strlen(host);
+    if (host_len >= 2 && host[0] == '[' && host[host_len - 1] == ']') {
+        host[host_len - 1] = '\0';
+        memmove(host, host + 1, host_len - 1);
+    }
+    char service[6];
+    snprintf(service, sizeof(service), "%u", cfg->upstream_port);
+    struct addrinfo hints = {0}, *addresses = NULL;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_NUMERICSERV;
+    if (getaddrinfo(host, service, &hints, &addresses) != 0 || !addresses) {
+        free(p);
+        return MT_ERR_INVAL;
+    }
+    if (addresses->ai_addrlen > sizeof(p->upstream_sa)) {
+        freeaddrinfo(addresses);
+        free(p);
+        return MT_ERR_INVAL;
+    }
+    memcpy(&p->upstream_sa, addresses->ai_addr, addresses->ai_addrlen);
+    p->upstream_sa_len = addresses->ai_addrlen;
+    p->family = addresses->ai_family;
+    freeaddrinfo(addresses);
 
+    p->cfg.listen_addr = strdup(cfg->listen_addr ? cfg->listen_addr : "0.0.0.0");
+    p->cfg.upstream_addr = strdup(upstream);
     pool_init(&p->udp_pool, cfg->max_idle_conns);
+    if (!p->cfg.listen_addr || !p->cfg.upstream_addr || !p->udp_pool.fds) {
+        mt_dnsproxy_destroy(p);
+        return MT_ERR_NOMEM;
+    }
     *out = p;
     return MT_OK;
 }
@@ -932,6 +992,11 @@ void mt_dnsproxy_destroy(mt_dnsproxy_t *p)
     if (p == NULL) {
         return;
     }
+    while (p->exchanges) {
+        exchange_t *ex = p->exchanges;
+        p->exchanges = ex->next;
+        exchange_release(ex, false);
+    }
     if (p->udp_fd >= 0) {
         mt_loop_del_fd(p->loop, p->udp_fd);
         close(p->udp_fd);
@@ -941,6 +1006,8 @@ void mt_dnsproxy_destroy(mt_dnsproxy_t *p)
         close(p->tcp_fd);
     }
     pool_clear(&p->udp_pool);
+    free((void *)p->cfg.listen_addr);
+    free((void *)p->cfg.upstream_addr);
     free(p);
 }
 

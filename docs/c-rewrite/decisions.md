@@ -3057,3 +3057,73 @@ The same audit found that main constructed the port-remap chain as literal
 `DNSOR`, bypassing the frozen `<ChainPrefix>DNSOR` contract. Port remap now
 accepts the configured prefix and owns the concatenation; a custom-prefix
 unit test prevents default-only coverage from hiding this again.
+
+
+## D-66: Repair PR1 lifetime/reload regressions and remove blocking subscription I/O
+
+**Status: implemented; supersedes D-33's event-loop blocking limitation.**
+Review of PR1 at `7cf213665291c33dc691318af5db79934d2add6a` found eight
+regressions. The fixes preserve YAML names, success JSON, rule matching and
+netfilter naming; frozen golden files are deliberately unchanged.
+
+- Subscription replacement builds its array through the same model allocator
+  as append. Allocating exactly N pointers was incompatible with the append
+  allocator's minimum-eight/geometric capacity assumption.
+- Deleted epoll watches are invalidated immediately and freed only after the
+  current ready batch. One-shot timers are reclaimed after their callback,
+  unless the callback already removed them. Fired timerfds no longer leak.
+- TCP DNS clients receive a request-read deadline at accept, replaced by a
+  separate processing deadline after the complete request (including local
+  PTR replies). Proxy destruction also closes outstanding exchanges.
+- Reload parses an overlay onto a deep copy of CURRENT app settings, not
+  defaults, and publishes stored settings as well as live flags. Auth, skin
+  and interface filtering read the updated config. Missing/null subscriptions
+  clears them; absent groups preserves groups. Failed parsing preserves state.
+  Already-created listeners, helper prefixes and port-remap retain startup
+  settings until restart, as in Go. Owned startup strings prevent dangling
+  references when the reloadable config strings are replaced.
+- DNS upstream accepts a hostname through getaddrinfo. Resolution currently
+  occurs once at startup, selecting the resolver's first address; automatic
+  re-resolution/address failover is not implemented. Listener/upstream address
+  families are independent; tests exchange actual DNS traffic through localhost.
+
+Production subscription network I/O now uses two workers and a bounded queue
+of 32 accepted jobs (including active/completed jobs). Workers only see owned
+URL/body buffers; a nonblocking pipe returns completions to the event loop.
+All subscription, ruleset, cache and HTTP mutation remains on the loop owner.
+Blocking compatibility entry points remain for embeddings/tests, not daemon
+callbacks. Synchronous sync rejects an already-pending async sync; synchronous
+batch sync skips pending entries.
+
+Each subscription incarnation has a nonserialized revision. Delete/recreate,
+PUT replacement or SIGHUP during a fetch invalidates the old completion. A
+second sync of an already-pending subscription and an obsolete completion
+return HTTP 409 rather than overwriting newer edits; saturation returns 503.
+The normal 200/400/404/502 response shapes are preserved. Deferred responses
+own a weak connection token and can finish safely after peer disconnect or
+server destruction. Destroy the fetcher before app/handler contexts; shutdown
+cancels queued transfers, joins workers, and completes each accepted job once.
+
+**Intentional scheduling difference:** auto-update applies and saves each
+successful changed subscription on completion, rather than atomically applying
+one fully downloaded batch. A failed source no longer delays unrelated sources.
+Rebuild rollback remains per application. Queue overflow is retried next minute
+with a rotating starting index so permanently failing early URLs cannot starve
+later subscriptions. Fetch redirect policy, per-hop timeout and body cap are
+unchanged. Disk saves, parsing and netfilter apply are still synchronous; this
+change removes network waiting, not every possible source of loop latency.
+
+Regression coverage is in `test_migration_regressions.c` and
+`test_async_subscriptions.c`; the existing subscription HTTP API tests now run
+through the production asynchronous path. Coverage includes arbitrary replacement
+sizes followed by append, same-batch event invalidation, timerfd reclamation,
+partial TCP requests, DNS cleanup and hostname exchange, reload/save/restart,
+slow upstream served by the same event loop, stale fetches, duplicate sync,
+queue saturation/fairness, shutdown and deferred response after server teardown.
+Physical Keenetic/OpenWrt integration remains a separate on-device validation.
+
+Static-analysis follow-up separates list unlinking from resource release in
+HTTP/DNS bulk teardown, making the lifetime invariant explicit to Clang's
+analyzer. The RCI size limit is explicitly widened at the size_t comparison;
+port-remap prefix copying includes its terminator before appending the suffix.
+These changes do not alter the wire or configuration contracts.

@@ -393,6 +393,75 @@ static void handle_delete_subscription(mt_http_req_t *req, mt_http_res_t *res, v
     maybe_save(ctx, req);
 }
 
+static int sync_status(mt_err_t err) {
+    switch (err) {
+    case MT_ERR_NOENT: return 404;
+    case MT_ERR_INVAL: return 400;
+    case MT_ERR_UPSTREAM: return 502;
+    case MT_ERR_STATE: return 409;
+    case MT_ERR_LIMIT: return 503;
+    default: return 500;
+    }
+}
+
+static const char *sync_message(mt_err_t err) {
+    switch (err) {
+    case MT_ERR_NOENT: return "subscription not found";
+    case MT_ERR_INVAL: return "subscription invalid";
+    case MT_ERR_UPSTREAM: return "subscription fetch failed";
+    case MT_ERR_STATE: return "subscription changed or sync already pending";
+    default: return mt_err_str(err);
+    }
+}
+
+typedef struct pending_sync {
+    mt_subs_ctx_t *ctx;
+    mt_http_deferred_t *response;
+    bool save;
+} pending_sync_t;
+
+static void sync_finished(void *ud, mt_id_t id, mt_err_t err, bool changed) {
+    pending_sync_t *pending = ud;
+    mt_subs_ctx_t *ctx = pending->ctx;
+    if (err != MT_OK) {
+        mt_http_deferred_error(pending->response, sync_status(err), sync_message(err));
+    } else {
+        const mt_subscription_t *sub = mt_app_find_subscription_by_id(ctx->app, id);
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(sub->rules, sub->n_rules));
+        cJSON_AddNumberToObject(out, "lastUpdate", sub->last_update);
+        cJSON_AddStringToObject(out, "url", sub->url ? sub->url : "");
+        mt_http_deferred_json(pending->response, 200, out);
+        if (changed && pending->save && ctx->config_path) {
+            mt_err_t serr = mt_app_save_config(ctx->app, ctx->config_path,
+                                                ctx->config_version ? ctx->config_version : "");
+            if (serr != MT_OK) { MT_ERROR("failed to save config file: %s", mt_err_str(serr)); }
+        }
+    }
+    free(pending);
+}
+
+static void preview_fetched(void *ud, mt_err_t err, const char *body, size_t len) {
+    (void)len;
+    mt_http_deferred_t *response = ud;
+    if (err != MT_OK) {
+        mt_http_deferred_error(response, 502, "subscription fetch failed");
+        return;
+    }
+    mt_sub_rule_t **rules = NULL;
+    size_t n = 0;
+    err = mt_sub_parse_rules(body, &rules, &n);
+    if (err != MT_OK) {
+        mt_http_deferred_error(response, 500, mt_err_str(err));
+        return;
+    }
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(rules, n));
+    mt_http_deferred_json(response, 200, out);
+    for (size_t i = 0; i < n; i++) { mt_sub_rule_free(rules[i]); }
+    free(rules);
+}
+
 /* POST /api/v1/subscriptions/{subscriptionID}/sync -- fetch+refresh a
  * single subscription's rules (SyncSubscription). Body is an optional
  * {"url": "..."} override; matches Go's json.Decoder-ignoring-EOF
@@ -422,6 +491,33 @@ static void handle_sync_subscription(mt_http_req_t *req, mt_http_res_t *res, voi
         }
         const char *url = get_string(json, "url");
         if (url[0] != '\0') { url_override = url; }
+    }
+
+    if (ctx->fetcher) {
+        pending_sync_t *pending = calloc(1, sizeof(*pending));
+        if (!pending) {
+            cJSON_Delete(json);
+            mt_http_res_write_error(res, 500, "out of memory");
+            return;
+        }
+        pending->ctx = ctx;
+        const char *save = mt_http_req_query(req, "save");
+        pending->save = !(save && strcmp(save, "false") == 0);
+        pending->response = mt_http_res_defer(req, res);
+        if (!pending->response) {
+            free(pending); cJSON_Delete(json);
+            mt_http_res_write_error(res, 500, "out of memory");
+            return;
+        }
+        mt_err_t err = mt_app_sync_subscription_async(ctx->app, ctx->fetcher, id,
+            (int64_t)time(NULL), url_override, sync_finished, pending);
+        cJSON_Delete(json);
+        if (err != MT_OK) {
+            mt_http_res_cancel_defer(res);
+            free(pending);
+            mt_http_res_write_error(res, sync_status(err), sync_message(err));
+        }
+        return;
     }
 
     bool changed = false;
@@ -464,13 +560,23 @@ static void handle_sync_subscription(mt_http_req_t *req, mt_http_res_t *res, voi
  * persisting anything (GetSubscriptionRules): a preview endpoint for the
  * frontend's "add subscription" flow. */
 static void handle_get_subscription_rules(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
-    (void)ud;
+    mt_subs_ctx_t *ctx = ud;
     const char *url = mt_http_req_query(req, "url");
     if (!url || url[0] == '\0') {
         mt_http_res_write_error(res, 400, "subscription url is required");
         return;
     }
 
+    if (ctx->fetcher) {
+        mt_http_deferred_t *response = mt_http_res_defer(req, res);
+        if (!response) { mt_http_res_write_error(res, 500, "out of memory"); return; }
+        mt_err_t err = mt_sub_fetcher_submit(ctx->fetcher, url, preview_fetched, response);
+        if (err != MT_OK) {
+            mt_http_res_cancel_defer(res);
+            mt_http_res_write_error(res, sync_status(err), mt_err_str(err));
+        }
+        return;
+    }
     char *body = NULL;
     size_t body_len = 0;
     mt_err_t ferr = mt_sub_fetch_list(url, &body, &body_len);

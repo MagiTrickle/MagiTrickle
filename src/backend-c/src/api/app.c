@@ -22,6 +22,10 @@
 
 struct mt_app {
     mt_config_t *cfg;
+    /* Immutable startup helper names: rulesets borrow these, not the
+     * reloadable configuration strings. */
+    char *ipset_prefix;
+    char *chain_prefix;
     mt_cache_t *cache;
     mt_ipt_t *ipt4;
     mt_ipt_t *ipt6;
@@ -29,6 +33,8 @@ struct mt_app {
     mt_dns_pipeline_t *pipeline;
     uint32_t start_idx;
     bool running;
+    uint64_t next_sub_revision;
+    size_t next_due_index;
 
     mt_ruleset_t **rulesets;
     size_t n_rulesets;
@@ -92,8 +98,8 @@ static mt_ruleset_deps_t ruleset_deps(mt_app_t *app) {
         .ipt4 = app->ipt4,
         .ipt6 = app->ipt6,
         .rtnl = app->rtnl,
-        .ipset_prefix = app->cfg->app.netfilter.ipset.table_prefix,
-        .chain_prefix = app->cfg->app.netfilter.iptables.chain_prefix,
+        .ipset_prefix = app->ipset_prefix,
+        .chain_prefix = app->chain_prefix,
         .start_idx = app->start_idx,
     };
     return deps;
@@ -210,6 +216,11 @@ mt_app_t *mt_app_create(const mt_app_deps_t *deps) {
     mt_app_t *app = calloc(1, sizeof(*app));
     if (!app) { return NULL; }
     app->cfg = deps->cfg;
+    if (mt_strset(&app->ipset_prefix, deps->cfg->app.netfilter.ipset.table_prefix) != MT_OK ||
+        mt_strset(&app->chain_prefix, deps->cfg->app.netfilter.iptables.chain_prefix) != MT_OK) {
+        mt_app_destroy(app);
+        return NULL;
+    }
     app->cache = deps->cache;
     app->ipt4 = deps->ipt4;
     app->ipt6 = deps->ipt6;
@@ -225,6 +236,10 @@ mt_app_t *mt_app_create(const mt_app_deps_t *deps) {
             mt_app_destroy(app);
             return NULL;
         }
+    }
+    for (size_t i = 0; i < app->cfg->n_subscriptions; i++) {
+        app->cfg->subscriptions[i]->revision = ++app->next_sub_revision;
+        app->cfg->subscriptions[i]->sync_pending = false;
     }
     /* Mirrors Go's LoadConfig calling syncSubscriptionRuleSetsLocked()
      * unconditionally at the end -- running is always false here (set
@@ -250,6 +265,8 @@ void mt_app_destroy(mt_app_t *app) {
     free_subscription_rulesets(app);
     free(app->sub_rulesets);
     free(app->sub_synth_groups);
+    free(app->ipset_prefix);
+    free(app->chain_prefix);
     free(app);
 }
 
@@ -427,6 +444,8 @@ static mt_err_t mt_app_add_subscription_unlocked(mt_app_t *app, mt_subscription_
             return MT_ERR_EXIST;
         }
     }
+    sub->revision = ++app->next_sub_revision;
+    sub->sync_pending = false;
     mt_err_t err = mt_config_add_subscription(app->cfg, sub);
     if (err != MT_OK) {
         mt_subscription_free(sub);
@@ -455,19 +474,29 @@ mt_err_t mt_app_add_subscription(mt_app_t *app, mt_subscription_t *sub) {
 }
 
 static mt_err_t mt_app_replace_subscriptions_unlocked(mt_app_t *app, mt_subscription_t **subs, size_t n) {
-    mt_subscription_t **new_arr = n > 0 ? calloc(n, sizeof(*new_arr)) : NULL;
-    if (n > 0 && !new_arr) {
-        for (size_t i = 0; i < n; i++) { mt_subscription_free(subs[i]); }
-        free(subs);
-        return MT_ERR_NOMEM;
+    /* Use the model allocator: an exactly-n allocation is incompatible
+     * with the geometric capacity assumed by mt_config_add_subscription. */
+    mt_config_t replacement = {0};
+    for (size_t i = 0; i < n; i++) {
+        mt_err_t reserve_err = mt_config_add_subscription(&replacement, subs[i]);
+        if (reserve_err != MT_OK) {
+            for (size_t j = i; j < n; j++) { mt_subscription_free(subs[j]); }
+            free(subs);
+            mt_config_clear_subscriptions(&replacement);
+            return reserve_err;
+        }
     }
-    for (size_t i = 0; i < n; i++) { new_arr[i] = subs[i]; }
+    mt_subscription_t **new_arr = replacement.subscriptions;
     free(subs); /* array shell only; elements moved into new_arr */
 
     mt_subscription_t **old_arr = app->cfg->subscriptions;
     size_t old_n = app->cfg->n_subscriptions;
     app->cfg->subscriptions = new_arr;
     app->cfg->n_subscriptions = n;
+    for (size_t i = 0; i < n; i++) {
+        new_arr[i]->revision = ++app->next_sub_revision;
+        new_arr[i]->sync_pending = false;
+    }
 
     mt_err_t err = rebuild_subscription_rulesets(app);
     if (err != MT_OK) {
@@ -563,42 +592,17 @@ static void free_sub_rule_array(mt_sub_rule_t **rules, size_t n) {
     free(rules);
 }
 
-static mt_err_t mt_app_sync_subscription_by_id_unlocked(mt_app_t *app, mt_id_t id,
-                                                        int64_t now_unix,
-                                                        const char *url_override,
-                                                        bool *out_changed) {
+static mt_err_t apply_subscription_body(mt_app_t *app, mt_id_t id,
+                                         int64_t now_unix, const char *fetch_url,
+                                         const char *body, bool *out_changed) {
     *out_changed = false;
-
     mt_subscription_t *sub = find_subscription_mut(app, id);
     if (!sub) { return MT_ERR_NOENT; }
-    const char *fetch_url = (url_override && url_override[0] != '\0') ? url_override : sub->url;
-    if (!fetch_url || fetch_url[0] == '\0') { return MT_ERR_INVAL; }
-
-    char *body = NULL;
-    size_t body_len = 0;
-    mt_err_t ferr = mt_sub_fetch_list(fetch_url, &body, &body_len);
-    if (ferr != MT_OK) {
-        MT_ERROR("failed to fetch subscription list: %s", mt_err_str(ferr));
-        return MT_ERR_UPSTREAM;
-    }
-
     mt_sub_rule_t **refreshed = NULL;
     size_t n_refreshed = 0;
     mt_err_t rerr = mt_sub_refresh_rules(body, sub->rules, sub->n_rules, &refreshed, &n_refreshed);
-    free(body);
     if (rerr != MT_OK) { return rerr; }
     bool rules_changed = !mt_sub_same_rules(sub->rules, sub->n_rules, refreshed, n_refreshed);
-
-    /* Re-find defensively: nothing can actually mutate cfg between the
-     * lookup above and here in this synchronous single-thread model, but
-     * this mirrors Go's re-validation after the (there, concurrent)
-     * network fetch and keeps this code correct if a future worker-thread
-     * redesign (see app.h) makes the fetch genuinely concurrent. */
-    sub = find_subscription_mut(app, id);
-    if (!sub) {
-        free_sub_rule_array(refreshed, n_refreshed);
-        return MT_ERR_NOENT;
-    }
 
     bool url_changed = strcmp(sub->url ? sub->url : "", fetch_url) != 0;
     char *new_url = NULL;
@@ -643,8 +647,28 @@ static mt_err_t mt_app_sync_subscription_by_id_unlocked(mt_app_t *app, mt_id_t i
     }
     free(prev_url);
 
+    sub->revision = ++app->next_sub_revision;
     *out_changed = url_changed || rules_changed;
     return MT_OK;
+}
+
+static mt_err_t mt_app_sync_subscription_by_id_unlocked(mt_app_t *app, mt_id_t id,
+                                                        int64_t now_unix,
+                                                        const char *url_override,
+                                                        bool *out_changed) {
+    *out_changed = false;
+    mt_subscription_t *sub = find_subscription_mut(app, id);
+    if (!sub) { return MT_ERR_NOENT; }
+    if (sub->sync_pending) { return MT_ERR_STATE; }
+    const char *url = (url_override && url_override[0]) ? url_override : sub->url;
+    if (!url || !url[0]) { return MT_ERR_INVAL; }
+    char *body = NULL;
+    size_t len = 0;
+    mt_err_t err = mt_sub_fetch_list(url, &body, &len);
+    if (err != MT_OK) { return MT_ERR_UPSTREAM; }
+    err = apply_subscription_body(app, id, now_unix, url, body, out_changed);
+    free(body);
+    return err;
 }
 
 mt_err_t mt_app_sync_subscription_by_id(mt_app_t *app, mt_id_t id, int64_t now_unix,
@@ -662,7 +686,8 @@ static mt_err_t mt_app_sync_due_subscriptions_unlocked(mt_app_t *app, int64_t no
     mt_id_t *due_ids = NULL;
     size_t n_due = 0, cap_due = 0;
     for (size_t i = 0; i < app->cfg->n_subscriptions; i++) {
-        if (!mt_sub_is_due(app->cfg->subscriptions[i], now_unix)) { continue; }
+        if (app->cfg->subscriptions[i]->sync_pending ||
+            !mt_sub_is_due(app->cfg->subscriptions[i], now_unix)) { continue; }
         if (n_due == cap_due) {
             size_t new_cap = cap_due ? cap_due * 2 : 8;
             mt_id_t *na = realloc(due_ids, new_cap * sizeof(*na));
@@ -820,6 +845,85 @@ mt_err_t mt_app_sync_due_subscriptions(mt_app_t *app, int64_t now_unix, bool *ou
     return r;
 }
 
+typedef struct async_sync {
+    mt_app_t *app;
+    mt_id_t id;
+    uint64_t revision;
+    int64_t now;
+    char *url;
+    mt_app_sync_done_fn done;
+    void *ud;
+} async_sync_t;
+
+static void subscription_fetched(void *ud, mt_err_t err, const char *body, size_t len) {
+    (void)len;
+    async_sync_t *job = ud;
+    mt_subscription_t *sub = find_subscription_mut(job->app, job->id);
+    bool changed = false;
+    if (!sub) {
+        err = MT_ERR_NOENT;
+    } else if (sub->revision != job->revision) {
+        err = MT_ERR_STATE; /* removed/replaced/edited while I/O was pending */
+    } else {
+        sub->sync_pending = false;
+        if (err == MT_OK) {
+            app_nf_enter(job->app);
+            err = apply_subscription_body(job->app, job->id, job->now,
+                                           job->url, body, &changed);
+            app_nf_leave(job->app);
+        } else if (err != MT_ERR_CANCELED) {
+            err = MT_ERR_UPSTREAM;
+        }
+    }
+    job->done(job->ud, job->id, err, changed);
+    free(job->url);
+    free(job);
+}
+
+mt_err_t mt_app_sync_subscription_async(mt_app_t *app, mt_sub_fetcher_t *fetcher,
+                                         mt_id_t id, int64_t now,
+                                         const char *url_override,
+                                         mt_app_sync_done_fn done, void *ud) {
+    if (!done) { return MT_ERR_INVAL; }
+    mt_subscription_t *sub = find_subscription_mut(app, id);
+    if (!sub) { return MT_ERR_NOENT; }
+    if (sub->sync_pending) { return MT_ERR_STATE; }
+    const char *url = url_override && url_override[0] ? url_override : sub->url;
+    if (!url || !url[0]) { return MT_ERR_INVAL; }
+    async_sync_t *job = calloc(1, sizeof(*job));
+    if (!job) { return MT_ERR_NOMEM; }
+    job->url = strdup(url);
+    if (!job->url) { free(job); return MT_ERR_NOMEM; }
+    job->app = app; job->id = id; job->now = now;
+    job->revision = sub->revision; job->done = done; job->ud = ud;
+    mt_err_t err = mt_sub_fetcher_submit(fetcher, url, subscription_fetched, job);
+    if (err != MT_OK) { free(job->url); free(job); return err; }
+    sub->sync_pending = true;
+    return MT_OK;
+}
+
+mt_err_t mt_app_sync_due_subscriptions_async(mt_app_t *app, mt_sub_fetcher_t *fetcher,
+                                             int64_t now, mt_app_sync_done_fn done,
+                                             void *ud) {
+    mt_err_t result = MT_OK;
+    size_t n = app->cfg->n_subscriptions;
+    if (n == 0) { return MT_OK; }
+    size_t start = app->next_due_index % n;
+    for (size_t offset = 0; offset < n; offset++) {
+        size_t i = (start + offset) % n;
+        mt_subscription_t *sub = app->cfg->subscriptions[i];
+        if (sub->sync_pending || !mt_sub_is_due(sub, now)) { continue; }
+        mt_err_t err = mt_app_sync_subscription_async(app, fetcher, sub->id,
+                                                      now, NULL, done, ud);
+        if (err != MT_OK) { result = err; }
+        /* Resume with the rejected entry next tick. Failed early URLs
+         * must not starve later subscriptions when the queue fills. */
+        app->next_due_index = err == MT_ERR_LIMIT ? i : (i + 1) % n;
+        if (err == MT_ERR_LIMIT) { break; }
+    }
+    return result;
+}
+
 /* ---- interfaces -------------------------------------------------------------- */
 
 /* Mirrors Go's constant.IgnoredInterfaces: empty on the default/OpenWrt
@@ -916,6 +1020,41 @@ mt_err_t mt_app_list_interfaces(const mt_app_t *app, mt_iface_info_t **out, size
 
 /* ---- config save / iptables commit -------------------------------------------- */
 
+mt_err_t mt_app_reload_config(mt_app_t *app, const char *path) {
+    /* Go overlays only fields present in YAML onto the current app config.
+     * Validate in scratch storage first, so malformed YAML changes nothing. */
+    mt_config_t next = {0};
+    mt_err_t err = mt_app_config_clone(&next.app, &app->cfg->app);
+    if (err != MT_OK) { return err; }
+    err = mt_config_load_file(&next, path);
+    if (err != MT_OK) { mt_config_clear(&next); return err; }
+
+    mt_app_config_clear(&app->cfg->app);
+    app->cfg->app = next.app;
+    memset(&next.app, 0, sizeof(next.app));
+    if (app->pipeline) {
+        uint32_t ttl = (uint32_t)(app->cfg->app.netfilter.ipset.additional_ttl / MT_DURATION_SEC);
+        mt_dns_pipeline_set_additional_ttl(app->pipeline, ttl);
+    }
+    if (next.groups_present) {
+        mt_app_clear_groups(app);
+        for (size_t i = 0; i < next.n_groups; i++) {
+            mt_group_t *group = next.groups[i];
+            next.groups[i] = NULL;
+            err = mt_app_add_group(app, group);
+            if (err != MT_OK) { mt_config_clear(&next); return err; }
+        }
+    }
+    /* Unlike groups, absent/null subscriptions means CLEAR in Go. */
+    mt_subscription_t **subs = next.subscriptions;
+    size_t n = next.n_subscriptions;
+    next.subscriptions = NULL;
+    next.n_subscriptions = 0;
+    err = mt_app_replace_subscriptions(app, subs, n);
+    mt_config_clear(&next);
+    return err;
+}
+
 mt_err_t mt_app_save_config(mt_app_t *app, const char *path, const char *version) {
     return mt_config_save_file(app->cfg, version, path);
 }
@@ -932,7 +1071,7 @@ static mt_err_t rebuild_netfilter_locked(mt_app_t *app, mt_cancel_t *cancel) {
      * -- starting from "none of it is there" makes the result depend only
      * on the current group set. */
     mt_err_t err = mt_netfilter_clean_iptables(app->ipt4, app->ipt6,
-                                               app->cfg->app.netfilter.iptables.chain_prefix);
+                                               app->chain_prefix);
     if (err != MT_OK) { return err; }
     if (mt_cancel_raised(cancel)) { return MT_ERR_CANCELED; }
 

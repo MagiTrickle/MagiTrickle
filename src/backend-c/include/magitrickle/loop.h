@@ -37,7 +37,9 @@ mt_err_t mt_loop_mod_fd(mt_loop_t *loop, int fd, uint32_t events);
 mt_err_t mt_loop_del_fd(mt_loop_t *loop, int fd);
 
 /* Returns a timer id (>0) via *out_id. interval_ms==0 -> one-shot after
- * initial_ms; otherwise fires every interval_ms after initial_ms. */
+ * initial_ms; otherwise fires every interval_ms after initial_ms. A one-shot
+ * is removed automatically after its callback; explicit deletion in that
+ * callback remains supported. All registration/deletion is loop-thread-only. */
 mt_err_t mt_loop_add_timer(mt_loop_t *loop, uint64_t initial_ms,
                            uint64_t interval_ms, mt_timer_cb cb, void *ud,
                            int *out_id);

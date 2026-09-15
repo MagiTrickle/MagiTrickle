@@ -34,7 +34,7 @@ mt_port_remap_t *mt_port_remap_new(const char *chain_prefix, uint16_t from, uint
         free(p);
         return NULL;
     }
-    memcpy(p->chain_name, chain_prefix, prefix_len);
+    memcpy(p->chain_name, chain_prefix, prefix_len + 1);
     memcpy(p->chain_name + prefix_len, suffix, sizeof(suffix));
 
     if (n_addrs > 0) {

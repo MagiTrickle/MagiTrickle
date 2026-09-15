@@ -148,7 +148,8 @@ API_SRCS := \
 # (Phase 7). Needs libcurl (host + feed sysroots, same cross-build
 # caveat as CONFIG_SRCS/NETFILTER_SRCS/API_SRCS).
 SUBSCRIPTIONS_SRCS := \
-    src/subscriptions/fetch.c
+    src/subscriptions/fetch.c \
+    src/subscriptions/fetch_async.c
 
 # Router-specific integrations. Keenetic's RCI interface-alias lookup
 # needs both libcurl and cJSON (same cross-build caveat as the groups

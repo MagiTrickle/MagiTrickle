@@ -221,7 +221,7 @@ typedef struct rci_buf {
 static size_t write_cb(char *ptr, size_t size, size_t nmemb, void *ud) {
     rci_buf_t *buf = ud;
     size_t n = size * nmemb;
-    if (buf->len + n > MT_KN_RCI_MAX_BODY_BYTES) {
+    if (buf->len + n > (size_t)MT_KN_RCI_MAX_BODY_BYTES) {
         buf->truncated = true;
         return 0; /* abort the transfer */
     }

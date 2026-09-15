@@ -62,6 +62,8 @@ typedef struct mt_subscription {
     uint32_t interval;
     uint32_t last_update;
     uint32_t last_check; /* runtime only, never serialized */
+    uint64_t revision;   /* runtime identity for stale fetch rejection */
+    bool sync_pending;   /* at most one accepted fetch per incarnation */
     mt_sub_rule_t **rules;
     size_t n_rules;
 } mt_subscription_t;
@@ -137,6 +139,8 @@ mt_err_t mt_subscription_add_rule(mt_subscription_t *s, mt_sub_rule_t *r);
 /* Initialize with DefaultAppConfig values (allocates strings). */
 mt_err_t mt_app_config_init_defaults(mt_app_config_t *c);
 void mt_app_config_clear(mt_app_config_t *c);
+/* Deep copy into an uninitialized destination. Cleans up on failure. */
+mt_err_t mt_app_config_clone(mt_app_config_t *dst, const mt_app_config_t *src);
 
 mt_err_t mt_config_init_defaults(mt_config_t *c);
 void mt_config_clear(mt_config_t *c);

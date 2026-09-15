@@ -87,7 +87,19 @@ static void visited_clear(visited_set_t *v) {
     v->n = 0;
 }
 
+static int transfer_progress(void *ud, curl_off_t total_down, curl_off_t down,
+                             curl_off_t total_up, curl_off_t up) {
+    (void)total_down; (void)down; (void)total_up; (void)up;
+    const atomic_bool *cancel = ud;
+    return cancel && atomic_load(cancel) ? 1 : 0;
+}
+
 mt_err_t mt_sub_fetch_list(const char *url, char **out_body, size_t *out_len) {
+    return mt_sub_fetch_list_cancel(url, out_body, out_len, NULL);
+}
+
+mt_err_t mt_sub_fetch_list_cancel(const char *url, char **out_body, size_t *out_len,
+                                  const atomic_bool *cancel) {
     *out_body = NULL;
     *out_len = 0;
 
@@ -98,6 +110,7 @@ mt_err_t mt_sub_fetch_list(const char *url, char **out_body, size_t *out_len) {
     mt_err_t result = MT_ERR_SYS;
     int redirects = 0;
     for (;;) {
+        if (cancel && atomic_load(cancel)) { result = MT_ERR_CANCELED; break; }
         if (!url_is_supported(current)) {
             result = MT_ERR_INVAL;
             break;
@@ -124,12 +137,16 @@ mt_err_t mt_sub_fetch_list(const char *url, char **out_body, size_t *out_len) {
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, transfer_progress);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
 
         CURLcode rc = curl_easy_perform(curl);
         if (rc != CURLE_OK) {
             free(buf.data);
             curl_easy_cleanup(curl);
-            result = buf.truncated ? MT_ERR_LIMIT : MT_ERR_IO;
+            result = (cancel && atomic_load(cancel)) ? MT_ERR_CANCELED :
+                     (buf.truncated ? MT_ERR_LIMIT : MT_ERR_IO);
             break;
         }
 

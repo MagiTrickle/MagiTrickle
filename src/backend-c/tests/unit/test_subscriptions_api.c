@@ -24,13 +24,7 @@ typedef struct harness {
     mt_httpd_t *tcp;
     pthread_t thread;
 
-    /* Stub subscription-list host, on its OWN loop/thread: the sync
-     * handler under test blocks the *subs API's* loop thread inside a
-     * synchronous libcurl fetch (see decisions.md D-33), so the stub
-     * server it fetches from must be serviced by a different thread --
-     * otherwise the one thread that would need to run epoll to accept
-     * the fetch's own incoming connection is the same thread stuck
-     * inside curl_easy_perform(), and the request just times out. */
+    /* Separate fixture server; API handlers use the production async fetcher. */
     mt_loop_t *stub_loop;
     mt_httpd_t *stub;
     pthread_t stub_thread;
@@ -80,6 +74,7 @@ static harness_t *harness_start(void) {
     h->ctx.config_version = NULL;
 
     if (mt_loop_create(&h->loop) != MT_OK) { return NULL; }
+    if (mt_sub_fetcher_create(h->loop, &h->ctx.fetcher) != MT_OK) { return NULL; }
     if (mt_httpd_create(h->loop, &h->tcp) != MT_OK) { return NULL; }
     mt_subs_register_routes(h->tcp, &h->ctx);
     if (mt_httpd_listen_tcp(h->tcp, "127.0.0.1", TEST_PORT) != MT_OK) { return NULL; }
@@ -99,6 +94,7 @@ static harness_t *harness_start(void) {
 static void harness_stop(harness_t *h) {
     mt_loop_stop(h->loop);
     pthread_join(h->thread, NULL);
+    mt_sub_fetcher_destroy(h->ctx.fetcher);
     mt_httpd_destroy(h->tcp);
     mt_loop_destroy(h->loop);
 

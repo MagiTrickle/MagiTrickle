@@ -202,6 +202,41 @@ void mt_app_config_clear(mt_app_config_t *c)
     memset(c, 0, sizeof(*c));
 }
 
+mt_err_t mt_app_config_clone(mt_app_config_t *dst, const mt_app_config_t *src)
+{
+    *dst = *src;
+    dst->http_web.host.address = NULL;
+    dst->http_web.skin = NULL;
+    dst->dns_proxy.host.address = NULL;
+    dst->dns_proxy.upstream.address = NULL;
+    dst->netfilter.iptables.chain_prefix = NULL;
+    dst->netfilter.ipset.table_prefix = NULL;
+    dst->log_level = NULL;
+    dst->link = NULL;
+    dst->n_link = 0;
+    mt_err_t err;
+    if ((err = mt_strset(&dst->http_web.host.address, src->http_web.host.address)) != MT_OK ||
+        (err = mt_strset(&dst->http_web.skin, src->http_web.skin)) != MT_OK ||
+        (err = mt_strset(&dst->dns_proxy.host.address, src->dns_proxy.host.address)) != MT_OK ||
+        (err = mt_strset(&dst->dns_proxy.upstream.address, src->dns_proxy.upstream.address)) != MT_OK ||
+        (err = mt_strset(&dst->netfilter.iptables.chain_prefix, src->netfilter.iptables.chain_prefix)) != MT_OK ||
+        (err = mt_strset(&dst->netfilter.ipset.table_prefix, src->netfilter.ipset.table_prefix)) != MT_OK ||
+        (err = mt_strset(&dst->log_level, src->log_level)) != MT_OK) {
+        mt_app_config_clear(dst);
+        return err;
+    }
+    if (src->n_link > 0) {
+        dst->link = calloc(src->n_link, sizeof(*dst->link));
+        if (!dst->link) { mt_app_config_clear(dst); return MT_ERR_NOMEM; }
+        for (size_t i = 0; i < src->n_link; i++) {
+            err = mt_strset(&dst->link[i], src->link[i]);
+            if (err != MT_OK) { mt_app_config_clear(dst); return err; }
+            dst->n_link++;
+        }
+    }
+    return MT_OK;
+}
+
 /* ---- config ---- */
 
 mt_err_t mt_config_init_defaults(mt_config_t *c)

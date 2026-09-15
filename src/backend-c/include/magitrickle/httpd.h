@@ -46,6 +46,14 @@
 typedef struct mt_httpd mt_httpd_t;
 typedef struct mt_http_req mt_http_req_t;
 typedef struct mt_http_res mt_http_res_t;
+typedef struct mt_http_deferred mt_http_deferred_t;
+/* Defer only during a handler. Complete exactly once, on the loop thread.
+ * Completion remains safe after peer disconnect/server destruction. On a
+ * failed enqueue cancel the deferral and write a normal immediate error. */
+mt_http_deferred_t *mt_http_res_defer(mt_http_req_t *req, mt_http_res_t *res);
+void mt_http_res_cancel_defer(mt_http_res_t *res);
+void mt_http_deferred_json(mt_http_deferred_t *pending, int status, cJSON *obj);
+void mt_http_deferred_error(mt_http_deferred_t *pending, int status, const char *msg);
 
 typedef void (*mt_http_handler_fn)(mt_http_req_t *req, mt_http_res_t *res, void *ud);
 
