@@ -392,12 +392,6 @@
     }
   }
 
-  .rule:global(.dragover) {
-    outline: 1px solid var(--accent);
-    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 50%, transparent);
-    border-radius: 10px;
-  }
-
   .table-input {
     border: none;
     background-color: transparent;

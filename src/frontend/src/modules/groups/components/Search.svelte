@@ -13,22 +13,6 @@
 
   let inputRef: HTMLInputElement;
 
-  function handleSearchShortcut(event: KeyboardEvent) {
-    if (
-      event.defaultPrevented ||
-      event.altKey ||
-      event.shiftKey ||
-      !(event.metaKey || event.ctrlKey) ||
-      (event.code !== "KeyF" && event.key.toLowerCase() !== "f") ||
-      !inputRef?.getClientRects().length
-    )
-      return;
-
-    event.preventDefault();
-    inputRef.focus();
-    inputRef.select();
-  }
-
   function handleContainerClick() {
     inputRef?.focus();
   }
@@ -50,8 +34,6 @@
     inputRef?.blur();
   }
 </script>
-
-<svelte:window onkeydown={handleSearchShortcut} />
 
 <div class="group-controls-search">
   <!-- svelte-ignore a11y_click_events_have_key_events -->

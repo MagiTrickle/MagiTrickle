@@ -7,6 +7,7 @@ import { overlay, toast } from "../../utils/events";
 import { fetcher } from "../../utils/fetcher";
 import { type Group, type Rule } from "../../types";
 import { type SortDirection, type SortField } from "../../utils/rule-sorter";
+import { captureRuleMove } from "./rule-motion";
 import {
   cloneGroupWithNewIds as cloneGroupWithNewIdsData,
   cloneGroupsWithNewIds as cloneGroupsWithNewIdsData,
@@ -976,6 +977,7 @@ export class GroupsStore {
     if (!sourceRules.length) return;
 
     const fromIndex = clamp(from_rule_index, 0, sourceRules.length - 1);
+    const animateMove = captureRuleMove(sourceRules[fromIndex].id);
     const [movedRule] = sourceRules.splice(fromIndex, 1);
     if (!movedRule) return;
 
@@ -1004,6 +1006,7 @@ export class GroupsStore {
     targetRules.splice(insertIndex, 0, movedRule);
 
     this.markDataRevision();
+    void animateMove();
   }
 
   changeGroupIndex(
@@ -1031,7 +1034,13 @@ export class GroupsStore {
     this.markDataRevision();
   }
 
+  canDropGroup = (source: GroupDragData, target: GroupDropSlotData) => {
+    const slot = target.group_index + (target.insert === "after" ? 1 : 0);
+    return source.group_index !== slot && source.group_index + 1 !== slot;
+  };
+
   handleGroupSlotDrop = (source: GroupDragData, target: GroupDropSlotData) => {
+    if (!this.canDropGroup(source, target)) return;
     const { group_index: from_index } = source;
     const { group_index: to_index, insert } = target;
     if (from_index === to_index && insert !== "after") return;
