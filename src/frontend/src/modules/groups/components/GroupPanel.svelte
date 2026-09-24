@@ -345,7 +345,9 @@
         use:droppable={{
           data: { rule_id: "", rule_index: 0, group_id: group.id, group_index },
           scope: "rule",
-          canDrop: (src) => src.group_id === group.id,
+          canDrop: (src) => src.group_id !== group.id || src.rule_index !== 0,
+          onDrop: (source) =>
+            store.changeRuleIndex(source.group_index, source.rule_index, group_index, 0),
         }}
       >
         <div class="group-left">
@@ -576,11 +578,6 @@
       border-radius: 0.5rem;
       background-color: var(--bg-light);
       position: relative;
-    }
-
-    &:global(.dragover) {
-      outline: 1px solid var(--accent);
-      box-shadow: inset 0 0 5px 0 var(--accent);
     }
   }
 

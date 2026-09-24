@@ -236,7 +236,7 @@
               data: { group_index, insert: "before" } as GroupDropSlotData,
               scope: "group",
               canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
-                source.group_index !== target.group_index,
+                store.canDropGroup(source, target),
               dropEffect: "move",
               onDrop: store.handleGroupSlotDrop,
             }}
@@ -251,7 +251,7 @@
           use:droppable={{
             data: { group_index, insert: "after" } as GroupDropSlotData,
             scope: "group",
-            canDrop: () => true,
+            canDrop: store.canDropGroup,
             dropEffect: "move",
             onDrop: store.handleGroupSlotDrop,
           }}
@@ -301,9 +301,67 @@
     right: 0;
     height: 1rem;
     pointer-events: none;
-    background: color-mix(in oklab, var(--accent) 28%, transparent);
-    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 54%, transparent);
     opacity: 0;
+  }
+
+  /* Fill the gap, including the space around the rounded card corners. */
+  .group-drop-slot::before {
+    content: "";
+    position: absolute;
+    inset: -0.5rem 0;
+    pointer-events: none;
+    background: color-mix(in oklab, var(--accent) 35%, transparent);
+    mask:
+      radial-gradient(circle at 100% 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top left /
+        0.5rem 0.5rem,
+      radial-gradient(circle at 0 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top right /
+        0.5rem 0.5rem,
+      radial-gradient(circle at 100% 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        left / 0.5rem 0.5rem,
+      radial-gradient(circle at 0 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        right / 0.5rem 0.5rem,
+      linear-gradient(black, black) center / 100% 1rem;
+    mask-repeat: no-repeat;
+  }
+
+  .group-drop-slot--top::before {
+    mask:
+      radial-gradient(circle at 100% 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        left / 0.5rem 0.5rem no-repeat,
+      radial-gradient(circle at 0 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        right / 0.5rem 0.5rem no-repeat,
+      linear-gradient(black, black) center / 100% 1rem no-repeat;
+  }
+
+  .group-wrapper:not(:has(~ .group-wrapper:not(.is-hidden)))
+    .group-drop-slot--bottom::before {
+    mask:
+      radial-gradient(circle at 100% 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top left /
+        0.5rem 0.5rem no-repeat,
+      radial-gradient(circle at 0 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top right /
+        0.5rem 0.5rem no-repeat,
+      linear-gradient(black, black) center / 100% 1rem no-repeat;
+  }
+
+  .group-list :global([data-droppable="rule"]) {
+    position: relative;
+  }
+
+  .group-list :global([data-droppable="rule"].dragover)::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.25rem;
+    bottom: -1.5px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--accent);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .group-list :global([data-droppable="rule"][data-drop-edge="before"].dragover)::after {
+    top: -1.5px;
+    bottom: auto;
   }
 
   .group-drop-slot--top {
