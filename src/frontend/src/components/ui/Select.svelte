@@ -23,6 +23,7 @@
   const selected_option = $derived(options.find((o) => o.value === selected));
   const selected_label = $derived(selected_option?.label ?? selected ?? "");
   const selected_description = $derived(selected_option?.description ?? "");
+  const hasDescriptions = $derived(options.some((option) => Boolean(option.description)));
   const missing_selection = $derived(
     Boolean(selected) && !options.some((o) => o.value === selected),
   );
@@ -31,7 +32,7 @@
 <div class="select-wrap" class:missing={missing_selection} {...rest}>
   <Select.Root type="single" {onValueChange} items={options} bind:value={selected}>
     <Select.Trigger aria-label={ariaLabel}>
-      <div class="selected" class:has-description={selected_description}>
+      <div class="selected" class:has-descriptions={hasDescriptions}>
         <div class="selected-text">
           <div class="selected-value">{selected_label}</div>
           {#if selected_description}
@@ -145,6 +146,11 @@
     flex-direction: column;
     align-items: end;
     gap: 0.08rem;
+    justify-content: center;
+    height: 1.05em;
+  }
+  .has-descriptions .selected-text {
+    height: 1.85em;
   }
   .selected-value {
     flex: 0 1 auto;
@@ -159,15 +165,19 @@
   .selected-description {
     max-width: 10rem;
     padding-left: 0.3rem;
+    padding-right: 0.2em;
     color: var(--text-2);
     font-size: 0.55em;
     font-style: italic;
+    line-height: 1.2;
+    flex-shrink: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .selected-open {
     width: 16px;
+    flex-shrink: 0;
     height: 16px;
     display: flex;
     align-items: center;

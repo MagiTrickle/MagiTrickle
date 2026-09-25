@@ -1061,8 +1061,8 @@ export class GroupsStore {
     el?.querySelector<HTMLInputElement>("input.group-name")?.focus();
   }
 
-  deleteGroup = (index: number) => {
-    if (!confirm(t("Delete this group?"))) return;
+  deleteGroup = (index: number, confirmed = false) => {
+    if (!confirmed && !confirm(t("Delete this group?"))) return;
     const removed = this.data[index];
     this.data.splice(index, 1);
     if (removed) {

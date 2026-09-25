@@ -459,8 +459,8 @@ export class SubscriptionsStore {
     }
   }
 
-  async deleteSubscription(index: number) {
-    if (!confirm(t("Delete this subscription?"))) return;
+  async deleteSubscription(index: number, confirmed = false) {
+    if (!confirmed && !confirm(t("Delete this subscription?"))) return;
 
     const removed = this.data[index];
     if (!removed) return;

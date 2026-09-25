@@ -13,6 +13,23 @@
 
   let inputRef: HTMLInputElement;
 
+  function handleSearchShortcut(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      event.altKey ||
+      event.shiftKey ||
+      !(event.metaKey || event.ctrlKey) ||
+      (event.code !== "KeyF" && event.key.toLowerCase() !== "f") ||
+      document.querySelector('[data-dialog-content][data-state="open"]') ||
+      !inputRef?.getClientRects().length
+    )
+      return;
+
+    event.preventDefault();
+    inputRef.focus();
+    inputRef.select();
+  }
+
   function handleContainerClick() {
     inputRef?.focus();
   }
@@ -33,6 +50,8 @@
     inputRef?.blur();
   }
 </script>
+
+<svelte:window onkeydown={handleSearchShortcut} />
 
 <div class="subscription-controls-search">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -87,7 +106,6 @@
     transition:
       background-color 0.1s ease-in-out,
       border-color 0.1s ease-in-out,
-      box-shadow 0.1s ease-in-out,
       color 0.1s ease-in-out,
       width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   }
@@ -104,9 +122,6 @@
     color: var(--text);
     border-color: var(--accent);
     max-width: 100%;
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent),
-      0 6px 18px -14px color-mix(in oklab, var(--accent) 35%, transparent);
   }
 
   .icon-wrapper {
