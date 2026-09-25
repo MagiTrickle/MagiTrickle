@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount, setContext, tick } from "svelte";
 
+  import BulkActions from "../../components/bulk/BulkActions.svelte";
+  import SelectionFrame from "../../components/bulk/SelectionFrame.svelte";
   import PageControls from "../../components/layout/PageControls.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import { t } from "../../data/locale.svelte";
@@ -17,6 +19,7 @@
 
   import { droppable } from "../../lib/dnd";
   import { parseConfig, type Group, type Rule } from "../../types";
+  import { copyRulePatternsToClipboard } from "../../utils/copy-rule-patterns";
   import { toast } from "../../utils/events";
 
   type Props = {
@@ -27,6 +30,27 @@
 
   const store = new GroupsStore({ onRenderComplete: () => onRenderComplete?.() });
   setContext(GROUPS_STORE_CONTEXT, store);
+
+  let selectedIds = $state<string[]>([]);
+  let selectedItems = $derived(store.data.filter((item) => selectedIds.includes(item.id)));
+  function toggleSelection(id: string) {
+    selectedIds = selectedIds.includes(id)
+      ? selectedIds.filter((value) => value !== id)
+      : [...selectedIds, id];
+  }
+  function applyToSelected(update: { interface: string } | { enable: boolean }) {
+    for (const item of selectedItems) Object.assign(item, update);
+    store.markDataRevision();
+  }
+  async function deleteSelected() {
+    if (!confirm(`${t("Delete selected items?")} (${selectedItems.length})`)) return;
+    const ids = selectedItems.map((item) => item.id);
+    for (const id of ids) {
+      const index = store.data.findIndex((item) => item.id === id);
+      if (index >= 0) await store.deleteGroup(index, true);
+    }
+    selectedIds = selectedIds.filter((id) => store.data.some((item) => item.id === id));
+  }
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
     open: false,
@@ -243,7 +267,13 @@
           ></div>
         {/if}
 
-        <GroupPanel {group_index} on:importRules={() => openImportRulesModal(group_index)} />
+        <SelectionFrame
+          selected={selectedIds.includes(group.id)}
+          name={group.name}
+          ontoggle={() => toggleSelection(group.id)}
+        >
+          <GroupPanel {group_index} on:importRules={() => openImportRulesModal(group_index)} />
+        </SelectionFrame>
 
         <div
           class="group-drop-slot group-drop-slot--bottom"
@@ -275,6 +305,21 @@
   onclose={resetImportConfigModal}
   onimport={handleImportConfig}
 />
+
+{#if selectedItems.length}
+  <BulkActions
+    count={selectedItems.length}
+    onclear={() => (selectedIds = [])}
+    onapply={(value) => applyToSelected({ interface: value })}
+    onenable={(enable) => applyToSelected({ enable })}
+    ondelete={deleteSelected}
+    oncopy={() => copyRulePatternsToClipboard(selectedItems.flatMap((item) => item.rules))}
+    onselectall={() =>
+      (selectedIds = store.data
+        .filter((_, index) => !store.searchActive || store.visibilityMap.has(index))
+        .map((item) => item.id))}
+  />
+{/if}
 
 <style>
   .group-list {

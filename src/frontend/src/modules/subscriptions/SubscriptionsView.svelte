@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount, setContext } from "svelte";
 
+  import BulkActions from "../../components/bulk/BulkActions.svelte";
+  import SelectionFrame from "../../components/bulk/SelectionFrame.svelte";
   import PageControls from "../../components/layout/PageControls.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import { t } from "../../data/locale.svelte";
@@ -16,6 +18,7 @@
 
   import { droppable } from "../../lib/dnd";
   import type { SubscriptionRule } from "../../types";
+  import { copyRulePatternsToClipboard } from "../../utils/copy-rule-patterns";
 
   type Props = {
     onRenderComplete?: () => void;
@@ -33,6 +36,27 @@
 
   const store = new SubscriptionsStore({ onRenderComplete: () => onRenderComplete?.() });
   setContext(SUBSCRIPTIONS_STORE_CONTEXT, store);
+
+  let selectedIds = $state<string[]>([]);
+  let selectedItems = $derived(store.data.filter((item) => selectedIds.includes(item.id)));
+  function toggleSelection(id: string) {
+    selectedIds = selectedIds.includes(id)
+      ? selectedIds.filter((value) => value !== id)
+      : [...selectedIds, id];
+  }
+  function applyToSelected(update: { interface: string } | { enable: boolean }) {
+    for (const item of selectedItems) Object.assign(item, update);
+    store.markDataRevision();
+  }
+  async function deleteSelected() {
+    if (!confirm(`${t("Delete selected items?")} (${selectedItems.length})`)) return;
+    const ids = selectedItems.map((item) => item.id);
+    for (const id of ids) {
+      const index = store.data.findIndex((item) => item.id === id);
+      if (index >= 0) await store.deleteSubscription(index, true);
+    }
+    selectedIds = selectedIds.filter((id) => store.data.some((item) => item.id === id));
+  }
 
   let addSubscriptionModal = $state(false);
 
@@ -114,7 +138,13 @@
             ></div>
           {/if}
 
-          <SubscriptionPanel subscription_index={sub_index} />
+          <SelectionFrame
+            selected={selectedIds.includes(sub.id)}
+            name={sub.name}
+            ontoggle={() => toggleSelection(sub.id)}
+          >
+            <SubscriptionPanel subscription_index={sub_index} />
+          </SelectionFrame>
 
           <div
             class="subscription-drop-slot subscription-drop-slot--bottom"
@@ -140,6 +170,21 @@
   on:add={handleAdd}
 />
 
+{#if selectedItems.length}
+  <BulkActions
+    count={selectedItems.length}
+    onclear={() => (selectedIds = [])}
+    onapply={(value) => applyToSelected({ interface: value })}
+    onenable={(enable) => applyToSelected({ enable })}
+    ondelete={deleteSelected}
+    oncopy={() => copyRulePatternsToClipboard(selectedItems.flatMap((item) => item.rules))}
+    onselectall={() =>
+      (selectedIds = store.data
+        .filter((_, index) => !store.searchActive || store.visibilityMap.has(index))
+        .map((item) => item.id))}
+  />
+{/if}
+
 <style>
   .subscription-list {
     min-height: 1px;
@@ -162,6 +207,10 @@
   .subscription-wrapper-inner {
     min-height: 0;
     overflow: hidden;
+  }
+
+  .subscription-wrapper:not(.is-hidden) .subscription-wrapper-inner {
+    overflow: visible;
   }
 
   .subscription-wrapper.is-hidden {

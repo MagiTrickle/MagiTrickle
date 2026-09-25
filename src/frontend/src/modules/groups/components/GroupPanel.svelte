@@ -30,8 +30,8 @@
   } from "../../../components/ui/icons";
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
+  import { copyRulePatternsToClipboard } from "../../../utils/copy-rule-patterns";
   import { defaultRule } from "../../../utils/defaults";
-  import { toast } from "../../../utils/events";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
 
   type Props = {
@@ -71,37 +71,8 @@
     store.open_state[group.id] = !effectiveOpen;
   }
 
-  async function copyRulePatterns() {
-    if (!group) return;
-
-    const patterns = group.rules.map((rule) => rule.rule.trim()).filter(Boolean);
-
-    if (patterns.length === 0) {
-      toast.error(t("Nothing to copy"));
-      return;
-    }
-
-    const textarea = document.createElement("textarea");
-
-    try {
-      textarea.value = patterns.join("\n");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-
-      document.body.appendChild(textarea);
-      textarea.select();
-
-      if (!document.execCommand("copy")) {
-        throw new Error("Copy command failed");
-      }
-
-      toast.success(t("Copied to clipboard"));
-    } catch (e) {
-      console.error("Failed to copy to clipboard:", e);
-      toast.error(t("Failed to copy"));
-    } finally {
-      textarea.remove();
-    }
+  function copyRulePatterns() {
+    if (group) copyRulePatternsToClipboard(group.rules);
   }
 
   type GroupDnD = {
