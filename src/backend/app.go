@@ -248,7 +248,7 @@ func (a *App) ruleSetSnapshot() []*RuleSet {
 	defer a.stateMu.RUnlock()
 
 	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
-	list = append(list, a.userRuleSets...)
 	list = append(list, a.subscriptionRuleSets...)
+	list = append(list, a.userRuleSets...)
 	return list
 }
