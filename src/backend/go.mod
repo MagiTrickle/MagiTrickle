@@ -3,7 +3,6 @@ module magitrickle
 go 1.23.12
 
 require (
-	github.com/IGLOU-EU/go-wildcard/v2 v2.1.0
 	github.com/dlclark/regexp2 v1.11.5
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/miekg/dns v1.1.68
