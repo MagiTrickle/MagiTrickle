@@ -1,5 +1,12 @@
 #!/bin/sh
 
-/opt/etc/init.d/S99magitrickle restart
+RESTART_SERVICE_ON_UPDATE=true
+
+CONFIG_FILE=/opt/etc/config/magitrickle.conf
+[ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+
+if [ "$RESTART_SERVICE_ON_UPDATE" = "true" ]; then
+	/opt/etc/init.d/S99magitrickle restart
+fi
 
 exit 0
