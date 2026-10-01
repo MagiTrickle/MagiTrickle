@@ -10,7 +10,6 @@
   import { normalizeSubscriptionUrl, validateSubscriptionUrl } from "../subscriptions.svelte";
 
   import { Info, Link, LoaderCircle, Network, Refresh, Type } from "../../../components/ui/icons";
-  import type { SubscriptionRule } from "../../../types";
   import { fetcher } from "../../../utils/fetcher";
 
   type DialogProps = {
@@ -27,17 +26,13 @@
   let name = $state("");
   let selectedInterface = $state("");
   let selectedInterval = $state(86400);
-  let rules = $state<SubscriptionRule[]>([]);
+  let summary = $state<{ count: number; types: Record<string, number> }>({ count: 0, types: {} });
   let isLoading = $state(false);
   let error = $state<string | null>(null);
   let fetchError = $state(false);
 
   let typeBreakdown = $derived.by(() => {
-    const counts: Record<string, number> = {};
-    rules.forEach((r) => {
-      counts[r.type] = (counts[r.type] || 0) + 1;
-    });
-    return Object.entries(counts)
+    return Object.entries(summary.types)
       .filter(([_, count]) => count > 0)
       .map(([type, count]) => `${count} ${t(type)}`)
       .join(", ");
@@ -49,7 +44,7 @@
     name = "";
     selectedInterface = interfaces.list[0]?.id || "";
     selectedInterval = 86400;
-    rules = [];
+    summary = { count: 0, types: {} };
     isLoading = false;
     error = null;
     fetchError = false;
@@ -84,10 +79,10 @@
     fetchError = false;
     try {
       url = normalizedUrl;
-      const res = await fetcher.get<{ rules: SubscriptionRule[] }>(
-        `/subscriptions/rules?url=${encodeURIComponent(normalizedUrl)}`,
+      const res = await fetcher.get<{ count: number; types: Record<string, number> }>(
+        `/subscriptions/rules?url=${encodeURIComponent(normalizedUrl)}&summary=true`,
       );
-      rules = res.rules;
+      summary = res;
       step = 2;
       if (!selectedInterface) {
         selectedInterface = interfaces.list[0]?.id || "";
@@ -108,7 +103,6 @@
     dispatch("add", {
       url: normalizedUrl,
       name,
-      rules,
       interface: selectedInterface,
       interval: selectedInterval,
     });
@@ -121,7 +115,7 @@
       if (step === 1) {
         if (isValidUrl && !isLoading) handleNext();
       } else {
-        if (rules.length > 0) {
+        if (summary.count > 0) {
           handleAdd();
         }
       }
@@ -160,7 +154,7 @@
     {:else}
       <div class="subscription-preview">
         <div class="rules-count-row">
-          <span class="total">{t("Found rules")}: {rules.length}</span>
+          <span class="total">{t("Found rules")}: {summary.count}</span>
           {#if typeBreakdown}
             <span class="breakdown">({typeBreakdown})</span>
           {/if}
@@ -244,7 +238,7 @@
           </div>
         </Button>
       {:else}
-        <Button onclick={handleAdd} disabled={rules.length === 0} style="width: 100%">
+        <Button onclick={handleAdd} disabled={summary.count === 0} style="width: 100%">
           {t("Add")}</Button
         >
       {/if}

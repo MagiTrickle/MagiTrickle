@@ -3127,3 +3127,147 @@ HTTP/DNS bulk teardown, making the lifetime invariant explicit to Clang's
 analyzer. The RCI size limit is explicitly widened at the size_t comparison;
 port-remap prefix copying includes its terminator before appending the suffix.
 These changes do not alter the wire or configuration contracts.
+
+
+## D-67: Indexed large-rule processing and compact saves (groups and subscriptions)
+
+**Status: implemented; large-list regression tests added.** The reported list
+had 33,048 lines / 572,927 bytes and downloaded on the router in 0.398 seconds.
+The device-side parsing/apply time was not profiled, and its anomalous local
+403 response is not claimed resolved. Independent source review and local
+benchmarks established quadratic loops and an incompatible 1 MiB request cap.
+
+### Shared processing
+
+- An owning byte-key index replaces linked-list deduplication, repeated ID
+  searches, subscription refresh/sameRules scans and subnet reconciliation.
+  First-occurrence ordering and existing ID/type/enable/TTL semantics remain.
+- Group request arrays traverse cJSON's linked list once, with a single ID
+  index per baseline. Rule replacement uses the geometric model allocator so
+  a subsequent append is safe at arbitrary sizes.
+- Namespace trie nodes use geometric child vectors and hash indexes only above
+  eight children. Tiny nodes do not allocate full hash tables. YAML group-ID
+  conflict checks and app group insertion are indexed, including after restart.
+- Parser and group-import IDs use per-operation random batches, checked for
+  entropy failure, zero/duplicate IDs and bounded retry; no shared PRNG state.
+- Bulk group PUT stages and validates all input before changing live state,
+  publishes one DNS snapshot, and reuses identical runtime groups when ordering
+  is unchanged. Reordering deliberately rebuilds to preserve ordering semantics.
+  Apply failure retains the old configuration and attempts runtime rollback;
+  netfilter rollback itself is best effort and errors are logged.
+
+### Scheduling and resource bounds
+
+- Production subscription workers perform fetch **and parse**, returning owned
+  detached rule arrays. Live model reconciliation/application and HTTP response
+  completion remain loop-owned. Existing revision checks reject obsolete syncs.
+- At most four fetch/parse jobs are admitted, including queued and completed
+  results, inside the existing two-worker/32-job pool. Lists remain limited to
+  8 MiB downloaded bytes, now also 100,000 unique rules / 4,096 bytes per line.
+  Cancellation and parser/entropy/OOM errors do not publish partial lists.
+- Rule mutation routes (POST/PUT under groups or subscriptions) allow up to
+  16 MiB input; unrelated endpoints retain their 1 MiB cap. Each listener has
+  a 32 MiB aggregate in-flight body reservation, released on keep-alive reset,
+  errors, disconnect or timeout. Large TCP requests authenticate before body
+  allocation. Excess size is JSON 413; budget exhaustion is JSON 503.
+- Disk serialization, matcher publication and kernel/netfilter application are
+  still synchronous. No guarantee of constant-time saves or router latency is
+  made; regex-heavy lists and slow storage/kernel operations have their own cost.
+
+### Additive API and matching frontend
+
+- `GET /subscriptions/rules?summary=true` returns `{count, types}`. The original
+  full-preview response remains available when the parameter is absent.
+- `POST /subscriptions?fetch=true` accepts URL/settings without `rules` or a
+  client ID, fetches/parses before inserting and saving, and returns canonical
+  `{subscription}`. Fetch failure leaves no phantom subscription. Failed initial
+  persistence attempts removal and returns an explicit error (including rollback
+  failure). The old explicit-rules POST remains supported.
+- PUT accepts `ruleChanges` mutually exclusive with an explicit rules array.
+  It clones the current rules and applies only the named changes. Each change
+  includes previous field values; a stale/deleted ID or stale value is rejected
+  before publishing any new state. An empty change list is a metadata-only edit.
+  Group changes include name/type/pattern/enable and a `previous` object;
+  subscription changes include type/enable, pattern identity and prior values.
+- The frontend uses compact changes for subscription saves and group edits
+  without membership/order changes. New/imported/reordered groups use the full
+  ordered representation under the bounded larger route limit. Group saves use
+  the canonical response (including server-assigned IDs), not client-only IDs.
+- Preview never echoes tens of thousands of rules back during subscription
+  creation. Source content can change between preview and creation; the creation
+  response is authoritative. No unbounded preview cache is introduced.
+- Failed persistence returns an error instead of falsely acknowledging a save.
+  For edits/deletes the in-memory state may already have changed; it is explicitly
+  not claimed persisted and the UI keeps its dirty state for retry. The legacy
+  success JSON of existing endpoints and YAML schema are unchanged.
+
+### Validation and reproducibility
+
+`make test` and an ASan+UBSan build of the complete C unit suite pass locally.
+The tests exercise 50k-rule parsing/refresh, stable unique IDs, entropy failure,
+limits, cancellation, bounded workers, HTTP preview/create/edit/persistence,
+50k domain-group bulk/strict/compact writes, stale edits, invalid-batch retention,
+append after replacement, and HTTP body budget/keep-alive cleanup. Frontend
+check/build pass locally; frontend unit/e2e tests are included for GitHub CI.
+Local Chromium cannot navigate localhost in this environment, so local e2e
+success is not asserted. Golden config/matcher/subscription/DNS/cache checks
+passed; the local full daemon HTTP differential test cannot start without
+iptables, and remains delegated to the existing GitHub workflow.
+
+See `tools/bench/large-rules.c` / `make bench_large_rules` and
+`docs/c-rewrite/large-rules-benchmark.txt` for reproducible CPU measurements.
+These are Linux x86_64 host measurements, **not Keenetic/Entware benchmarks**.
+Real SDK package validation and on-router netfilter timing remain separate.
+
+## D-68 — Distinguish runtime apply from failed persistence for retry (2026-10-01)
+
+The sparse edit preconditions introduced in D-67 deliberately remain strict.
+A failed disk write after a successful bulk PUT used to leave the editor's old
+baseline in place, so a retry replayed already-applied changes and received 409.
+
+Only a bulk group/subscription PUT whose apply phase completed successfully and
+whose subsequent configuration save failed now returns HTTP 500 with additive
+fields `code: "PERSISTENCE_FAILED"`, `applied: true` and the canonical `groups`
+or `subscriptions` collection. The original `error` field is preserved. A full
+group import may generate IDs, so the response includes those server IDs rather
+than asking the editor to guess them. Validation/apply/network failures do not
+carry this acknowledgement. Existing success responses and YAML are unchanged.
+
+The frontend accepts only a well-formed, explicitly marked HTTP 500 response,
+advances its optimistic rule baseline to that acknowledged runtime snapshot,
+and keeps a separate `persistencePending` flag. Save remains available and the
+unload warning stays active even without further edits. Retrying sends compact
+metadata/empty changes; another edit uses the applied baseline. A generic 500,
+409, malformed acknowledgement or transport error does not move the baseline.
+No error is silently changed to success; the pending flag clears only after a
+successful save response. Concurrent stale edits remain rejected.
+
+Regression coverage includes repeated disk errors, retry followed by YAML reload,
+canonical group IDs on failed full imports, and browser state for both editors.
+The browser tests separate runtime/disk fixtures and enforce preconditions;
+real HTTP handlers and filesystem failures are covered by C tests.
+
+## D-69 — Package identity mt-c, mutually exclusive with magitrickle (2026-10-01)
+
+The user requested a distinct installed package name to prevent accidental
+co-installation with upstream (or earlier C builds named `magitrickle`). Root
+packaging and both SDK recipes now emit `mt-c`. IPK metadata declares
+`Conflicts: magitrickle`; APK uses the equivalent negative dependency
+`!magitrickle`, and SDK recipes use `CONFLICTS:=magitrickle`. There is deliberately
+no `Provides`/`Replaces` or forced installation over another package's files.
+
+CI source archives, package directories, build targets and collected artifact
+names follow the new identity. Direct APK inventories and lifecycle hooks use
+`mt-c`, while the daemon `magitrickled`, init service, config/YAML paths, WebUI
+assets and routing identifiers retain their existing names and contracts.
+
+This is an explicit package migration, not an in-place package-name upgrade.
+README requires export/backup outside package-owned directories, stopping the
+old service, removing the old package and then installing the matching new
+artifact; installation hooks may restart the service. Do not promise config
+retention across removal without a backup or automatically remove dependencies.
+
+`python3 tools/tests/package_identity.py` validates real IPK archives built with
+synthetic payloads, APK staging/arguments/hooks, and evaluates both SDK package
+identity declarations. This is not a real cross-build or an on-router migration
+test. The supported target matrix is unchanged.

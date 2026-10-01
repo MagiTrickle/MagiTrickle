@@ -431,17 +431,17 @@ jobs:
           make build_frontend
           make _return_export_dynamic_env > .build/entware-package.env
 
-          feed_dir="${RUNNER_TEMP}/magitrickle-feed-${{ matrix.name }}"
-          artifacts_dir="${RUNNER_TEMP}/magitrickle-artifacts-${{ matrix.name }}"
-          mkdir -p "$feed_dir/magitrickle" "$artifacts_dir"
-          cp tools/ci/entware-package/Makefile "$feed_dir/magitrickle/Makefile"
+          feed_dir="${RUNNER_TEMP}/mt-c-feed-${{ matrix.name }}"
+          artifacts_dir="${RUNNER_TEMP}/mt-c-artifacts-${{ matrix.name }}"
+          mkdir -p "$feed_dir/mt-c" "$artifacts_dir"
+          cp tools/ci/entware-package/Makefile "$feed_dir/mt-c/Makefile"
           {
             printf 'MAGITRICKLE_VERSION:=%s\n' "$PKG_VERSION"
             printf 'MAGITRICKLE_RELEASE:=%s\n' "$PKG_REVISION"
             printf 'MAGITRICKLE_TARGET:=%s\n' "${{ matrix.name }}"
-          } > "$feed_dir/magitrickle/version.mk"
-          tar -czf "$feed_dir/magitrickle/magitrickle-source.tar.gz" \
-            --transform "s,^,magitrickle-${PKG_VERSION}/," \
+          } > "$feed_dir/mt-c/version.mk"
+          tar -czf "$feed_dir/mt-c/mt-c-source.tar.gz" \
+            --transform "s,^,mt-c-${PKG_VERSION}/," \
             LICENSE files src/backend-c src/frontend/dist
 
           echo "feed_dir=$feed_dir" >> "$GITHUB_OUTPUT"
@@ -458,7 +458,7 @@ jobs:
           ARTIFACTS_DIR: ${{ steps.entware_feed.outputs.artifacts_dir }}
           BUILD_LOG: 1
           FEED_DIR: ${{ steps.entware_feed.outputs.feed_dir }}
-          PACKAGES: magitrickle
+          PACKAGES: mt-c
           V: s
 
       - name: Report Entware SDK build failure
@@ -660,7 +660,7 @@ jobs:
             exit 0
           fi
 
-          pkg_dir="$sdk_dir/package/net/magitrickle"
+          pkg_dir="$sdk_dir/package/net/mt-c"
           mkdir -p "$pkg_dir"
           cp tools/ci/openwrt-package/Makefile "$pkg_dir/Makefile"
           magitrickle_version="$PKG_VERSION"
@@ -672,15 +672,15 @@ jobs:
             printf 'MAGITRICKLE_VERSION:=%s\n' "$magitrickle_version"
             printf 'MAGITRICKLE_RELEASE:=%s\n' "$magitrickle_release"
           } > "$pkg_dir/version.mk"
-          tar -czf "$pkg_dir/magitrickle-source.tar.gz" \
-            --transform "s,^,magitrickle-${magitrickle_version}/," \
+          tar -czf "$pkg_dir/mt-c-source.tar.gz" \
+            --transform "s,^,mt-c-${magitrickle_version}/," \
             LICENSE files src/backend-c src/frontend/dist
 
           # cJSON isn't in any OpenWrt feed for this release (confirmed via
           # CI: "WARNING: No feed for package 'libcjson' found" -- see
           # decisions.md D-50), so it's vendored as its own in-tree SDK
           # package, discovered by the package scanner the same way
-          # `magitrickle` itself is, with no `feeds install` step needed.
+          # `mt-c` itself is, with no `feeds install` step needed.
           cjson_pkg_dir="$sdk_dir/package/libs/libcjson"
           mkdir -p "$cjson_pkg_dir"
           cp tools/ci/openwrt-package-libcjson/Makefile "$cjson_pkg_dir/Makefile"
@@ -746,7 +746,7 @@ jobs:
                  package/curl/{clean,compile} \
                  package/libcjson/{clean,compile} \
                  V=s > "$log_dir/deps-build.log" 2>&1
-            make package/magitrickle/{clean,compile} V=s > "$log_dir/build.log" 2>&1
+            make package/mt-c/{clean,compile} V=s > "$log_dir/build.log" 2>&1
           )
 
       - name: Report OpenWrt SDK build failure
@@ -800,16 +800,16 @@ jobs:
           if [ -n "${{ steps.toolchain.outputs.entware_config }}" ]; then
             mapfile -t packages < <(
               find "${{ steps.entware_feed.outputs.artifacts_dir }}" \
-                -type f -name 'magitrickle_*.ipk' | sort
+                -type f -name 'mt-c_*.ipk' | sort
             )
             if [ "${#packages[@]}" -ne 1 ]; then
-              echo "Expected exactly one magitrickle IPK, found ${#packages[@]}" >&2
+              echo "Expected exactly one mt-c IPK, found ${#packages[@]}" >&2
               printf '%s\n' "${packages[@]}" >&2
               exit 1
             fi
 
             . .build/entware-package.env
-            package=".build/magitrickle_${PKG_VERSION}-${PKG_REVISION}_entware_${{ matrix.name }}.ipk"
+            package=".build/mt-c_${PKG_VERSION}-${PKG_REVISION}_entware_${{ matrix.name }}.ipk"
             cp "${packages[0]}" "$package"
 
             data_archive=$(mktemp)
@@ -863,15 +863,15 @@ jobs:
             sdk_dir="${{ steps.openwrt_sdk.outputs.sdk_dir }}"
             package_ext="${{ matrix.package_ext }}"
             case "$package_ext" in
-              ipk) package_glob='magitrickle_*.ipk' ;;
-              apk) package_glob='magitrickle-*.apk' ;;
+              ipk) package_glob='mt-c_*.ipk' ;;
+              apk) package_glob='mt-c-*.apk' ;;
               *) echo "Unsupported package extension: $package_ext" >&2; exit 1 ;;
             esac
             mapfile -t packages < <(
               find "$sdk_dir/bin/packages" -type f -name "$package_glob" 2>/dev/null | sort
             )
             if [ "${#packages[@]}" -ne 1 ]; then
-              echo "Expected exactly one magitrickle .$package_ext under $sdk_dir/bin/packages, found ${#packages[@]}" >&2
+              echo "Expected exactly one mt-c .$package_ext under $sdk_dir/bin/packages, found ${#packages[@]}" >&2
               printf '%s\n' "${packages[@]}" >&2
               exit 1
             fi
@@ -881,7 +881,7 @@ jobs:
             if [ "$package_ext" = apk ]; then
               artifact_version="$PKG_VERSION_APK"
             fi
-            package=".build/magitrickle_${artifact_version}-${PKG_REVISION}_openwrt-${{ matrix.openwrt_version }}_${{ matrix.name }}.${package_ext}"
+            package=".build/mt-c_${artifact_version}-${PKG_REVISION}_openwrt-${{ matrix.openwrt_version }}_${{ matrix.name }}.${package_ext}"
             cp "${packages[0]}" "$package"
 
             if [ "$package_ext" = ipk ]; then
@@ -895,8 +895,8 @@ jobs:
             # exact file that ends up in the package), and fall back to the
             # raw build output for SDKs that keep their build directories.
             binary=$(find "$sdk_dir/build_dir" -type f \( \
-              -path '*/magitrickle-*/.pkgdir/magitrickle/usr/bin/magitrickled' -o \
-              -path '*/magitrickle-*/src/backend-c/build/openwrt-*/magitrickled-c' \
+              -path '*/mt-c-*/.pkgdir/mt-c/usr/bin/magitrickled' -o \
+              -path '*/mt-c-*/src/backend-c/build/openwrt-*/magitrickled-c' \
               \) -print -quit)
             if [ -z "$binary" ] || [ ! -x "$binary" ]; then
               echo "Built magitrickled binary not found under $sdk_dir/build_dir" >&2

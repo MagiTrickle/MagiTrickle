@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 
 #include "magitrickle/log.h"
+#include "magitrickle/lookup.h"
 #include "magitrickle/match.h"
 
 struct mt_ruleset {
@@ -35,6 +36,7 @@ typedef struct new4_list {
     new4_entry_t *items;
     size_t n;
     size_t cap;
+    mt_lookup_t index;
 } new4_list_t;
 
 typedef struct new6_entry {
@@ -47,6 +49,7 @@ typedef struct new6_list {
     new6_entry_t *items;
     size_t n;
     size_t cap;
+    mt_lookup_t index;
 } new6_list_t;
 
 /* improve_only==false: unconditional overwrite (subnet/subnet6 static rules,
@@ -56,8 +59,12 @@ typedef struct new6_list {
  * `!exists || (oldTTL != nil && ttl > *oldTTL)` check in rule_set.go). */
 static mt_err_t new4_upsert(new4_list_t *l, mt_ipv4_subnet_t key, bool has_ttl, uint32_t ttl,
                             bool improve_only) {
-    for (size_t i = 0; i < l->n; i++) {
-        if (memcmp(&l->items[i].subnet, &key, sizeof(key)) != 0) { continue; }
+    /* Explicit address+prefix bytes; never hash structure padding. */
+    unsigned char bytes[5];
+    memcpy(bytes, key.addr, 4); bytes[4] = key.cidr;
+    size_t i;
+    if (mt_lookup_get(&l->index, bytes, sizeof(bytes), &i)) {
+        if (!l->items || i >= l->n) { return MT_ERR_STATE; }
         if (improve_only) {
             bool should_overwrite = l->items[i].has_ttl && has_ttl && ttl > l->items[i].ttl;
             if (!should_overwrite) { return MT_OK; }
@@ -73,6 +80,8 @@ static mt_err_t new4_upsert(new4_list_t *l, mt_ipv4_subnet_t key, bool has_ttl, 
         l->items = p;
         l->cap = ncap;
     }
+    mt_err_t err = mt_lookup_put(&l->index, bytes, sizeof(bytes), l->n, NULL);
+    if (err != MT_OK) { return err; }
     l->items[l->n].subnet = key;
     l->items[l->n].has_ttl = has_ttl;
     l->items[l->n].ttl = ttl;
@@ -82,8 +91,12 @@ static mt_err_t new4_upsert(new4_list_t *l, mt_ipv4_subnet_t key, bool has_ttl, 
 
 static mt_err_t new6_upsert(new6_list_t *l, mt_ipv6_subnet_t key, bool has_ttl, uint32_t ttl,
                             bool improve_only) {
-    for (size_t i = 0; i < l->n; i++) {
-        if (memcmp(&l->items[i].subnet, &key, sizeof(key)) != 0) { continue; }
+    /* Explicit address+prefix bytes; never hash structure padding. */
+    unsigned char bytes[17];
+    memcpy(bytes, key.addr, 16); bytes[16] = key.cidr;
+    size_t i;
+    if (mt_lookup_get(&l->index, bytes, sizeof(bytes), &i)) {
+        if (!l->items || i >= l->n) { return MT_ERR_STATE; }
         if (improve_only) {
             bool should_overwrite = l->items[i].has_ttl && has_ttl && ttl > l->items[i].ttl;
             if (!should_overwrite) { return MT_OK; }
@@ -99,6 +112,8 @@ static mt_err_t new6_upsert(new6_list_t *l, mt_ipv6_subnet_t key, bool has_ttl, 
         l->items = p;
         l->cap = ncap;
     }
+    mt_err_t err = mt_lookup_put(&l->index, bytes, sizeof(bytes), l->n, NULL);
+    if (err != MT_OK) { return err; }
     l->items[l->n].subnet = key;
     l->items[l->n].has_ttl = has_ttl;
     l->items[l->n].ttl = ttl;
@@ -419,17 +434,26 @@ static void sync_diff_v4(mt_ruleset_t *rs, new4_list_t *new4, mt_err_t *err) {
         return;
     }
 
+    mt_lookup_t old_index = {0};
+    for (size_t j = 0; j < n_old; j++) {
+        unsigned char bytes[5];
+        memcpy(bytes, old[j].subnet.addr, 4); bytes[4] = old[j].subnet.cidr;
+        *err = mt_lookup_put(&old_index, bytes, sizeof(bytes), j, NULL);
+        if (*err != MT_OK) { mt_lookup_clear(&old_index); free(old); free(kept); return; }
+    }
+
     for (size_t i = 0; i < new4->n; i++) {
         bool skip = false;
-        for (size_t j = 0; j < n_old; j++) {
-            if (memcmp(old[j].subnet.addr, new4->items[i].subnet.addr, 4) != 0 ||
-                old[j].subnet.cidr != new4->items[i].subnet.cidr) {
-                continue;
+        unsigned char bytes[5]; size_t j;
+        memcpy(bytes, new4->items[i].subnet.addr, 4); bytes[4] = new4->items[i].subnet.cidr;
+        if (mt_lookup_get(&old_index, bytes, sizeof(bytes), &j)) {
+            if (!old || !kept || j >= n_old) {
+                *err = MT_ERR_STATE;
+                mt_lookup_clear(&old_index); free(old); free(kept); return;
             }
             kept[j] = true;
             skip = !old[j].has_timeout ||
                    (new4->items[i].has_ttl && new4->items[i].ttl < old[j].timeout);
-            break;
         }
         if (skip) { continue; }
         const uint32_t *ttlp = new4->items[i].has_ttl ? &new4->items[i].ttl : NULL;
@@ -448,6 +472,7 @@ static void sync_diff_v4(mt_ruleset_t *rs, new4_list_t *new4, mt_err_t *err) {
         }
     }
 
+    mt_lookup_clear(&old_index);
     free(old);
     free(kept);
 }
@@ -465,17 +490,26 @@ static void sync_diff_v6(mt_ruleset_t *rs, new6_list_t *new6, mt_err_t *err) {
         return;
     }
 
+    mt_lookup_t old_index = {0};
+    for (size_t j = 0; j < n_old; j++) {
+        unsigned char bytes[17];
+        memcpy(bytes, old[j].subnet.addr, 16); bytes[16] = old[j].subnet.cidr;
+        *err = mt_lookup_put(&old_index, bytes, sizeof(bytes), j, NULL);
+        if (*err != MT_OK) { mt_lookup_clear(&old_index); free(old); free(kept); return; }
+    }
+
     for (size_t i = 0; i < new6->n; i++) {
         bool skip = false;
-        for (size_t j = 0; j < n_old; j++) {
-            if (memcmp(old[j].subnet.addr, new6->items[i].subnet.addr, 16) != 0 ||
-                old[j].subnet.cidr != new6->items[i].subnet.cidr) {
-                continue;
+        unsigned char bytes[17]; size_t j;
+        memcpy(bytes, new6->items[i].subnet.addr, 16); bytes[16] = new6->items[i].subnet.cidr;
+        if (mt_lookup_get(&old_index, bytes, sizeof(bytes), &j)) {
+            if (!old || !kept || j >= n_old) {
+                *err = MT_ERR_STATE;
+                mt_lookup_clear(&old_index); free(old); free(kept); return;
             }
             kept[j] = true;
             skip = !old[j].has_timeout ||
                    (new6->items[i].has_ttl && new6->items[i].ttl < old[j].timeout);
-            break;
         }
         if (skip) { continue; }
         const uint32_t *ttlp = new6->items[i].has_ttl ? &new6->items[i].ttl : NULL;
@@ -494,6 +528,7 @@ static void sync_diff_v6(mt_ruleset_t *rs, new6_list_t *new6, mt_err_t *err) {
         }
     }
 
+    mt_lookup_clear(&old_index);
     free(old);
     free(kept);
 }
@@ -510,6 +545,8 @@ mt_err_t mt_ruleset_sync(mt_ruleset_t *rs, mt_cache_t *cache, int64_t now) {
     if (err == MT_OK) { sync_diff_v4(rs, &new4, &err); }
     if (err == MT_OK) { sync_diff_v6(rs, &new6, &err); }
 
+    mt_lookup_clear(&new4.index);
+    mt_lookup_clear(&new6.index);
     free(new4.items);
     free(new6.items);
     return err;

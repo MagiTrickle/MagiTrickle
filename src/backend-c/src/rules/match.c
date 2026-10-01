@@ -1,6 +1,7 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 
 #include "magitrickle/match.h"
+#include "magitrickle/lookup.h"
 
 #include <pcre2.h>
 #include <stdlib.h>
@@ -258,7 +259,8 @@ static void exact_set_clear(exact_set_t *set)
 typedef struct trie_node {
     char *label;
     struct trie_node **children;
-    size_t n_children;
+    size_t n_children, cap_children;
+    mt_lookup_t child_index;
     bool terminal;
 } trie_node_t;
 
@@ -267,15 +269,27 @@ typedef struct ns_trie {
     bool has_empty_rule; /* namespace rule "" (matches domains ending in '.')*/
 } ns_trie_t;
 
-static trie_node_t *trie_child(trie_node_t *node, const char *label,
-                               size_t len, bool create)
-{
+/* Most namespace nodes have only one or two children. Keep those inline in
+ * the small vector; allocate a hash table only for a branching node. This
+ * bounds lookup work without spending a kilobyte on every DNS label. */
+static const trie_node_t *trie_find(const trie_node_t *node, const char *label, size_t len) {
+    size_t index;
+    if (node->child_index.cap) {
+        return mt_lookup_get(&node->child_index, label, len, &index) ? node->children[index] : NULL;
+    }
     for (size_t i = 0; i < node->n_children; i++) {
-        if (strlen(node->children[i]->label) == len &&
-            memcmp(node->children[i]->label, label, len) == 0) {
+        if (strlen(node->children[i]->label) == len && !memcmp(node->children[i]->label, label, len)) {
             return node->children[i];
         }
     }
+    return NULL;
+}
+
+static trie_node_t *trie_child(trie_node_t *node, const char *label,
+                               size_t len, bool create)
+{
+    const trie_node_t *found = trie_find(node, label, len);
+    if (found) { return (trie_node_t *)found; }
     if (!create) {
         return NULL;
     }
@@ -288,14 +302,25 @@ static trie_node_t *trie_child(trie_node_t *node, const char *label,
         free(child);
         return NULL;
     }
-    trie_node_t **grown = realloc(
-        node->children, (node->n_children + 1) * sizeof(trie_node_t *));
-    if (grown == NULL) {
-        free(child->label);
-        free(child);
-        return NULL;
+    if (node->n_children == node->cap_children) {
+        size_t cap = node->cap_children ? node->cap_children * 2 : 8;
+        trie_node_t **grown = realloc(node->children, cap * sizeof(*grown));
+        if (!grown) { free(child->label); free(child); return NULL; }
+        node->children = grown;
+        node->cap_children = cap;
     }
-    node->children = grown;
+    if (node->n_children == 8) {
+        for (size_t i = 0; i < node->n_children; i++) {
+            const char *old = node->children[i]->label;
+            if (mt_lookup_put(&node->child_index, old, strlen(old), i, NULL) != MT_OK) {
+                free(child->label); free(child); return NULL;
+            }
+        }
+    }
+    if (node->n_children >= 8 &&
+        mt_lookup_put(&node->child_index, label, len, node->n_children, NULL) != MT_OK) {
+        free(child->label); free(child); return NULL;
+    }
     node->children[node->n_children++] = child;
     return child;
 }
@@ -306,6 +331,7 @@ static void trie_node_clear(trie_node_t *node)
         trie_node_clear(node->children[i]);
         free(node->children[i]);
     }
+    mt_lookup_clear(&node->child_index);
     free(node->children);
     free(node->label);
 }
@@ -351,15 +377,8 @@ static bool ns_trie_match(const ns_trie_t *t, const char *domain)
         while (start > domain && start[-1] != '.') {
             start--;
         }
-        const trie_node_t *next = NULL;
         size_t lab_len = (size_t)(end - start);
-        for (size_t i = 0; i < node->n_children; i++) {
-            if (strlen(node->children[i]->label) == lab_len &&
-                memcmp(node->children[i]->label, start, lab_len) == 0) {
-                next = node->children[i];
-                break;
-            }
-        }
+        const trie_node_t *next = trie_find(node, start, lab_len);
         if (next == NULL) {
             return false;
         }

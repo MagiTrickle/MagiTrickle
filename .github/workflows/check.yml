@@ -34,7 +34,7 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: ./src/frontend
-        run: npx playwright install --with-deps
+        run: npx playwright install --with-deps chromium
 
       - name: Frontend unit tests
         working-directory: ./src/frontend

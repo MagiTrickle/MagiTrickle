@@ -17,7 +17,6 @@
   } from "./subscriptions.svelte";
 
   import { droppable } from "../../lib/dnd";
-  import type { SubscriptionRule } from "../../types";
   import { copyRulePatternsToClipboard } from "../../utils/copy-rule-patterns";
 
   type Props = {
@@ -27,7 +26,6 @@
   type AddSubscriptionEvent = {
     url: string;
     name: string;
-    rules: SubscriptionRule[];
     interface: string;
     interval: number;
   };

@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -25,6 +26,8 @@
 #include "magitrickle/dns_cache.h"
 #include "magitrickle/dnspipeline.h"
 #include "magitrickle/groups.h"
+#include "magitrickle/yamlio.h"
+#include "magitrickle/lookup.h"
 #include "magitrickle/loop.h"
 
 typedef struct captured_match {
@@ -48,6 +51,7 @@ typedef struct harness {
     mt_app_t *app;
     mt_groups_ctx_t ctx;
     pthread_t thread;
+    char save_dir[64], save_path[96];
 } harness_t;
 
 static void *loop_thread(void *ud) {
@@ -58,7 +62,7 @@ static void *loop_thread(void *ud) {
 
 #define TEST_PORT 18081
 
-static harness_t *harness_start(void) {
+static harness_t *harness_start_saved(bool save) {
     harness_t *h = calloc(1, sizeof(*h));
     mt_config_init_defaults(&h->cfg);
     h->cache = mt_cache_create(0);
@@ -67,7 +71,13 @@ static harness_t *harness_start(void) {
     h->app = mt_app_create(&deps);
     h->ctx.app = h->app;
     h->ctx.config_path = NULL;
-    h->ctx.config_version = NULL;
+    h->ctx.config_version = "0.8.2.2";
+    if (save) {
+        snprintf(h->save_dir, sizeof(h->save_dir), "/tmp/mt-groups-XXXXXX");
+        if (!mkdtemp(h->save_dir)) { free(h); return NULL; }
+        snprintf(h->save_path, sizeof(h->save_path), "%s/config.yaml", h->save_dir);
+        h->ctx.config_path = h->save_path;
+    }
 
     if (mt_loop_create(&h->loop) != MT_OK) { return NULL; }
     if (mt_httpd_create(h->loop, &h->tcp) != MT_OK) { return NULL; }
@@ -78,6 +88,8 @@ static harness_t *harness_start(void) {
     return h;
 }
 
+static harness_t *harness_start(void) { return harness_start_saved(false); }
+
 static void harness_stop(harness_t *h) {
     mt_loop_stop(h->loop);
     pthread_join(h->thread, NULL);
@@ -87,6 +99,7 @@ static void harness_stop(harness_t *h) {
     mt_dns_pipeline_destroy(h->pipeline);
     mt_cache_destroy(h->cache);
     mt_config_clear(&h->cfg);
+    if (h->save_path[0]) { unlink(h->save_path); rmdir(h->save_dir); }
     free(h);
 }
 
@@ -128,7 +141,7 @@ static int connect_tcp(uint16_t port) {
 }
 
 static ssize_t recv_response(int fd, char *buf, size_t cap) {
-    struct timeval tv = {2, 0};
+    struct timeval tv = {30, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     size_t total = 0;
     char *body_start = NULL;
@@ -173,27 +186,27 @@ static const char *body_of(const char *resp) {
 static int do_request(const char *method, const char *path, const char *body, cJSON **out_json) {
     int fd = connect_tcp(TEST_PORT);
     if (fd < 0) { return -1; }
-    char req[8192];
-    size_t body_len = body ? strlen(body) : 0;
-    int n = snprintf(req, sizeof(req),
+    char header[1024];
+    size_t len = body ? strlen(body) : 0;
+    int n = snprintf(header, sizeof(header),
                      "%s %s HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n"
-                     "Content-Length: %zu\r\nConnection: close\r\n\r\n%s",
-                     method, path, body_len, body ? body : "");
-    (void)n;
-    if (send(fd, req, strlen(req), 0) <= 0) {
-        close(fd);
-        return -1;
+                     "Content-Length: %zu\r\nConnection: close\r\n\r\n", method, path, len);
+    if (n < 0 || (size_t)n >= sizeof(header)) { close(fd); return -1; }
+    const char *parts[] = {header, body}; size_t sizes[] = {(size_t)n, len};
+    for (size_t i = 0; i < 2; i++) {
+        size_t sent = 0;
+        while (sent < sizes[i]) {
+            ssize_t wrote = send(fd, parts[i] + sent, sizes[i] - sent, MSG_NOSIGNAL);
+            if (wrote <= 0) { close(fd); return -1; }
+            sent += (size_t)wrote;
+        }
     }
-    char resp[16384];
-    ssize_t got = recv_response(fd, resp, sizeof(resp));
-    close(fd);
-    if (got <= 0) { return -1; }
-    int status = status_code_of(resp);
-    if (out_json) {
-        const char *b = body_of(resp);
-        *out_json = b[0] ? cJSON_Parse(b) : NULL;
-    }
-    return status;
+    size_t cap = 16u * 1024u * 1024u;
+    char *resp = malloc(cap); if (!resp) { close(fd); return -1; }
+    ssize_t got = recv_response(fd, resp, cap); close(fd);
+    int status = got > 0 ? status_code_of(resp) : -1;
+    if (out_json) { *out_json = got > 0 && *body_of(resp) ? cJSON_Parse(body_of(resp)) : NULL; }
+    free(resp); return status;
 }
 
 static const char *jstr(cJSON *obj, const char *key) {
@@ -520,10 +533,138 @@ TEST rule_created_via_http_is_dns_matchable(void) {
     PASS();
 }
 
+
+static double monotonic_seconds(void) {
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec + (double)t.tv_nsec / 1000000000.0;
+}
+
+TEST fifty_thousand_group_rules_full_compact_strict_and_persist(void) {
+    harness_t *h = harness_start_saved(true); ASSERT(h);
+    cJSON *request = cJSON_CreateObject();
+    cJSON *groups = cJSON_AddArrayToObject(request, "groups");
+    cJSON *group = cJSON_CreateObject(); cJSON_AddItemToArray(groups, group);
+    cJSON_AddStringToObject(group, "id", "aabbccdd");
+    cJSON_AddStringToObject(group, "name", "Large group");
+    cJSON_AddStringToObject(group, "interface", "blackhole");
+    cJSON_AddBoolToObject(group, "enable", true);
+    cJSON *rules = cJSON_AddArrayToObject(group, "rules");
+    for (size_t i = 0; i < 50000; i++) {
+        char text[64]; snprintf(text, sizeof(text), "item%zu.example.com", i);
+        cJSON *rule = cJSON_CreateObject(); cJSON_AddItemToArray(rules, rule);
+        cJSON_AddStringToObject(rule, "name", ""); cJSON_AddStringToObject(rule, "rule", text);
+        cJSON_AddStringToObject(rule, "type", "namespace"); cJSON_AddBoolToObject(rule, "enable", true);
+    }
+    char *body = cJSON_PrintUnformatted(request); ASSERT(body);
+    ASSERT(strlen(body) > MT_HTTPD_MAX_BODY_BYTES);
+    cJSON *out = NULL; double begin = monotonic_seconds();
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups?save=true", body, &out));
+    printf("50k group full import+save HTTP: %.3fs; request_bytes=%zu\n", monotonic_seconds()-begin, strlen(body));
+    free(body); cJSON_Delete(request);
+    cJSON *saved = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
+    rules = cJSON_GetObjectItemCaseSensitive(saved, "rules"); ASSERT_EQ(50000, cJSON_GetArraySize(rules));
+    char first_id[9]; snprintf(first_id, sizeof(first_id), "%s", jstr(cJSON_GetArrayItem(rules, 0), "id"));
+    mt_lookup_t ids = {0};
+    cJSON *item; cJSON_ArrayForEach(item, rules) {
+        bool inserted; const char *id = jstr(item, "id"); ASSERT(id);
+        ASSERT_EQ(MT_OK, mt_lookup_put(&ids, id, strlen(id), 0, &inserted)); ASSERT(inserted);
+    }
+    mt_lookup_clear(&ids);
+    // Strict full replacement preserves IDs and order, then append exercises
+    // the geometric-capacity invariant that exactly-N allocation violated.
+    cJSON *strict = cJSON_CreateObject(); cJSON_AddItemToObject(strict, "rules", cJSON_Duplicate(rules, true));
+    body = cJSON_PrintUnformatted(strict); cJSON_Delete(strict);
+    begin = monotonic_seconds();
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups/aabbccdd/rules?save=true", body, NULL));
+    printf("50k group strict replacement+save HTTP: %.3fs\n", monotonic_seconds()-begin);
+    free(body);
+    cJSON_Delete(out); out = NULL;
+    char compact[1024];
+    snprintf(compact, sizeof(compact),
+        "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"Edited\",\"interface\":\"blackhole\",\"enable\":true,"
+        "\"ruleChanges\":[{\"id\":\"%s\",\"name\":\"first\",\"rule\":\"item0.example.com\",\"type\":\"namespace\",\"enable\":false,"
+        "\"previous\":{\"name\":\"\",\"rule\":\"item0.example.com\",\"type\":\"namespace\",\"enable\":true}}]}]}", first_id);
+    begin = monotonic_seconds();
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups?save=true", compact, &out));
+    printf("50k group compact edit+save HTTP: %.3fs; request_bytes=%zu\n", monotonic_seconds()-begin, strlen(compact));
+    saved = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
+    rules = cJSON_GetObjectItemCaseSensitive(saved, "rules"); ASSERT_EQ(50000, cJSON_GetArraySize(rules));
+    ASSERT_STR_EQ(first_id, jstr(cJSON_GetArrayItem(rules, 0), "id"));
+    ASSERT(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(rules, 0), "enable")));
+    cJSON_Delete(out); out = NULL;
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/groups?save=true", compact, NULL));
+    mt_config_t loaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
+    begin = monotonic_seconds();
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    printf("50k group YAML reload: %.3fs\n", monotonic_seconds()-begin);
+    ASSERT_EQ(1u, loaded.n_groups); ASSERT_EQ(50000u, loaded.groups[0]->n_rules);
+    ASSERT_STR_EQ("Edited", loaded.groups[0]->name); ASSERT(!loaded.groups[0]->rules[0]->enable);
+    mt_config_clear(&loaded);
+    ASSERT_EQ(200, do_request("POST", "/api/v1/groups/aabbccdd/rules", "{\"rule\":\"last.example\",\"type\":\"namespace\",\"enable\":true}", NULL));
+    ASSERT_EQ(200, do_request("GET", "/api/v1/groups/aabbccdd/rules", NULL, &out));
+    ASSERT_EQ(50001, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(out, "rules")));
+    cJSON_Delete(out); harness_stop(h); PASS();
+}
+
+TEST failed_group_save_returns_error_and_keeps_dirty_retry_possible(void) {
+    harness_t *h = harness_start_saved(true); ASSERT(h);
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("POST", "/api/v1/groups?save=true",
+        "{\"id\":\"aabbccdd\",\"name\":\"before\",\"rules\":[{\"name\":\"one\",\"rule\":\"one.example\",\"type\":\"domain\",\"enable\":true}]}", &out));
+    cJSON_Delete(out);
+    ASSERT_EQ(0, unlink(h->save_path));
+    ASSERT_EQ(0, rmdir(h->save_dir));
+    /* A full import must return the generated (not client-only) rule ID even
+     * when saving fails, otherwise subsequent compact edits cannot address it. */
+    ASSERT_EQ(500, do_request("PUT", "/api/v1/groups?save=true",
+        "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"after\",\"rules\":[{\"id\":\"12345678\",\"name\":\"edited\",\"rule\":\"two.example\",\"type\":\"domain\",\"enable\":false}]}]}", &out));
+    ASSERT_STR_EQ("PERSISTENCE_FAILED", jstr(out, "code"));
+    ASSERT(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(out, "applied")));
+    cJSON *groups = cJSON_GetObjectItemCaseSensitive(out, "groups");
+    cJSON *group = cJSON_GetArrayItem(groups, 0);
+    cJSON *rules = cJSON_GetObjectItemCaseSensitive(group, "rules");
+    ASSERT_EQ(1, cJSON_GetArraySize(rules));
+    char id[MT_ID_STR_LEN]; snprintf(id, sizeof(id), "%s", jstr(cJSON_GetArrayItem(rules, 0), "id"));
+    ASSERT(strcmp(id, "12345678") != 0);
+    cJSON_DeleteItemFromObjectCaseSensitive(out, "error");
+    cJSON_DeleteItemFromObjectCaseSensitive(out, "code");
+    cJSON_DeleteItemFromObjectCaseSensitive(out, "applied");
+    cJSON_DeleteItemFromObjectCaseSensitive(group, "rules");
+    cJSON_AddArrayToObject(group, "ruleChanges");
+    char *retry = cJSON_PrintUnformatted(out); ASSERT(retry); cJSON_Delete(out);
+    ASSERT_EQ(500, do_request("PUT", "/api/v1/groups?save=true", retry, &out));
+    ASSERT_STR_EQ("PERSISTENCE_FAILED", jstr(out, "code")); cJSON_Delete(out);
+    ASSERT_EQ(0, mkdir(h->save_dir, 0700));
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups?save=true", retry, &out));
+    ASSERT(!cJSON_HasObjectItem(out, "code")); cJSON_Delete(out); free(retry);
+    mt_config_t loaded; mt_config_init_defaults(&loaded);
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    ASSERT_EQ(1, loaded.n_groups); ASSERT_EQ(1, loaded.groups[0]->n_rules);
+    ASSERT_STR_EQ("after", loaded.groups[0]->name);
+    ASSERT_STR_EQ("edited", loaded.groups[0]->rules[0]->name);
+    ASSERT(!loaded.groups[0]->rules[0]->enable);
+    char persisted_id[MT_ID_STR_LEN]; mt_id_format(loaded.groups[0]->rules[0]->id, persisted_id);
+    ASSERT_STR_EQ(id, persisted_id);
+    mt_config_clear(&loaded); harness_stop(h); PASS();
+}
+
+TEST invalid_batch_preserves_existing_groups(void) {
+    harness_t *h = harness_start(); ASSERT(h);
+    ASSERT_EQ(200, do_request("POST", "/api/v1/groups", "{\"id\":\"aabbccdd\",\"name\":\"original\"}", NULL));
+    ASSERT_EQ(500, do_request("PUT", "/api/v1/groups", "{\"groups\":[{\"id\":\"aabbccdd\"},{\"id\":\"aabbccdd\"}]}", NULL));
+    cJSON *out = NULL; ASSERT_EQ(200, do_request("GET", "/api/v1/groups?with_rules=true", NULL, &out));
+    cJSON *groups = cJSON_GetObjectItemCaseSensitive(out, "groups"); ASSERT_EQ(1, cJSON_GetArraySize(groups));
+    ASSERT_STR_EQ("original", jstr(cJSON_GetArrayItem(groups, 0), "name"));
+    cJSON_Delete(out); harness_stop(h); PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
+    RUN_TEST(fifty_thousand_group_rules_full_compact_strict_and_persist);
+    RUN_TEST(failed_group_save_returns_error_and_keeps_dirty_retry_possible);
+    RUN_TEST(invalid_batch_preserves_existing_groups);
     RUN_TEST(get_groups_starts_empty);
     RUN_TEST(create_group_normalizes_color_and_defaults_enable);
     RUN_TEST(create_group_invalid_color_falls_back_to_white);

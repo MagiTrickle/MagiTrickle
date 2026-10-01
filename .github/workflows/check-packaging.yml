@@ -1,0 +1,24 @@
+name: Checking package contracts
+on:
+  pull_request:
+    paths:
+      - 'Makefile'
+      - 'files/**'
+      - 'tools/ci/**'
+      - 'tools/tests/package_identity.py'
+      - '.github/workflows/check-packaging.yml'
+  push:
+    paths:
+      - 'Makefile'
+      - 'files/**'
+      - 'tools/ci/**'
+      - 'tools/tests/package_identity.py'
+      - '.github/workflows/check-packaging.yml'
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 tools/tests/package_identity.py

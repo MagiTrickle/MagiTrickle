@@ -17,9 +17,23 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #include "magitrickle/err.h"
 #include "magitrickle/models.h"
+
+/* Bound expansion of the existing 8 MiB fetch body on memory-limited routers. */
+#define MT_SUB_MAX_RULES ((size_t)100000)
+#define MT_SUB_MAX_LINE_BYTES ((size_t)4096)
+
+/* Worker-safe: cancel is optional; failure always returns NULL/0 output. */
+mt_err_t mt_sub_parse_rules_cancel(const char *list, mt_sub_rule_t ***out_rules,
+                                   size_t *out_n, const atomic_bool *cancel);
+void mt_sub_rules_free(mt_sub_rule_t **rules, size_t n);
+/* Modifies only the caller-owned parsed array, never existing live rules. */
+mt_err_t mt_sub_reconcile_rules(mt_sub_rule_t **parsed, size_t n,
+                                 mt_sub_rule_t **existing, size_t n_existing);
+mt_err_t mt_sub_rules_fix_ids(mt_sub_rule_t **rules, size_t n);
 
 /* Detected type for a single trimmed pattern; returns one of the
  * MT_RULE_* constants or "" (never NULL). */

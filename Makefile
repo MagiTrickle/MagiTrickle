@@ -6,10 +6,11 @@
 
 # Package info
 
-PKG_NAME := magitrickle
+PKG_NAME := mt-c
+PKG_CONFLICTS := magitrickle
 PKG_DESCRIPTION := DNS-based routing application
 PKG_LICENSE := GPL-3.0-or-later
-PKG_URL := https://magitrickle.dev
+PKG_URL := https://github.com/dan0102dan/mt-c
 PKG_MAINTAINER := Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
 
 ifeq ($(strip $(PKG_VERSION)),)
@@ -285,6 +286,7 @@ package_ipk: prepare_files
 
 	mkdir -p $(IPK_CONTROL_DIR)
 	echo 'Package: $(PKG_NAME)' > $(IPK_CONTROL_DIR)/control
+	echo 'Conflicts: $(PKG_CONFLICTS)' >> $(IPK_CONTROL_DIR)/control
 	echo 'Version: $(PKG_VERSION)-$(PKG_REVISION)' >> $(IPK_CONTROL_DIR)/control
 	echo 'Architecture: $(TARGET)' >> $(IPK_CONTROL_DIR)/control
 	echo 'License: $(PKG_LICENSE)' >> $(IPK_CONTROL_DIR)/control
@@ -330,11 +332,11 @@ package_apk: prepare_files $(BUILD_KEY_APK_SEC)
 		-I "description:$(PKG_DESCRIPTION)" \
 		-I "arch:$(TARGET)" \
 		-I "license:$(PKG_LICENSE)" \
-		-I "origin:feeds/packages/feeds/magitrickle/net/$(PKG_NAME)" \
+		-I "origin:feeds/packages/feeds/mt-c/net/$(PKG_NAME)" \
 		-I "maintainer:$(PKG_MAINTAINER)" \
 		-I "url:$(PKG_URL)" \
 		-I "provider-priority:100" \
-		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft $(DEPS_APK)" \
+		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft $(DEPS_APK) $(addprefix !,$(PKG_CONFLICTS))" \
 		-s "post-install:$(APK_DIR)/post-install.sh" \
 		-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
 		-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \

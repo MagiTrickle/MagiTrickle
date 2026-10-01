@@ -1,7 +1,6 @@
 /* Bounded HTTP/1.1 server on mt_loop (decisions.md D-06) — own
  * implementation, not a library: this is a small, purpose-built server
- * for a bounded API surface (~25 routes, JSON bodies "≤100 KB" per
- * dependencies.md, plus in-memory static file serving), not a general
+ * for a bounded API surface (JSON API plus in-memory static file serving), not a general
  * web server. Shared between a TCP listener (HTTPWeb.Host) and a Unix
  * socket listener (SockPath) — mirrors api/http.go and api/unixsocket.go
  * mounting the same v1 router.
@@ -11,7 +10,7 @@
  * normal-size behaviour identical"): header block, body size, connection
  * count, and per-connection idle time are all capped (see the MT_HTTPD_*
  * constants below) where Go's zero-value http.Server has none. No real
- * request from the frontend or contract tests approaches these caps.
+ * small request behavior is preserved; bulk rule routes have a separate cap.
  *
  * Supports HTTP/1.1 keep-alive (non-pipelined: one request read to
  * completion, response written, then the next request read from the same
@@ -39,6 +38,11 @@
 
 #define MT_HTTPD_MAX_HEADER_BYTES 8192
 #define MT_HTTPD_MAX_BODY_BYTES ((size_t)1024 * 1024)
+/* Large rule edits/imports only; unrelated routes keep the 1 MiB cap.
+ * Aggregate in-flight input reservation is per listener, released after each
+ * response (including keep-alive), timeout, error and disconnect. */
+#define MT_HTTPD_MAX_RULE_BODY_BYTES ((size_t)16 * 1024 * 1024)
+#define MT_HTTPD_MAX_INFLIGHT_BODY_BYTES ((size_t)32 * 1024 * 1024)
 #define MT_HTTPD_MAX_CONNS 64
 #define MT_HTTPD_MAX_PARAMS 4
 #define MT_HTTPD_IDLE_TIMEOUT_MS 30000

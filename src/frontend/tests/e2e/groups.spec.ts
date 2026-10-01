@@ -84,7 +84,7 @@ test.describe("Groups Management", () => {
       // Verify body has the group
       expect(body.groups).toHaveLength(1);
       expect(body.groups[0].name).toBe("Valid Group");
-      await route.fulfill({ status: 200, json: {} });
+      await route.fulfill({ status: 200, json: { groups: route.request().postDataJSON().groups } });
     });
 
     await groupsPage.save();
@@ -206,7 +206,7 @@ test.describe("Groups Management", () => {
       expect(body.groups).toHaveLength(1);
       expect(body.groups[0].rules).toHaveLength(3);
       savedRuleNames = body.groups[0].rules.map((rule: { name: string }) => rule.name);
-      await route.fulfill({ status: 200, json: {} });
+      await route.fulfill({ status: 200, json: { groups: route.request().postDataJSON().groups } });
     });
 
     await expect(groupsPage.saveButton).not.toHaveClass(/inactive/);

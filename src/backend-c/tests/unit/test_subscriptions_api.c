@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -18,6 +19,7 @@
 #include "magitrickle/loop.h"
 #include "magitrickle/sub_fetch.h"
 #include "magitrickle/subscriptions_api.h"
+#include "magitrickle/yamlio.h"
 
 typedef struct harness {
     mt_loop_t *loop;
@@ -33,6 +35,9 @@ typedef struct harness {
     mt_cache_t *cache;
     mt_app_t *app;
     mt_subs_ctx_t ctx;
+    char *large_list;
+    char save_dir[128];
+    char save_path[256];
 } harness_t;
 
 static void *loop_thread(void *ud) {
@@ -57,21 +62,42 @@ static void h_stub_404(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     mt_http_res_write_error(res, 404, "nope");
 }
 
+static void h_stub_large(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
+    (void)req; const harness_t *h = ud;
+    mt_http_res_write(res, 200, "text/plain", (const uint8_t *)h->large_list, strlen(h->large_list));
+}
+
 static char g_stub_url[128];
 static const char *stub_url(const char *path) {
     snprintf(g_stub_url, sizeof(g_stub_url), "http://127.0.0.1:%d%s", STUB_PORT, path);
     return g_stub_url;
 }
 
-static harness_t *harness_start(void) {
+static harness_t *harness_start_mode(int persistence) {
     harness_t *h = calloc(1, sizeof(*h));
+    if (!h) { return NULL; }
+    h->large_list = malloc(50000u * 32u + 1); if (!h->large_list) { free(h); return NULL; }
+    size_t used = 0;
+    for (unsigned i = 0; i < 50000; i++) {
+        int n = snprintf(h->large_list + used, 50000u * 32u + 1 - used,
+                         "10.%u.%u.0/24\r\n", i / 256, i % 256);
+        if (n < 0) { free(h->large_list); free(h); return NULL; }
+        used += (size_t)n;
+    }
     mt_config_init_defaults(&h->cfg);
     h->cache = mt_cache_create(0);
     mt_app_deps_t deps = {.cfg = &h->cfg, .cache = h->cache};
     h->app = mt_app_create(&deps);
     h->ctx.app = h->app;
     h->ctx.config_path = NULL;
-    h->ctx.config_version = NULL;
+    h->ctx.config_version = "0.8.3-test-large";
+    if (persistence) {
+        snprintf(h->save_dir, sizeof(h->save_dir), "/tmp/mt-large-api-XXXXXX");
+        if (!mkdtemp(h->save_dir)) { free(h->large_list); free(h); return NULL; }
+        snprintf(h->save_path, sizeof(h->save_path), "%s/%sconfig.yaml", h->save_dir,
+                 persistence == 2 ? "absent/" : "");
+        h->ctx.config_path = h->save_path;
+    }
 
     if (mt_loop_create(&h->loop) != MT_OK) { return NULL; }
     if (mt_sub_fetcher_create(h->loop, &h->ctx.fetcher) != MT_OK) { return NULL; }
@@ -85,11 +111,14 @@ static harness_t *harness_start(void) {
     mt_httpd_route(h->stub, "GET", "/list", h_stub_list, NULL);
     mt_httpd_route(h->stub, "GET", "/list2", h_stub_list, NULL);
     mt_httpd_route(h->stub, "GET", "/404", h_stub_404, NULL);
+    mt_httpd_route(h->stub, "GET", "/large", h_stub_large, h);
     if (mt_httpd_listen_tcp(h->stub, "127.0.0.1", STUB_PORT) != MT_OK) { return NULL; }
     pthread_create(&h->stub_thread, NULL, loop_thread, h->stub_loop);
 
     return h;
 }
+
+static harness_t *harness_start(void) { return harness_start_mode(0); }
 
 static void harness_stop(harness_t *h) {
     mt_loop_stop(h->loop);
@@ -106,7 +135,8 @@ static void harness_stop(harness_t *h) {
     mt_app_destroy(h->app);
     mt_cache_destroy(h->cache);
     mt_config_clear(&h->cfg);
-    free(h);
+    if (h->save_path[0]) { unlink(h->save_path); rmdir(h->save_dir); }
+    free(h->large_list); free(h);
 }
 
 /* ---- tiny blocking HTTP/1.1 client (see test_groups.c) ----------------------- */
@@ -127,7 +157,7 @@ static int connect_tcp(uint16_t port) {
 }
 
 static ssize_t recv_response(int fd, char *buf, size_t cap) {
-    struct timeval tv = {2, 0};
+    struct timeval tv = {15, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     size_t total = 0;
     char *body_start = NULL;
@@ -178,16 +208,18 @@ static int do_request(const char *method, const char *path, const char *body, cJ
         close(fd);
         return -1;
     }
-    char resp[16384];
-    ssize_t got = recv_response(fd, resp, sizeof(resp));
+    const size_t capacity = 16u * 1024u * 1024u;
+    char *resp = malloc(capacity);
+    if (!resp) { close(fd); return -1; }
+    ssize_t got = recv_response(fd, resp, capacity);
     close(fd);
-    if (got <= 0) { return -1; }
+    if (got <= 0) { free(resp); return -1; }
     int status = status_code_of(resp);
     if (out_json) {
         const char *b = body_of(resp);
         *out_json = b[0] ? cJSON_Parse(b) : NULL;
     }
-    return status;
+    free(resp); return status;
 }
 
 static const char *jstr(cJSON *obj, const char *key) {
@@ -445,11 +477,132 @@ TEST get_subscription_rules_fetch_failure_is_502(void) {
     PASS();
 }
 
+
+TEST large_summary_creation_sparse_save_and_reload(void) {
+    harness_t *h = harness_start_mode(1); ASSERT(h);
+    char path[256], body[1024];
+    snprintf(path, sizeof(path), "/api/v1/subscriptions/rules?summary=true&url=%s", stub_url("/large"));
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("GET", path, NULL, &out)); ASSERT(out);
+    ASSERT_EQ(50000, cJSON_GetObjectItemCaseSensitive(out, "count")->valueint);
+    ASSERT(!cJSON_GetObjectItemCaseSensitive(out, "rules"));
+    ASSERT_EQ(50000, cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(out, "types"), "subnet")->valueint);
+    cJSON_Delete(out);
+    snprintf(body, sizeof(body), "{\"id\":\"12345678\",\"url\":\"%s\",\"name\":\"large\",\"enable\":false,\"interval\":86400}", stub_url("/large"));
+    ASSERT(strlen(body) < 1024);
+    ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions?fetch=true", body, &out)); ASSERT(out);
+    cJSON *sub = cJSON_GetObjectItemCaseSensitive(out, "subscription"); ASSERT(sub);
+    cJSON *rules = cJSON_GetObjectItemCaseSensitive(sub, "rules"); ASSERT_EQ(50000, cJSON_GetArraySize(rules));
+    char rule_id[9]; snprintf(rule_id, sizeof(rule_id), "%s", jstr(cJSON_GetArrayItem(rules, 0), "id"));
+    ASSERT_STR_EQ("10.0.0.0/24", jstr(cJSON_GetArrayItem(rules, 0), "rule"));
+    cJSON_Delete(out);
+    snprintf(body, sizeof(body), "{\"subscriptions\":[{\"id\":\"12345678\",\"url\":\"%s\",\"name\":\"edited\",\"enable\":false,\"interval\":86400,\"ruleChanges\":[{\"id\":\"%s\",\"rule\":\"10.0.0.0/24\",\"previousType\":\"subnet\",\"previousEnable\":true,\"type\":\"subnet\",\"enable\":false}]}]}", stub_url("/large"), rule_id);
+    ASSERT(strlen(body) < 1024);
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", body, NULL));
+    /* A stale repeat is rejected, not silently applied to a refreshed baseline. */
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/subscriptions", body, NULL));
+    ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out)); ASSERT(out);
+    sub = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "subscriptions"), 0);
+    rules = cJSON_GetObjectItemCaseSensitive(sub, "rules"); ASSERT_EQ(50000, cJSON_GetArraySize(rules));
+    ASSERT_STR_EQ(rule_id, jstr(cJSON_GetArrayItem(rules, 0), "id"));
+    ASSERT(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(rules, 0), "enable")));
+    ASSERT(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(rules, 1), "enable")));
+    cJSON_Delete(out);
+    mt_config_t reloaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&reloaded));
+    ASSERT_EQ(MT_OK, mt_config_load_file(&reloaded, h->save_path));
+    ASSERT_EQ(1u, reloaded.n_subscriptions); ASSERT_EQ(50000u, reloaded.subscriptions[0]->n_rules);
+    ASSERT_STR_EQ("edited", reloaded.subscriptions[0]->name);
+    ASSERT(!reloaded.subscriptions[0]->rules[0]->enable);
+    ASSERT(reloaded.subscriptions[0]->rules[49999]->enable);
+    mt_config_clear(&reloaded);
+    harness_stop(h); PASS();
+}
+
+TEST url_creation_failure_does_not_leave_an_empty_subscription(void) {
+    harness_t *h = harness_start(); ASSERT(h);
+    char body[256]; snprintf(body, sizeof(body), "{\"url\":\"%s\"}", stub_url("/404"));
+    ASSERT_EQ(502, do_request("POST", "/api/v1/subscriptions?fetch=true", body, NULL));
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
+    ASSERT_EQ(0, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(out, "subscriptions")));
+    cJSON_Delete(out);
+    ASSERT_EQ(400, do_request("POST", "/api/v1/subscriptions?fetch=true", "{\"url\":\"https://example.com\",\"rules\":[]}", NULL));
+    harness_stop(h); PASS();
+}
+
+TEST disk_failure_is_http_error_and_url_creation_rolls_back(void) {
+    harness_t *h = harness_start_mode(2); ASSERT(h);
+    char body[256]; snprintf(body, sizeof(body), "{\"url\":\"%s\"}", stub_url("/list"));
+    ASSERT_EQ(500, do_request("POST", "/api/v1/subscriptions?fetch=true", body, NULL));
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
+    ASSERT_EQ(0, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(out, "subscriptions")));
+    cJSON_Delete(out);
+    /* Legacy mutation must no longer report 200 when persistence failed. */
+    ASSERT_EQ(500, do_request("POST", "/api/v1/subscriptions", body, NULL));
+    harness_stop(h); PASS();
+}
+
+TEST sparse_update_rejects_deleted_subscription_and_unknown_rule_id(void) {
+    harness_t *h = harness_start(); ASSERT(h);
+    const char *missing = "{\"subscriptions\":[{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\",\"ruleChanges\":[]}]}";
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/subscriptions", missing, NULL));
+    ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions", "{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\"}", NULL));
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/subscriptions", "{\"subscriptions\":[{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\",\"ruleChanges\":[{\"id\":\"11223344\",\"rule\":\"one.example\",\"previousType\":\"domain\",\"previousEnable\":true,\"type\":\"domain\",\"enable\":false}]}]}", NULL));
+    harness_stop(h); PASS();
+}
+
+TEST persistence_failure_returns_applied_baseline_for_retry(void) {
+    harness_t *h = harness_start_mode(1); ASSERT(h);
+    ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions",
+        "{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\",\"rules\":[{\"id\":\"11223344\",\"rule\":\"one.example\",\"type\":\"domain\",\"enable\":true}]}", NULL));
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
+    cJSON *initial_sub = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "subscriptions"), 0);
+    cJSON *initial_rule = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(initial_sub, "rules"), 0);
+    char rule_id[9]; snprintf(rule_id, sizeof(rule_id), "%s", jstr(initial_rule, "id"));
+    cJSON_Delete(out); out = NULL;
+    ASSERT_EQ(0, unlink(h->save_path)); ASSERT_EQ(0, rmdir(h->save_dir));
+    char change[512];
+    snprintf(change, sizeof(change), "{\"subscriptions\":[{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\",\"ruleChanges\":[{\"id\":\"%s\",\"rule\":\"one.example\",\"previousType\":\"domain\",\"previousEnable\":true,\"type\":\"namespace\",\"enable\":false}]}]}", rule_id);
+    ASSERT_EQ(500, do_request("PUT", "/api/v1/subscriptions", change, &out));
+    ASSERT_STR_EQ("PERSISTENCE_FAILED", jstr(out, "code"));
+    ASSERT(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(out, "applied")));
+    cJSON *sub = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "subscriptions"), 0);
+    cJSON *rule = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(sub, "rules"), 0);
+    ASSERT_STR_EQ(rule_id, jstr(rule, "id")); ASSERT_STR_EQ("namespace", jstr(rule, "type"));
+    ASSERT(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(rule, "enable")));
+    cJSON_DeleteItemFromObjectCaseSensitive(out, "error");
+    cJSON_DeleteItemFromObjectCaseSensitive(out, "code");
+    cJSON_DeleteItemFromObjectCaseSensitive(out, "applied");
+    cJSON_DeleteItemFromObjectCaseSensitive(sub, "rules");
+    cJSON_AddArrayToObject(sub, "ruleChanges");
+    char *retry = cJSON_PrintUnformatted(out); ASSERT(retry); cJSON_Delete(out);
+    /* Preconditions stay strict: it is the editor's live baseline that moves. */
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/subscriptions", change, &out));
+    ASSERT(!cJSON_HasObjectItem(out, "applied")); cJSON_Delete(out);
+    ASSERT_EQ(500, do_request("PUT", "/api/v1/subscriptions", retry, &out));
+    ASSERT_STR_EQ("PERSISTENCE_FAILED", jstr(out, "code")); cJSON_Delete(out);
+    ASSERT_EQ(0, mkdir(h->save_dir, 0700));
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", retry, NULL)); free(retry);
+    mt_config_t loaded; mt_config_init_defaults(&loaded);
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    ASSERT_EQ(1, loaded.n_subscriptions); ASSERT_EQ(1, loaded.subscriptions[0]->n_rules);
+    ASSERT_STR_EQ("namespace", loaded.subscriptions[0]->rules[0]->type);
+    ASSERT(!loaded.subscriptions[0]->rules[0]->enable);
+    mt_config_clear(&loaded); harness_stop(h); PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     mt_sub_fetch_global_init();
     GREATEST_MAIN_BEGIN();
+    RUN_TEST(persistence_failure_returns_applied_baseline_for_retry);
+    RUN_TEST(large_summary_creation_sparse_save_and_reload);
+    RUN_TEST(url_creation_failure_does_not_leave_an_empty_subscription);
+    RUN_TEST(disk_failure_is_http_error_and_url_creation_rolls_back);
+    RUN_TEST(sparse_update_rejects_deleted_subscription_and_unknown_rule_id);
     RUN_TEST(get_subscriptions_starts_empty);
     RUN_TEST(create_subscription_requires_url);
     RUN_TEST(create_subscription_defaults_and_appears_in_list);

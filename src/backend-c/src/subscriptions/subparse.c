@@ -1,6 +1,10 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 
 #include "magitrickle/subparse.h"
+#include "magitrickle/id_pool.h"
+
+#include "magitrickle/lookup.h"
+#include "magitrickle/rand.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -66,10 +70,10 @@ static int parse_dec(const char *s, size_t len)
         if (s[i] < '0' || s[i] > '9') {
             return -1;
         }
-        n = n * 10 + (s[i] - '0');
-        if (n > 999999999) {
+        if (n > (999999999 - (s[i] - '0')) / 10) {
             return -1;
         }
+        n = n * 10 + (s[i] - '0');
     }
     return n;
 }
@@ -195,360 +199,175 @@ const char *mt_sub_detect_type(const char *pattern)
     return "";
 }
 
-/* ---- tokenizer + dedup (parse.go ParseRules) ---- */
+/* ---- tokenizer + indexed dedup / ID allocation --------------------------- */
 
-typedef struct seen_key {
-    char *key;
-    struct seen_key *next;
-} seen_key_t;
-
-static bool seen_add(seen_key_t **head, const char *type, const char *text)
-{
-    size_t klen = strlen(type) + 1 + strlen(text) + 1;
-    char *key = malloc(klen);
-    if (key == NULL) {
-        return false; /* treat OOM as "seen" to fail closed */
-    }
-    snprintf(key, klen, "%s|%s", type, text);
-    for (seen_key_t *k = *head; k != NULL; k = k->next) {
-        if (strcmp(k->key, key) == 0) {
-            free(key);
-            return false;
-        }
-    }
-    seen_key_t *node = malloc(sizeof(*node));
-    if (node == NULL) {
-        free(key);
-        return false;
-    }
-    node->key = key;
-    node->next = *head;
-    *head = node;
-    return true;
-}
-
-static void seen_clear(seen_key_t *head)
-{
-    while (head != NULL) {
-        seen_key_t *next = head->next;
-        free(head->key);
-        free(head);
-        head = next;
-    }
-}
-
-/* Go strings.TrimSpace (ASCII whitespace; unicode spaces are not expected
- * in subscription lists — divergence would be caught by the differential
- * corpus). */
-static char *trim(char *s)
-{
-    while (*s != '\0' && isspace((unsigned char)*s)) {
-        s++;
-    }
-    size_t len = strlen(s);
-    while (len > 0 && isspace((unsigned char)s[len - 1])) {
-        s[--len] = '\0';
-    }
-    return s;
-}
-
-typedef struct id_set {
-    mt_id_t *ids;
-    size_t len;
-    size_t cap;
-} id_set_t;
-
-static bool id_set_contains(const id_set_t *set, mt_id_t id)
-{
-    for (size_t i = 0; i < set->len; i++) {
-        if (mt_id_equal(set->ids[i], id)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static mt_err_t id_set_add(id_set_t *set, mt_id_t id)
-{
-    if (set->len == set->cap) {
-        size_t cap = set->cap == 0 ? 16 : set->cap * 2;
-        mt_id_t *grown = realloc(set->ids, cap * sizeof(mt_id_t));
-        if (grown == NULL) {
-            return MT_ERR_NOMEM;
-        }
-        set->ids = grown;
-        set->cap = cap;
-    }
-    set->ids[set->len++] = id;
-    return MT_OK;
-}
-
-static mt_id_t next_unique_id(id_set_t *used)
-{
-    for (;;) {
-        mt_id_t candidate = mt_id_random();
-        if (!id_set_contains(used, candidate)) {
-            (void)id_set_add(used, candidate);
-            return candidate;
-        }
-    }
-}
-
-static void free_rule_array(mt_sub_rule_t **rules, size_t n)
-{
-    for (size_t i = 0; i < n; i++) {
-        mt_sub_rule_free(rules[i]);
-    }
+void mt_sub_rules_free(mt_sub_rule_t **rules, size_t n) {
+    for (size_t i = 0; i < n; i++) { mt_sub_rule_free(rules[i]); }
     free(rules);
 }
 
-mt_err_t mt_sub_parse_rules(const char *list, mt_sub_rule_t ***out_rules,
-                            size_t *out_n)
-{
-    char *copy = strdup(list);
-    if (copy == NULL) {
-        return MT_ERR_NOMEM;
-    }
+static char *trim(char *s) {
+    while (*s && isspace((unsigned char)*s)) { s++; }
+    size_t len = strlen(s);
+    while (len && isspace((unsigned char)s[len - 1])) { s[--len] = '\0'; }
+    return s;
+}
 
+static bool canceled(const atomic_bool *cancel) {
+    return cancel && atomic_load(cancel);
+}
+
+mt_err_t mt_sub_parse_rules_cancel(const char *list, mt_sub_rule_t ***out_rules,
+                                   size_t *out_n, const atomic_bool *cancel) {
+    *out_rules = NULL; *out_n = 0;
+    if (!list) { return MT_ERR_INVAL; }
+    if (canceled(cancel)) { return MT_ERR_CANCELED; }
+    char *copy = strdup(list);
+    if (!copy) { return MT_ERR_NOMEM; }
     mt_sub_rule_t **rules = NULL;
     size_t n = 0, cap = 0;
-    seen_key_t *seen = NULL;
-    id_set_t used = {NULL, 0, 0};
+    mt_lookup_t seen = {0}, used = {0};
+    mt_id_pool_t pool = {0};
     mt_err_t err = MT_OK;
-
     char *saveptr = NULL;
-    for (char *tok = strtok_r(copy, "\n\r,", &saveptr); tok != NULL;
+    for (char *tok = strtok_r(copy, "\n\r,", &saveptr); tok;
          tok = strtok_r(NULL, "\n\r,", &saveptr)) {
+        if (canceled(cancel)) { err = MT_ERR_CANCELED; break; }
         char *line = trim(tok);
-        if (*line == '\0' || line[0] == '#') {
-            continue;
-        }
+        if (!*line || *line == '#') { continue; }
+        size_t len = strlen(line);
+        if (len > MT_SUB_MAX_LINE_BYTES) { err = MT_ERR_LIMIT; break; }
+        /* Detection is deterministic for identical text. Indexing text before
+         * detection is equivalent to the old (detected-type, text) key and also
+         * avoids compiling duplicate regexes. Preserve first occurrence order. */
+        if (mt_lookup_get(&seen, line, len, NULL)) { continue; }
+        if (n == MT_SUB_MAX_RULES) { err = MT_ERR_LIMIT; break; }
+        err = mt_lookup_put(&seen, line, len, n, NULL);
+        if (err != MT_OK) { break; }
         const char *type = mt_sub_detect_type(line);
-        if (!seen_add(&seen, type, line)) {
-            continue;
-        }
-        mt_sub_rule_t *rule = mt_sub_rule_new();
-        if (rule == NULL) {
-            err = MT_ERR_NOMEM;
-            goto out;
-        }
-        rule->id = next_unique_id(&used);
-        rule->enable = true;
-        if ((err = mt_strset(&rule->rule, line)) != MT_OK ||
-            (err = mt_strset(&rule->type, type)) != MT_OK) {
-            mt_sub_rule_free(rule);
-            goto out;
-        }
+        mt_sub_rule_t *r = mt_sub_rule_new();
+        if (!r) { err = MT_ERR_NOMEM; break; }
+        r->enable = true;
+        err = mt_id_pool_unique(&used, &pool, &r->id);
+        if (err == MT_OK) { err = mt_strset(&r->rule, line); }
+        if (err == MT_OK) { err = mt_strset(&r->type, type); }
+        if (err != MT_OK) { mt_sub_rule_free(r); break; }
         if (n == cap) {
-            cap = cap == 0 ? 16 : cap * 2;
-            mt_sub_rule_t **grown = realloc(rules, cap * sizeof(*rules));
-            if (grown == NULL) {
-                mt_sub_rule_free(rule);
-                err = MT_ERR_NOMEM;
-                goto out;
-            }
-            rules = grown;
+            size_t next = cap ? cap * 2 : 16;
+            mt_sub_rule_t **grown = realloc(rules, next * sizeof(*rules));
+            if (!grown) { mt_sub_rule_free(r); err = MT_ERR_NOMEM; break; }
+            rules = grown; cap = next;
         }
-        rules[n++] = rule;
+        rules[n++] = r;
     }
-
-out:
-    seen_clear(seen);
-    free(used.ids);
-    free(copy);
-    if (err != MT_OK) {
-        free_rule_array(rules, n);
-        return err;
-    }
-    *out_rules = rules;
-    *out_n = n;
+    if (err == MT_OK && canceled(cancel)) { err = MT_ERR_CANCELED; }
+    mt_lookup_clear(&seen); mt_lookup_clear(&used); free(copy);
+    if (err != MT_OK) { mt_sub_rules_free(rules, n); return err; }
+    *out_rules = rules; *out_n = n;
     return MT_OK;
+}
+
+mt_err_t mt_sub_parse_rules(const char *list, mt_sub_rule_t ***out_rules, size_t *out_n) {
+    return mt_sub_parse_rules_cancel(list, out_rules, out_n, NULL);
+}
+
+mt_err_t mt_sub_rules_fix_ids(mt_sub_rule_t **rules, size_t n) {
+    mt_lookup_t used = {0}; mt_id_pool_t pool = {0};
+    mt_err_t err = MT_OK;
+    for (size_t i = 0; i < n; i++) {
+        if (!rules[i]) { continue; }
+        mt_id_t *id = &rules[i]->id;
+        if (mt_id_is_zero(*id) || mt_lookup_get(&used, id->b, sizeof(id->b), NULL)) {
+            err = mt_id_pool_unique(&used, &pool, id);
+        } else { err = mt_lookup_put(&used, id->b, sizeof(id->b), i, NULL); }
+        if (err != MT_OK) { break; }
+    }
+    mt_lookup_clear(&used);
+    return err;
+}
+
+mt_err_t mt_sub_reconcile_rules(mt_sub_rule_t **parsed, size_t n,
+                                 mt_sub_rule_t **existing, size_t n_existing) {
+    mt_lookup_t by_text = {0};
+    mt_err_t err = MT_OK;
+    for (size_t i = 0; i < n_existing; i++) {
+        const mt_sub_rule_t *r = existing[i];
+        if (!r || !r->rule || !*r->rule) { continue; }
+        err = mt_lookup_put(&by_text, r->rule, strlen(r->rule), i, NULL);
+        if (err != MT_OK) { break; }
+    }
+    for (size_t i = 0; i < n && err == MT_OK; i++) {
+        mt_sub_rule_t *r = parsed[i]; size_t j;
+        if (!r || !r->rule || !mt_lookup_get(&by_text, r->rule, strlen(r->rule), &j)) { continue; }
+        const mt_sub_rule_t *old = existing[j];
+        r->id = old->id; r->enable = old->enable;
+        if (old->type && *old->type) { err = mt_strset(&r->type, old->type); }
+    }
+    mt_lookup_clear(&by_text);
+    if (err == MT_OK) { err = mt_sub_rules_fix_ids(parsed, n); }
+    return err;
 }
 
 mt_err_t mt_sub_refresh_rules(const char *list, mt_sub_rule_t **existing,
-                              size_t n_existing, mt_sub_rule_t ***out_rules,
-                              size_t *out_n)
-{
-    mt_sub_rule_t **parsed = NULL;
-    size_t n = 0;
+                              size_t n_existing, mt_sub_rule_t ***out_rules, size_t *out_n) {
+    *out_rules = NULL; *out_n = 0;
+    mt_sub_rule_t **parsed = NULL; size_t n = 0;
     mt_err_t err = mt_sub_parse_rules(list, &parsed, &n);
-    if (err != MT_OK) {
-        return err;
-    }
-    if (n == 0) {
-        *out_rules = parsed;
-        *out_n = 0;
-        return MT_OK;
-    }
-
-    id_set_t used = {NULL, 0, 0};
-
-    for (size_t i = 0; i < n; i++) {
-        mt_sub_rule_t *rule = parsed[i];
-        /* find first existing with same non-empty text (Go builds a map
-         * keeping the FIRST occurrence per text) */
-        mt_sub_rule_t *current = NULL;
-        for (size_t j = 0; j < n_existing; j++) {
-            if (existing[j] != NULL && existing[j]->rule != NULL &&
-                existing[j]->rule[0] != '\0' &&
-                strcmp(existing[j]->rule, rule->rule) == 0) {
-                current = existing[j];
-                break;
-            }
-        }
-        if (current != NULL) {
-            rule->id = current->id;
-            rule->enable = current->enable;
-            if (current->type != NULL && current->type[0] != '\0') {
-                if ((err = mt_strset(&rule->type, current->type)) != MT_OK) {
-                    break;
-                }
-            }
-        }
-        if (mt_id_is_zero(rule->id)) {
-            rule->id = next_unique_id(&used);
-            continue;
-        }
-        if (id_set_contains(&used, rule->id)) {
-            rule->id = next_unique_id(&used);
-            continue;
-        }
-        if ((err = id_set_add(&used, rule->id)) != MT_OK) {
-            break;
-        }
-    }
-
-    free(used.ids);
-    if (err != MT_OK) {
-        free_rule_array(parsed, n);
-        return err;
-    }
-    *out_rules = parsed;
-    *out_n = n;
+    if (err == MT_OK) { err = mt_sub_reconcile_rules(parsed, n, existing, n_existing); }
+    if (err != MT_OK) { mt_sub_rules_free(parsed, n); return err; }
+    *out_rules = parsed; *out_n = n;
     return MT_OK;
 }
 
-/* ---- sameRules ---- */
+/* ---- order-insensitive multiset compare; preserve legacy duplicate rules --- */
+typedef struct rule_state { mt_id_t id; bool enable; size_t count; } rule_state_t;
 
-typedef struct rule_state {
-    char *key;
-    mt_id_t id;
-    bool enable;
-    int count;
-    struct rule_state *next;
-} rule_state_t;
-
-static char *same_rules_key(const mt_sub_rule_t *rule)
-{
-    const char *type =
-        (rule->type != NULL && rule->type[0] != '\0')
-            ? rule->type
-            : mt_sub_detect_type(rule->rule != NULL ? rule->rule : "");
-    const char *text = rule->rule != NULL ? rule->rule : "";
+static char *same_rules_key(const mt_sub_rule_t *rule) {
+    const char *text = rule->rule ? rule->rule : "";
+    const char *type = rule->type && *rule->type ? rule->type : mt_sub_detect_type(text);
     size_t len = strlen(type) + 1 + strlen(text) + 1;
     char *key = malloc(len);
-    if (key != NULL) {
-        snprintf(key, len, "%s|%s", type, text);
-    }
+    if (key) { snprintf(key, len, "%s|%s", type, text); }
     return key;
 }
 
 bool mt_sub_same_rules(mt_sub_rule_t **left, size_t n_left,
-                       mt_sub_rule_t **right, size_t n_right)
-{
-    if (n_left != n_right) {
-        return false;
-    }
-    if (n_left == 0) {
-        return true;
-    }
-
-    rule_state_t *states = NULL;
-    bool result = true;
+                       mt_sub_rule_t **right, size_t n_right) {
+    if (n_left != n_right) { return false; }
+    if (!n_left) { return true; }
+    rule_state_t *states = calloc(n_left, sizeof(*states));
+    if (!states) { return false; }
+    mt_lookup_t map = {0};
     size_t left_nil = 0, right_nil = 0;
-
+    bool result = true;
     for (size_t i = 0; i < n_left && result; i++) {
-        if (left[i] == NULL) {
-            left_nil++;
-            continue;
-        }
+        if (!left[i]) { left_nil++; continue; }
         char *key = same_rules_key(left[i]);
-        if (key == NULL) {
-            result = false;
-            break;
-        }
-        rule_state_t *st = states;
-        while (st != NULL && strcmp(st->key, key) != 0) {
-            st = st->next;
-        }
-        if (st != NULL) {
-            free(key);
-            if (st->count > 0 && (!mt_id_equal(st->id, left[i]->id) ||
-                                  st->enable != left[i]->enable)) {
-                result = false;
-                break;
-            }
-        } else {
-            st = calloc(1, sizeof(*st));
-            if (st == NULL) {
-                free(key);
-                result = false;
-                break;
-            }
-            st->key = key;
-            st->next = states;
-            states = st;
-        }
-        st->id = left[i]->id;
-        st->enable = left[i]->enable;
-        st->count++;
-    }
-
-    for (size_t i = 0; i < n_right && result; i++) {
-        if (right[i] == NULL) {
-            right_nil++;
-            continue;
-        }
-        char *key = same_rules_key(right[i]);
-        if (key == NULL) {
-            result = false;
-            break;
-        }
-        rule_state_t *st = states;
-        while (st != NULL && strcmp(st->key, key) != 0) {
-            st = st->next;
+        if (!key) { result = false; break; }
+        size_t j = i;
+        if (!mt_lookup_get(&map, key, strlen(key), &j)) {
+            if (mt_lookup_put(&map, key, strlen(key), i, NULL) != MT_OK) { result = false; }
         }
         free(key);
-        if (st == NULL || st->count == 0) {
-            result = false;
-            break;
+        rule_state_t *st = &states[j];
+        if (st->count && (!mt_id_equal(st->id, left[i]->id) || st->enable != left[i]->enable)) {
+            result = false; break;
         }
-        if (!mt_id_equal(st->id, right[i]->id) ||
-            st->enable != right[i]->enable) {
-            result = false;
-            break;
-        }
-        st->count--;
+        st->id = left[i]->id; st->enable = left[i]->enable; st->count++;
     }
-
-    if (result) {
-        for (rule_state_t *st = states; st != NULL; st = st->next) {
-            if (st->count != 0) {
-                result = false;
-                break;
-            }
-        }
-        if (left_nil != right_nil) {
-            result = false;
-        }
+    for (size_t i = 0; i < n_right && result; i++) {
+        if (!right[i]) { right_nil++; continue; }
+        char *key = same_rules_key(right[i]); size_t j;
+        if (!key) { result = false; break; }
+        bool found = mt_lookup_get(&map, key, strlen(key), &j);
+        free(key);
+        if (!found || !states[j].count || !mt_id_equal(states[j].id, right[i]->id) ||
+            states[j].enable != right[i]->enable) { result = false; break; }
+        states[j].count--;
     }
-
-    while (states != NULL) {
-        rule_state_t *next = states->next;
-        free(states->key);
-        free(states);
-        states = next;
-    }
+    if (left_nil != right_nil) { result = false; }
+    for (size_t i = 0; i < n_left && result; i++) { if (states[i].count) { result = false; } }
+    mt_lookup_clear(&map); free(states);
     return result;
 }
 

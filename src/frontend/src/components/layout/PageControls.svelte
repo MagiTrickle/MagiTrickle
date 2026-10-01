@@ -52,7 +52,7 @@
 
   <div class={`page-controls-actions ${actionsClass}`}>
     <Tooltip value={saveLabel}>
-      <Button onclick={onSave} id={saveButtonId} class="accent" inactive={!canSave}>
+      <Button onclick={onSave} id={saveButtonId} aria-label={saveLabel} class="accent" inactive={!canSave}>
         <Save size={22} />
       </Button>
     </Tooltip>
@@ -66,7 +66,7 @@
           accept={importAccept}
           onchange={onImport}
         />
-        <Button onclick={() => importInputRef?.click()}>
+        <Button onclick={() => importInputRef?.click()} aria-label={importLabel}>
           <Import size={22} />
         </Button>
       </Tooltip>
@@ -74,14 +74,14 @@
 
     {#if onExport && exportLabel}
       <Tooltip value={exportLabel}>
-        <Button onclick={onExport}>
+        <Button onclick={onExport} aria-label={exportLabel}>
           <Export size={22} />
         </Button>
       </Tooltip>
     {/if}
 
     <Tooltip value={addLabel}>
-      <Button onclick={onAdd}><Add size={22} /></Button>
+      <Button onclick={onAdd} aria-label={addLabel}><Add size={22} /></Button>
     </Tooltip>
   </div>
 </div>

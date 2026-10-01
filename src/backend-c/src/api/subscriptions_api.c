@@ -9,6 +9,7 @@
 #include <cjson/cJSON.h>
 
 #include "magitrickle/id.h"
+#include "magitrickle/lookup.h"
 #include "magitrickle/log.h"
 #include "magitrickle/sub_fetch.h"
 #include "magitrickle/subparse.h"
@@ -39,18 +40,12 @@ static void get_optional_bool(const cJSON *obj, const char *key, bool *out_val, 
 
 /* ---- request body -> models (subscription_converters.go equivalents) ------- */
 
-static mt_sub_rule_t *sub_rule_from_req(const cJSON *req, mt_sub_rule_t **baseline_rules,
-                                       size_t n_baseline) {
+static mt_sub_rule_t *sub_rule_from_req(const cJSON *req, const mt_lookup_t *baseline) {
     mt_id_t id;
     bool has_id;
     bool found = false;
     if (parse_optional_id(req, "id", &id, &has_id) == MT_OK && has_id) {
-        for (size_t i = 0; i < n_baseline; i++) {
-            if (mt_id_equal(baseline_rules[i]->id, id)) {
-                found = true;
-                break;
-            }
-        }
+        found = mt_lookup_get(baseline, id.b, sizeof(id.b), NULL);
     }
     mt_sub_rule_t *rule = mt_sub_rule_new();
     if (!rule) { return NULL; }
@@ -63,6 +58,51 @@ static mt_sub_rule_t *sub_rule_from_req(const cJSON *req, mt_sub_rule_t **baseli
     cJSON *enable_j = cJSON_GetObjectItemCaseSensitive(req, "enable");
     rule->enable = cJSON_IsBool(enable_j) && cJSON_IsTrue(enable_j);
     return rule;
+}
+
+/* Sparse overrides carry the old values as optimistic preconditions. An
+ * automatic refresh must not turn an edit into an overwrite of a newer rule.
+ * Work only on the detached replacement; failure cannot partially edit live state. */
+static mt_err_t apply_rule_changes(const cJSON *changes, mt_subscription_t *sub,
+                                    const char **err_msg) {
+    if (!cJSON_IsArray(changes)) { *err_msg = "invalid ruleChanges"; return MT_ERR_INVAL; }
+    if (!changes->child) { return MT_OK; }
+    mt_lookup_t by_id = {0}, seen = {0};
+    mt_err_t err = MT_OK;
+    for (size_t i = 0; i < sub->n_rules; i++) {
+        err = mt_lookup_put(&by_id, sub->rules[i]->id.b, 4, i, NULL);
+        if (err != MT_OK) { break; }
+    }
+    const cJSON *change;
+    cJSON_ArrayForEach(change, changes) {
+        if (err != MT_OK) { break; }
+        mt_id_t id; bool present; size_t index;
+        const cJSON *type = cJSON_GetObjectItemCaseSensitive(change, "type");
+        const cJSON *enable = cJSON_GetObjectItemCaseSensitive(change, "enable");
+        const cJSON *previous_type = cJSON_GetObjectItemCaseSensitive(change, "previousType");
+        const cJSON *previous_enable = cJSON_GetObjectItemCaseSensitive(change, "previousEnable");
+        const cJSON *pattern = cJSON_GetObjectItemCaseSensitive(change, "rule");
+        if (parse_optional_id(change, "id", &id, &present) != MT_OK || !present ||
+            !cJSON_IsString(type) || !cJSON_IsBool(enable) || !cJSON_IsString(previous_type) ||
+            !cJSON_IsBool(previous_enable) || !cJSON_IsString(pattern) ||
+            mt_lookup_get(&seen, id.b, 4, NULL)) {
+            *err_msg = "invalid or duplicate rule change"; err = MT_ERR_INVAL; break;
+        }
+        if (!mt_lookup_get(&by_id, id.b, 4, &index)) {
+            *err_msg = "subscription rules changed; reload before saving"; err = MT_ERR_STATE; break;
+        }
+        mt_sub_rule_t *rule = sub->rules[index];
+        if (strcmp(rule->rule ? rule->rule : "", pattern->valuestring) != 0 ||
+            strcmp(rule->type ? rule->type : "", previous_type->valuestring) != 0 ||
+            rule->enable != (bool)cJSON_IsTrue(previous_enable)) {
+            *err_msg = "subscription rules changed; reload before saving"; err = MT_ERR_STATE; break;
+        }
+        err = mt_lookup_put(&seen, id.b, 4, index, NULL);
+        if (err == MT_OK) { err = mt_strset(&rule->type, type->valuestring); }
+        if (err == MT_OK) { rule->enable = cJSON_IsTrue(enable); }
+    }
+    mt_lookup_clear(&by_id); mt_lookup_clear(&seen);
+    return err;
 }
 
 /* Builds a *new* mt_subscription_t from a SubscriptionReq JSON body --
@@ -122,15 +162,22 @@ static mt_err_t subscription_from_req(const cJSON *req, const mt_subscription_t 
         }
         mt_sub_rule_t **baseline = existing ? existing->rules : NULL;
         size_t n_baseline = existing ? existing->n_rules : 0;
-        int n = cJSON_GetArraySize(rules_j);
-        for (int i = 0; i < n; i++) {
-            mt_sub_rule_t *r = sub_rule_from_req(cJSON_GetArrayItem(rules_j, i), baseline, n_baseline);
-            if (!r || mt_subscription_add_rule(sub, r) != MT_OK) {
-                mt_sub_rule_free(r);
-                mt_subscription_free(sub);
-                return MT_ERR_NOMEM;
-            }
+        if ((size_t)cJSON_GetArraySize(rules_j) > MT_SUB_MAX_RULES) {
+            mt_subscription_free(sub); *err_msg = "too many subscription rules"; return MT_ERR_LIMIT;
         }
+        mt_lookup_t baseline_ids = {0};
+        for (size_t i = 0; i < n_baseline && err == MT_OK; i++) {
+            err = mt_lookup_put(&baseline_ids, baseline[i]->id.b, 4, i, NULL);
+        }
+        const cJSON *item;
+        cJSON_ArrayForEach(item, rules_j) {
+            if (err != MT_OK) { break; }
+            mt_sub_rule_t *r = sub_rule_from_req(item, &baseline_ids);
+            err = r ? mt_subscription_add_rule(sub, r) : MT_ERR_NOMEM;
+            if (err != MT_OK) { mt_sub_rule_free(r); }
+        }
+        mt_lookup_clear(&baseline_ids);
+        if (err != MT_OK) { mt_subscription_free(sub); return err; }
     } else if (existing) {
         for (size_t i = 0; i < existing->n_rules; i++) {
             mt_sub_rule_t *r = mt_sub_rule_new();
@@ -145,6 +192,19 @@ static mt_err_t subscription_from_req(const cJSON *req, const mt_subscription_t 
                 return e != MT_OK ? e : MT_ERR_NOMEM;
             }
         }
+    }
+    cJSON *changes = cJSON_GetObjectItemCaseSensitive(req, "ruleChanges");
+    if (changes) {
+        if (!existing) {
+            mt_subscription_free(sub); *err_msg = "subscription changed; reload before saving";
+            return MT_ERR_STATE;
+        }
+        if (rules_j && !cJSON_IsNull(rules_j)) {
+            mt_subscription_free(sub); *err_msg = "rules and ruleChanges are mutually exclusive";
+            return MT_ERR_INVAL;
+        }
+        err = apply_rule_changes(changes, sub, err_msg);
+        if (err != MT_OK) { mt_subscription_free(sub); return err; }
     }
     *out = sub;
     return MT_OK;
@@ -175,23 +235,8 @@ static void ensure_unique_subscription_ids(mt_subscription_t **subs, size_t n) {
     }
 }
 
-static void ensure_unique_subscription_rule_ids(mt_subscription_t *sub) {
-    for (size_t i = 0; i < sub->n_rules; i++) {
-        bool exists = mt_id_is_zero(sub->rules[i]->id);
-        for (size_t j = 0; !exists && j < i; j++) {
-            if (mt_id_equal(sub->rules[j]->id, sub->rules[i]->id)) { exists = true; }
-        }
-        while (exists) {
-            sub->rules[i]->id = mt_id_random();
-            exists = false;
-            for (size_t j = 0; j < i; j++) {
-                if (mt_id_equal(sub->rules[j]->id, sub->rules[i]->id)) {
-                    exists = true;
-                    break;
-                }
-            }
-        }
-    }
+static mt_err_t ensure_unique_subscription_rule_ids(mt_subscription_t *sub) {
+    return mt_sub_rules_fix_ids(sub->rules, sub->n_rules);
 }
 
 /* ---- models -> response JSON ------------------------------------------------ */
@@ -249,13 +294,13 @@ static void must_route(mt_httpd_t *h, const char *method, const char *pattern, m
 /* Subscriptions default to SAVING unless ?save=false is explicit --
  * matches Go's `r.URL.Query().Get("save") != "false"`, the opposite
  * default of the groups handlers' `== "true"` (see subscriptions_api.h). */
-static void maybe_save(mt_subs_ctx_t *ctx, mt_http_req_t *req) {
+static mt_err_t maybe_save(mt_subs_ctx_t *ctx, mt_http_req_t *req) {
     const char *save = mt_http_req_query(req, "save");
-    bool want_save = !(save && strcmp(save, "false") == 0);
-    if (!want_save || !ctx->config_path) { return; }
-    mt_err_t err =
-        mt_app_save_config(ctx->app, ctx->config_path, ctx->config_version ? ctx->config_version : "");
+    if ((save && strcmp(save, "false") == 0) || !ctx->config_path) { return MT_OK; }
+    mt_err_t err = mt_app_save_config(ctx->app, ctx->config_path,
+                                     ctx->config_version ? ctx->config_version : "");
     if (err != MT_OK) { MT_ERROR("failed to save config file: %s", mt_err_str(err)); }
+    return err;
 }
 
 static cJSON *parse_body_json(mt_http_req_t *req) {
@@ -319,22 +364,107 @@ static void handle_put_subscriptions(mt_http_req_t *req, mt_http_res_t *res, voi
             cJSON_Delete(json);
             for (int j = 0; j < i; j++) { mt_subscription_free(new_subs[j]); }
             free(new_subs);
-            mt_http_res_write_error(res, 400, err_msg);
+            mt_http_res_write_error(res, err == MT_ERR_STATE ? 409 : err == MT_ERR_LIMIT ? 413 : 400, err_msg);
             return;
         }
     }
     cJSON_Delete(json);
 
     ensure_unique_subscription_ids(new_subs, (size_t)n);
-    for (int i = 0; i < n; i++) { ensure_unique_subscription_rule_ids(new_subs[i]); }
+    for (int i = 0; i < n; i++) {
+        mt_err_t id_err = ensure_unique_subscription_rule_ids(new_subs[i]);
+        if (id_err != MT_OK) {
+            for (int j = 0; j < n; j++) { mt_subscription_free(new_subs[j]); }
+            free(new_subs);
+            mt_http_res_write_error(res, 500, mt_err_str(id_err)); return;
+        }
+    }
 
     mt_err_t err = mt_app_replace_subscriptions(ctx->app, new_subs, (size_t)n); /* always takes ownership */
     if (err != MT_OK) {
         mt_http_res_write_error(res, 500, mt_err_str(err));
         return;
     }
+    if (maybe_save(ctx, req) != MT_OK) {
+        cJSON *out = cJSON_CreateObject();
+        cJSON_AddStringToObject(out, "error", "failed to save config file; changes are active only in memory");
+        cJSON_AddStringToObject(out, "code", "PERSISTENCE_FAILED");
+        cJSON_AddBoolToObject(out, "applied", true);
+        cJSON *arr = cJSON_AddArrayToObject(out, "subscriptions");
+        for (size_t i = 0; i < mt_app_subscription_count(ctx->app); i++) {
+            cJSON_AddItemToArray(arr, subscription_to_json(mt_app_subscription_at(ctx->app, i)));
+        }
+        mt_http_res_write_json(res, 500, out);
+        return;
+    }
     mt_http_res_write_json(res, 200, status_ok_json());
-    maybe_save(ctx, req);
+}
+
+typedef struct pending_create {
+    mt_subs_ctx_t *ctx;
+    mt_subscription_t *sub;
+    mt_http_deferred_t *response;
+    bool save;
+} pending_create_t;
+
+static void create_fetched(void *ud, mt_err_t err, mt_sub_rule_t **rules, size_t n) {
+    pending_create_t *p = ud;
+    if (err != MT_OK) {
+        mt_sub_rules_free(rules, n);
+        mt_http_deferred_error(p->response, err == MT_ERR_UPSTREAM ? 502 : err == MT_ERR_LIMIT ? 413 : 500,
+                              err == MT_ERR_UPSTREAM ? "subscription fetch failed" : mt_err_str(err));
+        mt_subscription_free(p->sub); free(p); return;
+    }
+    p->sub->rules = rules; p->sub->n_rules = n;
+    p->sub->last_check = p->sub->last_update = (uint32_t)time(NULL);
+    mt_id_t id = p->sub->id;
+    err = mt_app_add_subscription(p->ctx->app, p->sub); /* always takes ownership */
+    p->sub = NULL;
+    if (err != MT_OK) {
+        mt_http_deferred_error(p->response, err == MT_ERR_EXIST ? 409 : 500, mt_err_str(err));
+        free(p); return;
+    }
+    if (p->save && p->ctx->config_path) {
+        err = mt_app_save_config(p->ctx->app, p->ctx->config_path,
+                                p->ctx->config_version ? p->ctx->config_version : "");
+        if (err != MT_OK) {
+            bool found;
+            mt_err_t rollback = mt_app_remove_subscription_by_id(p->ctx->app, id, &found);
+            MT_ERROR("failed to save created subscription: %s; rollback=%s", mt_err_str(err), mt_err_str(rollback));
+            mt_http_deferred_error(p->response, 500, rollback == MT_OK ?
+                "failed to save config file; subscription was not added" :
+                "failed to save config file; rollback failed; reload current state");
+            free(p); return;
+        }
+    }
+    const mt_subscription_t *sub = mt_app_find_subscription_by_id(p->ctx->app, id);
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddItemToObject(out, "subscription", subscription_to_json(sub));
+    mt_http_deferred_json(p->response, 200, out);
+    free(p);
+}
+
+/* ?fetch=true creates from URL+settings; no client round-trip of the rule array.
+ * Detached work is committed only after fetch/parse succeeds. */
+static void begin_create(mt_subs_ctx_t *ctx, mt_subscription_t *sub,
+                          mt_http_req_t *req, mt_http_res_t *res) {
+    if (!ctx->fetcher) {
+        mt_subscription_free(sub);
+        mt_http_res_write_error(res, 503, "subscription worker unavailable"); return;
+    }
+    pending_create_t *p = calloc(1, sizeof(*p));
+    if (!p) { mt_subscription_free(sub); mt_http_res_write_error(res, 500, "out of memory"); return; }
+    p->ctx = ctx; p->sub = sub;
+    const char *save = mt_http_req_query(req, "save");
+    p->save = !(save && strcmp(save, "false") == 0);
+    p->response = mt_http_res_defer(req, res);
+    mt_err_t err = p->response ? mt_sub_fetcher_submit_rules(ctx->fetcher, sub->url, create_fetched, p)
+                               : MT_ERR_NOMEM;
+    if (err != MT_OK) {
+        mt_http_res_cancel_defer(res);
+        mt_subscription_free(sub); free(p);
+        mt_http_res_write_error(res, err == MT_ERR_LIMIT ? 503 : 500, mt_err_str(err));
+    }
 }
 
 static void handle_create_subscription(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -351,6 +481,12 @@ static void handle_create_subscription(mt_http_req_t *req, mt_http_res_t *res, v
         return;
     }
 
+    const char *fetch = mt_http_req_query(req, "fetch");
+    bool fetch_rules = fetch && strcmp(fetch, "true") == 0;
+    const cJSON *client_rules = cJSON_GetObjectItemCaseSensitive(json, "rules");
+    if (fetch_rules && client_rules && !cJSON_IsNull(client_rules)) {
+        cJSON_Delete(json); mt_http_res_write_error(res, 400, "fetch=true does not accept rules"); return;
+    }
     mt_subscription_t *sub = NULL;
     const char *err_msg = "invalid subscription";
     mt_err_t err = subscription_from_req(json, NULL, &sub, &err_msg);
@@ -359,7 +495,9 @@ static void handle_create_subscription(mt_http_req_t *req, mt_http_res_t *res, v
         mt_http_res_write_error(res, 400, err_msg);
         return;
     }
-    ensure_unique_subscription_rule_ids(sub);
+    if (fetch_rules) { begin_create(ctx, sub, req, res); return; }
+    err = ensure_unique_subscription_rule_ids(sub);
+    if (err != MT_OK) { mt_subscription_free(sub); mt_http_res_write_error(res, 500, mt_err_str(err)); return; }
 
     err = mt_app_add_subscription(ctx->app, sub); /* always takes ownership */
     if (err != MT_OK) {
@@ -367,8 +505,11 @@ static void handle_create_subscription(mt_http_req_t *req, mt_http_res_t *res, v
         mt_http_res_write_error(res, status, mt_err_str(err));
         return;
     }
+    if (maybe_save(ctx, req) != MT_OK) {
+        mt_http_res_write_error(res, 500, "failed to save config file; changes are active only in memory");
+        return;
+    }
     mt_http_res_write_json(res, 200, status_ok_json());
-    maybe_save(ctx, req);
 }
 
 static void handle_delete_subscription(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -389,8 +530,11 @@ static void handle_delete_subscription(mt_http_req_t *req, mt_http_res_t *res, v
         mt_http_res_write_error(res, 404, "subscription not found");
         return;
     }
+    if (maybe_save(ctx, req) != MT_OK) {
+        mt_http_res_write_error(res, 500, "failed to save config file; changes are active only in memory");
+        return;
+    }
     mt_http_res_write_json(res, 200, status_ok_json());
-    maybe_save(ctx, req);
 }
 
 static int sync_status(mt_err_t err) {
@@ -421,45 +565,51 @@ typedef struct pending_sync {
 } pending_sync_t;
 
 static void sync_finished(void *ud, mt_id_t id, mt_err_t err, bool changed) {
-    pending_sync_t *pending = ud;
-    mt_subs_ctx_t *ctx = pending->ctx;
-    if (err != MT_OK) {
-        mt_http_deferred_error(pending->response, sync_status(err), sync_message(err));
-    } else {
-        const mt_subscription_t *sub = mt_app_find_subscription_by_id(ctx->app, id);
-        cJSON *out = cJSON_CreateObject();
-        cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(sub->rules, sub->n_rules));
-        cJSON_AddNumberToObject(out, "lastUpdate", sub->last_update);
-        cJSON_AddStringToObject(out, "url", sub->url ? sub->url : "");
-        mt_http_deferred_json(pending->response, 200, out);
-        if (changed && pending->save && ctx->config_path) {
-            mt_err_t serr = mt_app_save_config(ctx->app, ctx->config_path,
-                                                ctx->config_version ? ctx->config_version : "");
-            if (serr != MT_OK) { MT_ERROR("failed to save config file: %s", mt_err_str(serr)); }
+    pending_sync_t *p = ud;
+    if (err != MT_OK) { mt_http_deferred_error(p->response, sync_status(err), sync_message(err)); free(p); return; }
+    /* Saving even an unchanged manual sync permits retry after a prior disk error. */
+    (void)changed;
+    if (p->save && p->ctx->config_path) {
+        err = mt_app_save_config(p->ctx->app, p->ctx->config_path,
+                                p->ctx->config_version ? p->ctx->config_version : "");
+        if (err != MT_OK) {
+            MT_ERROR("failed to save config file: %s", mt_err_str(err));
+            mt_http_deferred_error(p->response, 500, "failed to save config file; changes are active only in memory");
+            free(p); return;
         }
     }
-    free(pending);
+    const mt_subscription_t *sub = mt_app_find_subscription_by_id(p->ctx->app, id);
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(sub->rules, sub->n_rules));
+    cJSON_AddNumberToObject(out, "lastUpdate", sub->last_update);
+    cJSON_AddStringToObject(out, "url", sub->url ? sub->url : "");
+    mt_http_deferred_json(p->response, 200, out);
+    free(p);
 }
 
-static void preview_fetched(void *ud, mt_err_t err, const char *body, size_t len) {
-    (void)len;
-    mt_http_deferred_t *response = ud;
-    if (err != MT_OK) {
-        mt_http_deferred_error(response, 502, "subscription fetch failed");
-        return;
-    }
-    mt_sub_rule_t **rules = NULL;
-    size_t n = 0;
-    err = mt_sub_parse_rules(body, &rules, &n);
-    if (err != MT_OK) {
-        mt_http_deferred_error(response, 500, mt_err_str(err));
-        return;
-    }
+static cJSON *preview_json(mt_sub_rule_t **rules, size_t n, bool summary) {
     cJSON *out = cJSON_CreateObject();
-    cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(rules, n));
-    mt_http_deferred_json(response, 200, out);
-    for (size_t i = 0; i < n; i++) { mt_sub_rule_free(rules[i]); }
-    free(rules);
+    if (!summary) { cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(rules, n)); return out; }
+    cJSON_AddNumberToObject(out, "count", (double)n);
+    cJSON *types = cJSON_AddObjectToObject(out, "types");
+    for (size_t i = 0; i < n; i++) {
+        const char *type = rules[i]->type ? rules[i]->type : "";
+        cJSON *count = cJSON_GetObjectItemCaseSensitive(types, type);
+        if (count) { cJSON_SetNumberValue(count, count->valuedouble + 1); }
+        else { cJSON_AddNumberToObject(types, type, 1); }
+    }
+    return out;
+}
+
+typedef struct pending_preview { mt_http_deferred_t *response; bool summary; } pending_preview_t;
+
+static void preview_fetched(void *ud, mt_err_t err, mt_sub_rule_t **rules, size_t n) {
+    pending_preview_t *p = ud;
+    if (err != MT_OK) {
+        mt_http_deferred_error(p->response, err == MT_ERR_UPSTREAM ? 502 : err == MT_ERR_LIMIT ? 413 : 500,
+                              err == MT_ERR_UPSTREAM ? "subscription fetch failed" : mt_err_str(err));
+    } else { mt_http_deferred_json(p->response, 200, preview_json(rules, n, p->summary)); }
+    mt_sub_rules_free(rules, n); free(p);
 }
 
 /* POST /api/v1/subscriptions/{subscriptionID}/sync -- fetch+refresh a
@@ -540,6 +690,9 @@ static void handle_sync_subscription(mt_http_req_t *req, mt_http_res_t *res, voi
         return;
     }
 
+    if (maybe_save(ctx, req) != MT_OK) {
+        mt_http_res_write_error(res, 500, "failed to save config file; changes are active only in memory"); return;
+    }
     const mt_subscription_t *sub = mt_app_find_subscription_by_id(ctx->app, id);
     cJSON *out = cJSON_CreateObject();
     cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(sub->rules, sub->n_rules));
@@ -547,13 +700,7 @@ static void handle_sync_subscription(mt_http_req_t *req, mt_http_res_t *res, voi
     cJSON_AddStringToObject(out, "url", sub->url ? sub->url : "");
     mt_http_res_write_json(res, 200, out);
 
-    const char *save = mt_http_req_query(req, "save");
-    bool want_save = !(save && strcmp(save, "false") == 0);
-    if (changed && want_save && ctx->config_path) {
-        mt_err_t serr =
-            mt_app_save_config(ctx->app, ctx->config_path, ctx->config_version ? ctx->config_version : "");
-        if (serr != MT_OK) { MT_ERROR("failed to save config file: %s", mt_err_str(serr)); }
-    }
+
 }
 
 /* GET /api/v1/subscriptions/rules?url= -- fetch+parse a list without
@@ -567,12 +714,16 @@ static void handle_get_subscription_rules(mt_http_req_t *req, mt_http_res_t *res
         return;
     }
 
+    const char *mode = mt_http_req_query(req, "summary");
+    bool summary = mode && strcmp(mode, "true") == 0;
     if (ctx->fetcher) {
-        mt_http_deferred_t *response = mt_http_res_defer(req, res);
-        if (!response) { mt_http_res_write_error(res, 500, "out of memory"); return; }
-        mt_err_t err = mt_sub_fetcher_submit(ctx->fetcher, url, preview_fetched, response);
+        pending_preview_t *p = calloc(1, sizeof(*p));
+        if (!p) { mt_http_res_write_error(res, 500, "out of memory"); return; }
+        p->summary = summary; p->response = mt_http_res_defer(req, res);
+        mt_err_t err = p->response ? mt_sub_fetcher_submit_rules(ctx->fetcher, url, preview_fetched, p)
+                                   : MT_ERR_NOMEM;
         if (err != MT_OK) {
-            mt_http_res_cancel_defer(res);
+            mt_http_res_cancel_defer(res); free(p);
             mt_http_res_write_error(res, sync_status(err), mt_err_str(err));
         }
         return;
@@ -595,8 +746,7 @@ static void handle_get_subscription_rules(mt_http_req_t *req, mt_http_res_t *res
         return;
     }
 
-    cJSON *out = cJSON_CreateObject();
-    cJSON_AddItemToObject(out, "rules", sub_rules_to_json_array(rules, n_rules));
+    cJSON *out = preview_json(rules, n_rules, summary);
     mt_http_res_write_json(res, 200, out);
 
     for (size_t i = 0; i < n_rules; i++) { mt_sub_rule_free(rules[i]); }

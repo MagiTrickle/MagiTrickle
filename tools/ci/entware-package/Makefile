@@ -2,13 +2,13 @@ include $(TOPDIR)/rules.mk
 
 include ./version.mk
 
-PKG_NAME:=magitrickle
+PKG_NAME:=mt-c
 PKG_VERSION:=$(MAGITRICKLE_VERSION)
 PKG_RELEASE:=$(MAGITRICKLE_RELEASE)
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Vladimir Avtsenov <vladimir.lsk.cool@gmail.com>
-PKG_SOURCE:=magitrickle-source.tar.gz
+PKG_SOURCE:=mt-c-source.tar.gz
 PKG_SOURCE_URL:=file://$(CURDIR)
 PKG_HASH:=skip
 PKG_MIRROR_HASH:=skip
@@ -46,23 +46,24 @@ endif
 # as the non-CI ipk packaging path.
 MAGITRICKLE_IS_KN:=$(filter %_kn,$(MAGITRICKLE_TARGET))
 
-define Package/magitrickle
+define Package/mt-c
   SECTION:=net
   CATEGORY:=Network
   TITLE:=DNS-based routing application
-  URL:=https://magitrickle.dev
+  URL:=https://github.com/dan0102dan/mt-c
+  CONFLICTS:=magitrickle
   DEPENDS:=+iptables +libyaml +libpcre2 +libmnl +libcurl +cJSON $(if $(MAGITRICKLE_IS_KN),+socat)
 endef
 
-define Package/magitrickle/description
+define Package/mt-c/description
  DNS-based routing application for Entware.
 endef
 
-define Package/magitrickle/conffiles
+define Package/mt-c/conffiles
 /opt/var/lib/magitrickle/config.yaml
 endef
 
-define Package/magitrickle/postinst
+define Package/mt-c/postinst
 #!/bin/sh
 /opt/etc/init.d/S99magitrickle restart
 exit 0
@@ -85,7 +86,7 @@ define Build/Compile
 			-Wl,-rpath-link,$(STAGING_DIR)/opt/lib"
 endef
 
-define Package/magitrickle/install
+define Package/mt-c/install
 	$(INSTALL_DIR) $(1)/opt/bin
 	$(INSTALL_BIN) \
 		$(PKG_BUILD_DIR)/src/backend-c/build/entware-$(MAGITRICKLE_TARGET)/magitrickled-c \
@@ -114,4 +115,4 @@ else
 endif
 endef
 
-$(eval $(call BuildPackage,magitrickle))
+$(eval $(call BuildPackage,mt-c))

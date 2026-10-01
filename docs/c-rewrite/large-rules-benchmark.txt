@@ -1,0 +1,34 @@
+2026-10-01 — isolated Linux x86_64 host, GCC -O2.
+Input: deterministic generated IPv4 CIDRs, not a live-changing public URL.
+Baseline parser: source at 724ebc1 (same parser as installed 5d24924).
+Wall-clock samples, single runs; not a statistical performance guarantee.
+
+Host Linux x86_64; GCC -O2; deterministic generated IPv4 CIDRs
+n=8000 parsed=8000 err=0 seconds=0.237563
+rules=8000 parsed=8000 error=0 parse_s=0.003714 refresh_s=0.007585 compare_s=0.002737 same=yes
+n=16000 parsed=16000 err=0 seconds=0.780983
+rules=16000 parsed=16000 error=0 parse_s=0.008547 refresh_s=0.016080 compare_s=0.006566 same=yes
+n=33048 parsed=33048 err=0 seconds=3.016609
+rules=33048 parsed=33048 error=0 parse_s=0.027309 refresh_s=0.057351 compare_s=0.014078 same=yes
+n=50000 parsed=50000 err=0 seconds=7.004401
+rules=50000 parsed=50000 error=0 parse_s=0.034850 refresh_s=0.136149 compare_s=0.032541 same=yes
+
+HTTP group regression harness (50,000 namespace rules sharing a suffix):
+50k group full import+save HTTP: 0.255s; request_bytes=3788989
+50k group strict replacement+save HTTP: 0.244s
+50k group compact edit+save HTTP: 0.168s; request_bytes=277
+50k group YAML reload: 0.173s
+.2026-10-01T17:34:26Z ERR failed to save config file: not found
+.............
+Total: 14 tests (1112060 ticks, 1.112 sec), 150106 assertions
+Pass: 14, fail: 0, skip: 0.
+
+Group HTTP numbers include body upload, JSON conversion, matcher publication,
+YAML write and response read. Harness does NOT run live kernel ipset/netfilter.
+The response still carries canonical full rules; compact refers to the request.
+
+Reproduce on a development host with the repository's C dependencies:
+  make -C src/backend-c bench_large_rules
+  src/backend-c/build/host/bench-large-rules 33048
+  src/backend-c/build/host/bench-large-rules 50000
+  make -C src/backend-c test

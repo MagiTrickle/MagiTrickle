@@ -74,6 +74,7 @@ endif
 # too, not in CONFIG_SRCS.
 CORE_SRCS := \
     src/util/err.c \
+    src/util/lookup.c \
     src/util/queue.c \
     src/util/bytebuf.c \
     src/util/cancel.c \
@@ -261,6 +262,16 @@ $(BUILDDIR)/tests/%: tests/unit/%.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
+# Inject entropy errors into the real parser without production test hooks.
+$(BUILDDIR)/tests/test_large_subscriptions: tests/unit/test_large_subscriptions.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -Wl,--wrap=mt_random_bytes -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
+# Inspect reconciliation helpers without exposing them in the production API.
+$(BUILDDIR)/tests/test_ruleset_indexed: tests/unit/test_ruleset_indexed.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(filter-out $(BUILDDIR)/src/netfilter/ruleset.o,$(LIB_OBJS)) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
 test: $(TEST_BINS)
 	@set -e; for t in $(TEST_BINS); do echo "== $$t"; $$t; done
 
@@ -290,6 +301,12 @@ fuzz: $(FUZZ_BINS)
 	    $$f -runs=$(FUZZ_RUNS) -max_len=1600 \
 	        tests/fuzz/corpus/$$name 2>&1 | tail -3 || exit 1; \
 	done
+
+# Reproducible CPU benchmark, intentionally not a wall-clock CI pass/fail gate.
+.PHONY: bench_large_rules
+bench_large_rules: $(BUILDDIR)/bench-large-rules
+$(BUILDDIR)/bench-large-rules: ../../tools/bench/large-rules.c $(LIB_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIB_OBJS) $(LDLIBS) $(DEP_LIBS)
 
 # ---- analysis ---------------------------------------------------------
 

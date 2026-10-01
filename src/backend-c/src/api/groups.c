@@ -8,6 +8,7 @@
 #include <cjson/cJSON.h>
 
 #include "magitrickle/id.h"
+#include "magitrickle/id_pool.h"
 #include "magitrickle/log.h"
 
 /* ---- small JSON request-parsing helpers ------------------------------------ */
@@ -60,59 +61,69 @@ static mt_err_t fill_rule_fields(mt_rule_t *rule, const cJSON *req) {
  * does not treat an unmatched id here as an error. Used for CreateRule,
  * PutRule's body-less fields (id ignored entirely there, see below), and
  * GroupReq's nested "rules" array. Returns NULL on OOM. */
-static mt_rule_t *rule_from_req(const cJSON *req, mt_rule_t **baseline_rules, size_t n_baseline) {
-    mt_id_t id;
-    bool has_id;
-    bool found = false;
-    if (parse_optional_id(req, "id", &id, &has_id) == MT_OK && has_id) {
-        for (size_t i = 0; i < n_baseline; i++) {
-            if (mt_id_equal(baseline_rules[i]->id, id)) {
-                found = true;
-                break;
-            }
-        }
+static mt_err_t index_rules(mt_lookup_t *index, mt_rule_t **rules, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        mt_err_t err = mt_lookup_put(index, rules[i]->id.b, sizeof(rules[i]->id.b), i, NULL);
+        if (err != MT_OK) { return err; }
     }
-    mt_rule_t *rule = mt_rule_new();
-    if (!rule) { return NULL; }
-    rule->id = found ? id : mt_id_random();
-    if (fill_rule_fields(rule, req) != MT_OK) {
-        mt_rule_free(rule);
-        return NULL;
-    }
-    return rule;
+    return MT_OK;
 }
 
-/* Strict version, used only by PutRules: an explicit "id" that doesn't
- * match any of existing_rules is MT_ERR_NOENT (404), unlike the lenient
- * rule_from_req above. Matches Go's PutRules, which has its own inline
- * found-tracking loop distinct from RuleFromReq. */
-static mt_err_t rule_from_req_strict(const cJSON *req, mt_rule_t **existing_rules, size_t n_existing,
-                                     mt_rule_t **out) {
-    mt_id_t id;
-    bool has_id;
-    if (parse_optional_id(req, "id", &id, &has_id) != MT_OK) { return MT_ERR_INVAL; }
-    mt_id_t final_id = mt_id_random();
-    if (has_id) {
-        bool found = false;
-        for (size_t i = 0; i < n_existing; i++) {
-            if (mt_id_equal(existing_rules[i]->id, id)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) { return MT_ERR_NOENT; }
-        final_id = id;
+static mt_err_t rule_from_index(const cJSON *req, const mt_lookup_t *baseline,
+                                 mt_lookup_t *used, mt_id_pool_t *pool, bool strict,
+                                 mt_rule_t **out) {
+    *out = NULL;
+    mt_id_t id; bool has_id;
+    mt_err_t err = parse_optional_id(req, "id", &id, &has_id);
+    if (strict && err != MT_OK) { return err; }
+    bool found = err == MT_OK && has_id && mt_lookup_get(baseline, id.b, sizeof(id.b), NULL);
+    if (strict && has_id && !found) { return MT_ERR_NOENT; }
+    if (!found) {
+        err = mt_id_pool_unique(used, pool, &id);
+        if (err != MT_OK) { return err; }
     }
     mt_rule_t *rule = mt_rule_new();
     if (!rule) { return MT_ERR_NOMEM; }
-    rule->id = final_id;
-    mt_err_t err = fill_rule_fields(rule, req);
-    if (err != MT_OK) {
-        mt_rule_free(rule);
-        return err;
-    }
+    rule->id = id;
+    err = fill_rule_fields(rule, req);
+    if (err != MT_OK) { mt_rule_free(rule); return err; }
     *out = rule;
     return MT_OK;
+}
+
+/* Compact metadata/small rule edits retain all untouched server-side rules.
+ * Optimistic per-field preconditions reject stale edits, never fall back to
+ * replacing the live group with an empty rules array. */
+static mt_err_t apply_group_rule_changes(const cJSON *changes, mt_group_t *group) {
+    if (!cJSON_IsArray(changes)) { return MT_ERR_INVAL; }
+    mt_lookup_t index = {0}, seen = {0};
+    mt_err_t err = index_rules(&index, group->rules, group->n_rules);
+    const cJSON *change;
+    cJSON_ArrayForEach(change, changes) {
+        if (err != MT_OK) { break; }
+        mt_id_t id; bool has_id; size_t i;
+        if (parse_optional_id(change, "id", &id, &has_id) != MT_OK || !has_id ||
+            mt_lookup_get(&seen, id.b, sizeof(id.b), NULL) ||
+            !mt_lookup_get(&index, id.b, sizeof(id.b), &i)) { err = MT_ERR_STATE; break; }
+        err = mt_lookup_put(&seen, id.b, sizeof(id.b), i, NULL);
+        if (err != MT_OK) { break; }
+        mt_rule_t *rule = group->rules[i];
+        const cJSON *previous = cJSON_GetObjectItemCaseSensitive(change, "previous");
+        const cJSON *enable = cJSON_GetObjectItemCaseSensitive(previous, "enable");
+        const char *keys[] = {"name", "type", "rule"};
+        const char *values[] = {rule->name, rule->type, rule->rule};
+        for (size_t k = 0; k < 3; k++) {
+            const cJSON *item = cJSON_GetObjectItemCaseSensitive(previous, keys[k]);
+            const cJSON *next = cJSON_GetObjectItemCaseSensitive(change, keys[k]);
+            if (!cJSON_IsString(item) || !cJSON_IsString(next) ||
+                strcmp(item->valuestring, values[k] ? values[k] : "") != 0) { err = MT_ERR_STATE; }
+        }
+        if (!cJSON_IsBool(enable) || cJSON_IsTrue(enable) != rule->enable ||
+            !cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(change, "enable"))) { err = MT_ERR_STATE; }
+        if (err == MT_OK) { err = fill_rule_fields(rule, change); }
+    }
+    mt_lookup_clear(&index); mt_lookup_clear(&seen);
+    return err;
 }
 
 /* Builds a *new* mt_group_t from a GroupReq JSON body -- matches Go's
@@ -162,17 +173,19 @@ static mt_err_t group_from_req(const cJSON *req, const mt_group_t *existing, mt_
             *err_msg = "invalid rules";
             return MT_ERR_INVAL;
         }
-        mt_rule_t **baseline = existing ? existing->rules : NULL;
-        size_t n_baseline = existing ? existing->n_rules : 0;
-        int n = cJSON_GetArraySize(rules_j);
-        for (int i = 0; i < n; i++) {
-            mt_rule_t *r = rule_from_req(cJSON_GetArrayItem(rules_j, i), baseline, n_baseline);
-            if (!r || mt_group_add_rule(group, r) != MT_OK) {
-                mt_rule_free(r);
-                mt_group_free(group);
-                return MT_ERR_NOMEM;
-            }
+        mt_lookup_t baseline = {0}, used = {0}; mt_id_pool_t pool = {0};
+        err = existing ? index_rules(&baseline, existing->rules, existing->n_rules) : MT_OK;
+        if (err == MT_OK && existing) { err = index_rules(&used, existing->rules, existing->n_rules); }
+        const cJSON *item;
+        cJSON_ArrayForEach(item, rules_j) {
+            if (err != MT_OK) { break; }
+            mt_rule_t *r = NULL;
+            err = rule_from_index(item, &baseline, &used, &pool, false, &r);
+            if (err == MT_OK) { err = mt_group_add_rule(group, r); }
+            if (err != MT_OK) { mt_rule_free(r); break; }
         }
+        mt_lookup_clear(&baseline); mt_lookup_clear(&used);
+        if (err != MT_OK) { mt_group_free(group); return err; }
     } else if (existing) {
         /* "rules" key absent -> Go leaves existing.Rules untouched. We
          * return an independent object, so deep-copy existing's rules
@@ -190,6 +203,17 @@ static mt_err_t group_from_req(const cJSON *req, const mt_group_t *existing, mt_
                 mt_group_free(group);
                 return e != MT_OK ? e : MT_ERR_NOMEM;
             }
+        }
+    }
+    const cJSON *changes = cJSON_GetObjectItemCaseSensitive(req, "ruleChanges");
+    if (changes) {
+        if (!existing || (rules_j && !cJSON_IsNull(rules_j))) {
+            mt_group_free(group); *err_msg = "group changed; reload before saving";
+            return MT_ERR_STATE;
+        }
+        err = apply_group_rule_changes(changes, group);
+        if (err != MT_OK) {
+            mt_group_free(group); *err_msg = "group changed; reload before saving"; return err;
         }
     }
     *out = group;
@@ -267,10 +291,17 @@ static void must_route(mt_httpd_t *h, const char *method, const char *pattern, m
     }
 }
 
-static void maybe_save(mt_groups_ctx_t *ctx, mt_http_req_t *req) {
-    if (!mt_http_req_query_is_true(req, "save") || !ctx->config_path) { return; }
+static mt_err_t save_if_requested(mt_groups_ctx_t *ctx, mt_http_req_t *req) {
+    if (!mt_http_req_query_is_true(req, "save") || !ctx->config_path) { return MT_OK; }
     mt_err_t err = mt_app_save_config(ctx->app, ctx->config_path, ctx->config_version ? ctx->config_version : "");
     if (err != MT_OK) { MT_ERROR("failed to save config file: %s", mt_err_str(err)); }
+    return err;
+}
+
+static void maybe_save(mt_groups_ctx_t *ctx, mt_http_req_t *req, mt_http_res_t *res) {
+    if (save_if_requested(ctx, req) != MT_OK) {
+        mt_http_res_write_error(res, 500, "failed to save config file; changes are not persisted");
+    }
 }
 
 /* Called after every in-place group/rule edit in this file (the handlers
@@ -354,13 +385,6 @@ static void handle_put_groups(mt_http_req_t *req, mt_http_res_t *res, void *ud) 
         return;
     }
 
-    /* Disable every currently-configured group first (Go: unconditional
-     * Disable() over all current groups, before building the replacement
-     * list, so lenient nested rule-id reuse below reads each matched
-     * group's CURRENT rules; Disable() is idempotent). */
-    size_t n_current = mt_app_user_group_count(ctx->app);
-    for (size_t i = 0; i < n_current; i++) { mt_ruleset_disable(mt_app_user_group_at(ctx->app, i)); }
-
     int n_req = cJSON_GetArraySize(groups_j);
     mt_group_t **new_groups = n_req > 0 ? calloc((size_t)n_req, sizeof(*new_groups)) : NULL;
     if (n_req > 0 && !new_groups) {
@@ -368,8 +392,9 @@ static void handle_put_groups(mt_http_req_t *req, mt_http_res_t *res, void *ud) 
         mt_http_res_write_error(res, 500, "out of memory");
         return;
     }
-    for (int i = 0; i < n_req; i++) {
-        cJSON *group_req = cJSON_GetArrayItem(groups_j, i);
+    int i = 0;
+    /* Traverse once, bounded by the capacity validated above. */
+    for (cJSON *group_req = groups_j->child; group_req && i < n_req; group_req = group_req->next) {
         mt_id_t wanted_id;
         bool has_id;
         const mt_group_t *existing = NULL;
@@ -383,32 +408,30 @@ static void handle_put_groups(mt_http_req_t *req, mt_http_res_t *res, void *ud) 
             cJSON_Delete(json);
             for (int j = 0; j < i; j++) { mt_group_free(new_groups[j]); }
             free(new_groups);
-            mt_http_res_write_error(res, 400, err_msg);
+            mt_http_res_write_error(res, err == MT_ERR_STATE ? 409 : 400, err_msg);
             return;
         }
+        i++;
     }
     cJSON_Delete(json);
 
-    /* NOTE: Go also calls h.app.SyncSubscriptionRuleSets() at this point;
-     * subscriptions aren't wired into mt_app_t yet (Phase 6 task #36) --
-     * documented gap, see decisions.md. */
-    mt_app_clear_groups(ctx->app);
-    for (int i = 0; i < n_req; i++) {
-        mt_err_t err = mt_app_add_group(ctx->app, new_groups[i]); /* always takes ownership */
-        if (err != MT_OK) {
-            for (int j = i + 1; j < n_req; j++) { mt_group_free(new_groups[j]); }
-            free(new_groups);
-            mt_http_res_write_error(res, 500, mt_err_str(err));
-            return;
-        }
-    }
-
+    mt_err_t err = mt_app_replace_groups(ctx->app, new_groups, (size_t)n_req);
+    if (err != MT_OK) { mt_http_res_write_error(res, 500, mt_err_str(err)); return; }
     cJSON *out = cJSON_CreateObject();
     cJSON *arr = cJSON_AddArrayToObject(out, "groups");
-    for (int i = 0; i < n_req; i++) { cJSON_AddItemToArray(arr, group_to_json(new_groups[i], true)); }
-    free(new_groups);
+    for (size_t k = 0; k < mt_app_user_group_count(ctx->app); k++) {
+        cJSON_AddItemToArray(arr, group_to_json(mt_ruleset_group(mt_app_user_group_at(ctx->app, k)), true));
+    }
+    if (save_if_requested(ctx, req) != MT_OK) {
+        /* The canonical response is also the next optimistic edit baseline.
+         * Keep it on disk failure, especially IDs generated by a full import. */
+        cJSON_AddStringToObject(out, "error", "failed to save config file; changes are active only in memory");
+        cJSON_AddStringToObject(out, "code", "PERSISTENCE_FAILED");
+        cJSON_AddBoolToObject(out, "applied", true);
+        mt_http_res_write_json(res, 500, out);
+        return;
+    }
     mt_http_res_write_json(res, 200, out);
-    maybe_save(ctx, req);
 }
 
 static void handle_create_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -433,7 +456,7 @@ static void handle_create_group(mt_http_req_t *req, mt_http_res_t *res, void *ud
         return;
     }
     mt_http_res_write_json(res, 200, group_to_json(group, true)); /* still valid: no free on success */
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 static void handle_get_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -456,14 +479,6 @@ static void handle_put_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     }
 
     bool was_enabled = mt_ruleset_runtime_enabled(rs);
-    if (was_enabled) {
-        mt_err_t err = mt_ruleset_disable(rs);
-        if (err != MT_OK) {
-            cJSON_Delete(json);
-            mt_http_res_write_error(res, 500, mt_err_str(err));
-            return;
-        }
-    }
 
     mt_group_t *live = mt_ruleset_group_mut(rs);
     mt_group_t *built = NULL;
@@ -471,8 +486,12 @@ static void handle_put_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     mt_err_t err = group_from_req(json, live, &built, &err_msg);
     cJSON_Delete(json);
     if (err != MT_OK) {
-        mt_http_res_write_error(res, 400, err_msg);
+        mt_http_res_write_error(res, err == MT_ERR_STATE ? 409 : 400, err_msg);
         return;
+    }
+    if (was_enabled) {
+        err = mt_ruleset_disable(rs);
+        if (err != MT_OK) { mt_group_free(built); mt_http_res_write_error(res, 500, mt_err_str(err)); return; }
     }
     group_move_into(live, built);
     republish_dns_snapshot(ctx);
@@ -487,7 +506,7 @@ static void handle_put_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     }
 
     mt_http_res_write_json(res, 200, group_to_json(live, true));
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 static void handle_delete_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -504,7 +523,7 @@ static void handle_delete_group(mt_http_req_t *req, mt_http_res_t *res, void *ud
     mt_id_t id = mt_ruleset_group(rs)->id;
     mt_app_remove_group_by_id(ctx->app, id);
     mt_http_res_write(res, 200, NULL, NULL, 0);
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 /* ---- /api/v1/groups/{groupID}/rules ------------------------------------------ */
@@ -535,38 +554,34 @@ static void handle_put_rules(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     }
 
     mt_group_t *group = mt_ruleset_group_mut(rs);
-    int n = cJSON_GetArraySize(rules_j);
-    mt_rule_t **new_rules = n > 0 ? calloc((size_t)n, sizeof(*new_rules)) : NULL;
-    if (n > 0 && !new_rules) {
-        cJSON_Delete(json);
-        mt_http_res_write_error(res, 500, "out of memory");
+    mt_group_t built = {0};
+    mt_lookup_t baseline = {0}, used = {0}; mt_id_pool_t pool = {0};
+    mt_err_t err = index_rules(&baseline, group->rules, group->n_rules);
+    if (err == MT_OK) { err = index_rules(&used, group->rules, group->n_rules); }
+    const cJSON *item;
+    cJSON_ArrayForEach(item, rules_j) {
+        if (err != MT_OK) { break; }
+        mt_rule_t *rule = NULL;
+        err = rule_from_index(item, &baseline, &used, &pool, true, &rule);
+        if (err == MT_OK) { err = mt_group_add_rule(&built, rule); }
+        if (err != MT_OK) { mt_rule_free(rule); break; }
+    }
+    mt_lookup_clear(&baseline); mt_lookup_clear(&used); cJSON_Delete(json);
+    if (err != MT_OK) {
+        for (size_t k = 0; k < built.n_rules; k++) { mt_rule_free(built.rules[k]); }
+        free(built.rules);
+        mt_http_res_write_error(res, err == MT_ERR_NOENT ? 404 : 400,
+                                 err == MT_ERR_NOENT ? "rule not found" : "invalid rule");
         return;
     }
-    for (int i = 0; i < n; i++) {
-        mt_err_t err = rule_from_req_strict(cJSON_GetArrayItem(rules_j, i), group->rules, group->n_rules,
-                                           &new_rules[i]);
-        if (err != MT_OK) {
-            cJSON_Delete(json);
-            for (int j = 0; j < i; j++) { mt_rule_free(new_rules[j]); }
-            free(new_rules);
-            if (err == MT_ERR_NOENT) {
-                mt_http_res_write_error(res, 404, "rule not found");
-            } else {
-                mt_http_res_write_error(res, 400, "invalid rule");
-            }
-            return;
-        }
-    }
-    cJSON_Delete(json);
-
-    for (size_t i = 0; i < group->n_rules; i++) { mt_rule_free(group->rules[i]); }
+    for (size_t k = 0; k < group->n_rules; k++) { mt_rule_free(group->rules[k]); }
     free(group->rules);
-    group->rules = new_rules;
-    group->n_rules = (size_t)n;
+    group->rules = built.rules;
+    group->n_rules = built.n_rules;
     republish_dns_snapshot(ctx);
 
     if (mt_ruleset_runtime_enabled(rs)) {
-        mt_err_t err = mt_app_sync_group(ctx->app, rs);
+        err = mt_app_sync_group(ctx->app, rs);
         if (err != MT_OK) {
             mt_http_res_write_error(res, 500, mt_err_str(err));
             return;
@@ -574,7 +589,7 @@ static void handle_put_rules(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     }
 
     mt_http_res_write_json(res, 200, wrap_rules(group->rules, group->n_rules));
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 static void handle_create_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -588,9 +603,13 @@ static void handle_create_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud)
         return;
     }
     mt_group_t *group = mt_ruleset_group_mut(rs);
-    mt_rule_t *rule = rule_from_req(json, group->rules, group->n_rules);
-    cJSON_Delete(json);
-    if (!rule) {
+    mt_lookup_t baseline = {0}, used = {0}; mt_id_pool_t pool = {0};
+    mt_rule_t *rule = NULL;
+    mt_err_t build_err = index_rules(&baseline, group->rules, group->n_rules);
+    if (build_err == MT_OK) { build_err = index_rules(&used, group->rules, group->n_rules); }
+    if (build_err == MT_OK) { build_err = rule_from_index(json, &baseline, &used, &pool, false, &rule); }
+    mt_lookup_clear(&baseline); mt_lookup_clear(&used); cJSON_Delete(json);
+    if (build_err != MT_OK) {
         mt_http_res_write_error(res, 500, "out of memory");
         return;
     }
@@ -610,7 +629,7 @@ static void handle_create_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud)
     }
 
     mt_http_res_write_json(res, 200, rule_to_json(rule));
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 static void handle_get_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -655,7 +674,7 @@ static void handle_put_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     }
 
     mt_http_res_write_json(res, 200, rule_to_json(rule));
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 static void handle_delete_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -680,7 +699,7 @@ static void handle_delete_rule(mt_http_req_t *req, mt_http_res_t *res, void *ud)
     }
 
     mt_http_res_write(res, 200, NULL, NULL, 0);
-    maybe_save(ctx, req);
+    maybe_save(ctx, req, res);
 }
 
 /* ---- registration -------------------------------------------------------------- */

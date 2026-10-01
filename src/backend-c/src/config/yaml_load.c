@@ -1,3 +1,4 @@
+#include "magitrickle/lookup.h"
 /* Config loader: libyaml document API + yaml.v2 typing semantics +
  * Go LoadConfig overlay behaviour (config.go). */
 #include <stdio.h>
@@ -554,21 +555,17 @@ static mt_err_t load_subscription(yaml_document_t *doc, node_t *n,
     return MT_OK;
 }
 
-static bool group_ids_conflict(mt_config_t *cfg, mt_group_t *g)
-{
+static mt_err_t group_ids_check(mt_config_t *cfg, mt_group_t *g) {
     for (size_t i = 0; i < cfg->n_groups; i++) {
-        if (mt_id_equal(cfg->groups[i]->id, g->id)) {
-            return true;
-        }
+        if (mt_id_equal(cfg->groups[i]->id, g->id)) { return MT_ERR_EXIST; }
     }
+    mt_lookup_t ids = {0}; mt_err_t err = MT_OK;
     for (size_t i = 0; i < g->n_rules; i++) {
-        for (size_t j = i + 1; j < g->n_rules; j++) {
-            if (mt_id_equal(g->rules[i]->id, g->rules[j]->id)) {
-                return true;
-            }
-        }
+        bool inserted;
+        err = mt_lookup_put(&ids, g->rules[i]->id.b, sizeof(g->rules[i]->id.b), i, &inserted);
+        if (err != MT_OK || !inserted) { if (err == MT_OK) { err = MT_ERR_EXIST; } break; }
     }
-    return false;
+    mt_lookup_clear(&ids); return err;
 }
 
 mt_err_t mt_config_load_buffer(mt_config_t *cfg, const char *buf, size_t len)
@@ -649,9 +646,7 @@ mt_err_t mt_config_load_buffer(mt_config_t *cfg, const char *buf, size_t len)
             if (err == MT_OK) {
                 err = mt_group_normalize_color(g);
             }
-            if (err == MT_OK && group_ids_conflict(cfg, g)) {
-                err = MT_ERR_EXIST; /* group/rule id conflict */
-            }
+            if (err == MT_OK) { err = group_ids_check(cfg, g); }
             if (err == MT_OK) {
                 err = mt_config_add_group(cfg, g);
             }

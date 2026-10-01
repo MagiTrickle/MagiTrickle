@@ -141,5 +141,6 @@
   "Change interface": "Изменить интерфейс",
   "State": "Состояние",
   "Copy": "Копировать",
-  "Delete": "Удалить"
+  "Delete": "Удалить",
+  "Subscription rules changed; reload before saving": "Правила подписки изменились. Обновите страницу перед сохранением"
 }

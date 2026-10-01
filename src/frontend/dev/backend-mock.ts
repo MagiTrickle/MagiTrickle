@@ -4,7 +4,8 @@ import { serveStatic } from "hono/deno";
 import { logger } from "hono/logger";
 import { streamSSE } from "hono/streaming";
 
-import type { Interfaces } from "../src/types.ts";
+import type { RuleChange } from "../src/modules/subscriptions/subscription-payload.ts";
+import type { Group, Interfaces, Subscription } from "../src/types.ts";
 
 const API_BASE = "/api/v1";
 
@@ -98,44 +99,104 @@ app.post(`${API_BASE}/auth`, async (c) => {
 
 app.get(`${API_BASE}/groups`, (c) => c.json(DATA));
 app.put(`${API_BASE}/groups`, async (c) => {
-  console.debug("recieved", (await c.req.json())?.groups?.length, "groups");
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  if (Math.random() < 0.5) {
-    return c.json({ error: "random error" }, 500);
+  const body = await c.req.json();
+  const replacement: Group[] = [];
+  for (const incoming of body.groups) {
+    const previous: Group | undefined = DATA.groups.find(
+      (group: Group) => group.id === incoming.id,
+    );
+    if (incoming.ruleChanges && !previous)
+      return c.json({ error: "group changed; reload before saving" }, 409);
+    const rules = structuredClone(incoming.rules ?? previous?.rules ?? []);
+    const byId = new Map<string, Group["rules"][number]>(
+      rules.map((rule: Group["rules"][number]) => [rule.id, rule]),
+    );
+    for (const change of incoming.ruleChanges ?? []) {
+      const rule = byId.get(change.id);
+      if (
+        !rule ||
+        ["name", "type", "rule", "enable"].some(
+          (key) => rule[key as keyof typeof rule] !== change.previous?.[key],
+        )
+      )
+        return c.json({ error: "group changed; reload before saving" }, 409);
+      Object.assign(rule, {
+        name: change.name,
+        type: change.type,
+        rule: change.rule,
+        enable: change.enable,
+      });
+    }
+    const { ruleChanges: _, ...metadata } = incoming;
+    replacement.push({ ...previous, ...metadata, rules });
   }
-  return c.json({ status: "ok" });
+  DATA.groups = replacement;
+  return c.json({ groups: DATA.groups });
 });
 
 app.get(`${API_BASE}/subscriptions`, (c) => c.json({ subscriptions: SUBSCRIPTIONS }));
 
+function mockRules() {
+  return Array.from({ length: 50 }, (_, i) => ({
+    enable: true,
+    id: (i + 1).toString(16).padStart(8, "0"),
+    rule: `mock.rule.${i}.com`,
+    type: "namespace",
+  }));
+}
+
 app.put(`${API_BASE}/subscriptions`, async (c) => {
-  console.debug("recieved", (await c.req.json())?.subscriptions?.length, "subscriptions");
   const body = await c.req.json();
-  SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...body.subscriptions);
+  const replacement: Subscription[] = [];
+  for (const incoming of body.subscriptions) {
+    const previous = SUBSCRIPTIONS.find((s) => s.id === incoming.id);
+    if (incoming.ruleChanges && !previous)
+      return c.json({ error: "subscription changed; reload before saving" }, 409);
+    const rules = structuredClone(incoming.rules ?? previous?.rules ?? []);
+    const byId = new Map<string, Subscription["rules"][number]>(
+      rules.map((r: Subscription["rules"][number]) => [r.id, r]),
+    );
+    for (const change of (incoming.ruleChanges ?? []) as RuleChange[]) {
+      const rule = byId.get(change.id);
+      if (
+        !rule ||
+        rule.rule !== change.rule ||
+        rule.type !== change.previousType ||
+        rule.enable !== change.previousEnable
+      ) {
+        return c.json({ error: "subscription rules changed; reload before saving" }, 409);
+      }
+      rule.type = change.type;
+      rule.enable = change.enable;
+    }
+    const { ruleChanges: _, ...metadata } = incoming;
+    replacement.push({ ...previous, ...metadata, rules });
+  }
+  SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...replacement);
   return c.json({ status: "ok" });
 });
 
 app.post(`${API_BASE}/subscriptions`, async (c) => {
   const body = await c.req.json();
-  console.debug("created subscription", body);
+  if (c.req.query("fetch") === "true") {
+    const subscription = {
+      ...body,
+      id: crypto.randomUUID().replaceAll("-", "").slice(0, 8),
+      rules: mockRules(),
+      lastUpdate: Math.floor(Date.now() / 1000),
+    };
+    SUBSCRIPTIONS.unshift(subscription);
+    return c.json({ subscription });
+  }
   SUBSCRIPTIONS.unshift(body);
   return c.json({ status: "ok" });
 });
 
 app.get(`${API_BASE}/subscriptions/rules`, (c) => {
-  if (Math.random() < 0.5) {
-    return c.json({ error: "random error" }, 500);
+  const rules = mockRules();
+  if (c.req.query("summary") === "true") {
+    return c.json({ count: rules.length, types: { namespace: rules.length } });
   }
-  const url = c.req.query("url");
-
-  const count = Math.floor(Math.random() * 50) + 5;
-  const rules = Array.from({ length: count }).map(() => ({
-    enable: true,
-    id: Math.random().toString(16).substring(2, 10),
-    rule: `mock.rule.${Math.random().toString(36).substring(7)}.com`,
-    type: Math.random() < 0.5 ? "namespace" : "domain",
-  }));
-
   return c.json({ rules });
 });
 

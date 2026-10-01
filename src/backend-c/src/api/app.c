@@ -13,6 +13,7 @@
 
 #include "magitrickle/keenetic_rci.h"
 #include "magitrickle/log.h"
+#include "magitrickle/lookup.h"
 #include "magitrickle/netfilter_cleaner.h"
 #include "magitrickle/nfcommit.h"
 #include "magitrickle/rulesnap.h"
@@ -289,6 +290,128 @@ mt_ruleset_t *mt_app_find_group_by_id(const mt_app_t *app, mt_id_t id) {
     return NULL;
 }
 
+static mt_err_t validate_group_rule_ids(const mt_group_t *group) {
+    mt_lookup_t ids = {0}; mt_err_t err = MT_OK;
+    for (size_t i = 0; i < group->n_rules; i++) {
+        bool inserted;
+        err = mt_lookup_put(&ids, group->rules[i]->id.b, sizeof(group->rules[i]->id.b), i, &inserted);
+        if (err != MT_OK || !inserted) { if (err == MT_OK) { err = MT_ERR_INVAL; } break; }
+    }
+    mt_lookup_clear(&ids); return err;
+}
+
+static bool same_text(const char *a, const char *b) { return strcmp(a ? a : "", b ? b : "") == 0; }
+
+static bool same_group(const mt_group_t *a, const mt_group_t *b) {
+    if (!mt_id_equal(a->id, b->id) || a->enable != b->enable || a->n_rules != b->n_rules ||
+        !same_text(a->name, b->name) || !same_text(a->iface, b->iface) || !same_text(a->color, b->color)) { return false; }
+    for (size_t i = 0; i < a->n_rules; i++) {
+        const mt_rule_t *x = a->rules[i], *y = b->rules[i];
+        if (!mt_id_equal(x->id, y->id) || x->enable != y->enable || !same_text(x->name, y->name) ||
+            !same_text(x->type, y->type) || !same_text(x->rule, y->rule)) { return false; }
+    }
+    return true;
+}
+
+/* Validate/stage the whole request before altering live state. A single
+ * snapshot publication replaces the old clear + N independently-publishing
+ * adds. If order is unchanged, identical groups keep their live rulesets and
+ * ipsets; reorder deliberately rebuilds all, preserving ordering semantics.
+ * Netfilter side effects cannot be transactional, so rollback is best effort
+ * and any rollback failure is logged; live config stays the old one on error. */
+mt_err_t mt_app_replace_groups(mt_app_t *app, mt_group_t **groups, size_t n) {
+    app_nf_enter(app);
+    mt_err_t err = MT_OK;
+    mt_config_t replacement = {0};
+    mt_lookup_t ids = {0};
+    mt_ruleset_t **next = n ? calloc(n, sizeof(*next)) : NULL;
+    bool *reused = n ? calloc(n, sizeof(*reused)) : NULL;
+    size_t old_n = app->n_rulesets;
+    bool *was_enabled = old_n ? calloc(old_n, sizeof(*was_enabled)) : NULL;
+    mt_ruleset_snapshot_t *snapshot = NULL;
+    bool touched = false;
+    if ((n && (!next || !reused)) || (old_n && !was_enabled)) { err = MT_ERR_NOMEM; goto done; }
+    bool same_order = n == old_n;
+    for (size_t i = 0; same_order && i < n; i++) {
+        same_order = mt_id_equal(groups[i]->id, app->cfg->groups[i]->id);
+    }
+    for (size_t i = 0; i < n; i++) {
+        bool inserted;
+        err = mt_lookup_put(&ids, groups[i]->id.b, sizeof(groups[i]->id.b), i, &inserted);
+        if (err == MT_OK && !inserted) { err = MT_ERR_EXIST; }
+        if (err == MT_OK) { err = validate_group_rule_ids(groups[i]); }
+        if (err != MT_OK) { goto done; }
+        err = mt_config_add_group(&replacement, groups[i]);
+        if (err != MT_OK) { goto done; }
+        groups[i] = NULL; /* ownership transferred; geometric model capacity */
+        if (same_order && same_group(replacement.groups[i], app->cfg->groups[i])) {
+            mt_group_free(replacement.groups[i]);
+            replacement.groups[i] = app->cfg->groups[i];
+            next[i] = app->rulesets[i]; reused[i] = true;
+        } else {
+            mt_ruleset_deps_t deps = ruleset_deps(app);
+            next[i] = mt_ruleset_new(replacement.groups[i], &deps);
+            if (!next[i]) { err = MT_ERR_NOMEM; goto done; }
+        }
+    }
+    if (app->pipeline) {
+        mt_config_t view = *app->cfg;
+        view.groups = replacement.groups; view.n_groups = n;
+        snapshot = mt_ruleset_snapshot_build(&view);
+        if (!snapshot) { err = MT_ERR_NOMEM; goto done; }
+    }
+    for (size_t i = 0; i < old_n; i++) { was_enabled[i] = mt_ruleset_runtime_enabled(app->rulesets[i]); }
+    touched = true;
+    for (size_t i = 0; i < old_n; i++) {
+        if (same_order && reused[i]) { continue; }
+        err = mt_ruleset_disable(app->rulesets[i]);
+        if (err != MT_OK) { goto done; }
+    }
+    if (app->running) {
+        for (size_t i = 0; i < n; i++) {
+            if (reused[i]) { continue; }
+            err = mt_ruleset_enable(next[i]);
+            if (err == MT_OK) { err = mt_ruleset_sync(next[i], app->cache, (int64_t)time(NULL)); }
+            if (err != MT_OK) { goto done; }
+        }
+    }
+    for (size_t i = 0; i < old_n; i++) {
+        if (same_order && reused[i]) { continue; }
+        mt_ruleset_free(app->rulesets[i]); mt_group_free(app->cfg->groups[i]);
+    }
+    free(app->rulesets); free(app->cfg->groups);
+    app->rulesets = next; next = NULL; app->n_rulesets = n; app->cap_rulesets = n;
+    app->cfg->groups = replacement.groups; app->cfg->n_groups = n;
+    replacement.groups = NULL; replacement.n_groups = 0;
+    if (snapshot) { mt_dns_pipeline_set_snapshot(app->pipeline, snapshot); snapshot = NULL; }
+
+done:
+    if (next) {
+        for (size_t i = 0; i < n; i++) {
+            if (reused && reused[i]) { continue; }
+            if (touched && next[i]) { mt_ruleset_disable(next[i]); }
+            mt_ruleset_free(next[i]);
+        }
+        free(next);
+    }
+    if (err != MT_OK && touched) {
+        for (size_t i = 0; i < old_n; i++) {
+            if (!was_enabled[i]) { continue; }
+            mt_err_t rollback = mt_ruleset_enable(app->rulesets[i]);
+            if (rollback == MT_OK) { rollback = mt_ruleset_sync(app->rulesets[i], app->cache, (int64_t)time(NULL)); }
+            if (rollback != MT_OK) { MT_ERROR("failed to restore group after bulk apply: %s", mt_err_str(rollback)); }
+        }
+    }
+    for (size_t i = 0; i < replacement.n_groups; i++) {
+        if (!(reused && reused[i])) { mt_group_free(replacement.groups[i]); }
+    }
+    free(replacement.groups);
+    for (size_t i = 0; i < n; i++) { mt_group_free(groups[i]); }
+    free(groups); free(reused); free(was_enabled);
+    mt_lookup_clear(&ids); mt_ruleset_snapshot_free(snapshot);
+    app_nf_leave(app); return err;
+}
+
 static mt_err_t mt_app_add_group_unlocked(mt_app_t *app, mt_group_t *group) {
     for (size_t i = 0; i < app->cfg->n_groups; i++) {
         if (mt_id_equal(app->cfg->groups[i]->id, group->id)) {
@@ -296,14 +419,8 @@ static mt_err_t mt_app_add_group_unlocked(mt_app_t *app, mt_group_t *group) {
             return MT_ERR_EXIST;
         }
     }
-    for (size_t i = 0; i < group->n_rules; i++) {
-        for (size_t j = i + 1; j < group->n_rules; j++) {
-            if (mt_id_equal(group->rules[i]->id, group->rules[j]->id)) {
-                mt_group_free(group);
-                return MT_ERR_INVAL;
-            }
-        }
-    }
+    mt_err_t unique_err = validate_group_rule_ids(group);
+    if (unique_err != MT_OK) { mt_group_free(group); return unique_err; }
 
     mt_err_t err = mt_config_add_group(app->cfg, group);
     if (err != MT_OK) {
@@ -592,16 +709,15 @@ static void free_sub_rule_array(mt_sub_rule_t **rules, size_t n) {
     free(rules);
 }
 
-static mt_err_t apply_subscription_body(mt_app_t *app, mt_id_t id,
+static mt_err_t apply_subscription_rules(mt_app_t *app, mt_id_t id,
                                          int64_t now_unix, const char *fetch_url,
-                                         const char *body, bool *out_changed) {
+                                         mt_sub_rule_t **refreshed, size_t n_refreshed,
+                                         bool *out_changed) {
     *out_changed = false;
     mt_subscription_t *sub = find_subscription_mut(app, id);
-    if (!sub) { return MT_ERR_NOENT; }
-    mt_sub_rule_t **refreshed = NULL;
-    size_t n_refreshed = 0;
-    mt_err_t rerr = mt_sub_refresh_rules(body, sub->rules, sub->n_rules, &refreshed, &n_refreshed);
-    if (rerr != MT_OK) { return rerr; }
+    if (!sub) { free_sub_rule_array(refreshed, n_refreshed); return MT_ERR_NOENT; }
+    mt_err_t rerr = mt_sub_reconcile_rules(refreshed, n_refreshed, sub->rules, sub->n_rules);
+    if (rerr != MT_OK) { free_sub_rule_array(refreshed, n_refreshed); return rerr; }
     bool rules_changed = !mt_sub_same_rules(sub->rules, sub->n_rules, refreshed, n_refreshed);
 
     bool url_changed = strcmp(sub->url ? sub->url : "", fetch_url) != 0;
@@ -650,6 +766,16 @@ static mt_err_t apply_subscription_body(mt_app_t *app, mt_id_t id,
     sub->revision = ++app->next_sub_revision;
     *out_changed = url_changed || rules_changed;
     return MT_OK;
+}
+
+/* Blocking compatibility path for embeddings; daemon callbacks use detached
+ * worker results instead. apply_subscription_rules always takes ownership. */
+static mt_err_t apply_subscription_body(mt_app_t *app, mt_id_t id, int64_t now,
+                                        const char *url, const char *body, bool *changed) {
+    mt_sub_rule_t **rules = NULL; size_t n = 0;
+    mt_err_t err = mt_sub_parse_rules(body, &rules, &n);
+    if (err != MT_OK) { return err; }
+    return apply_subscription_rules(app, id, now, url, rules, n, changed);
 }
 
 static mt_err_t mt_app_sync_subscription_by_id_unlocked(mt_app_t *app, mt_id_t id,
@@ -855,8 +981,7 @@ typedef struct async_sync {
     void *ud;
 } async_sync_t;
 
-static void subscription_fetched(void *ud, mt_err_t err, const char *body, size_t len) {
-    (void)len;
+static void subscription_fetched(void *ud, mt_err_t err, mt_sub_rule_t **rules, size_t n) {
     async_sync_t *job = ud;
     mt_subscription_t *sub = find_subscription_mut(job->app, job->id);
     bool changed = false;
@@ -868,13 +993,13 @@ static void subscription_fetched(void *ud, mt_err_t err, const char *body, size_
         sub->sync_pending = false;
         if (err == MT_OK) {
             app_nf_enter(job->app);
-            err = apply_subscription_body(job->app, job->id, job->now,
-                                           job->url, body, &changed);
+            err = apply_subscription_rules(job->app, job->id, job->now,
+                                            job->url, rules, n, &changed);
+            rules = NULL; n = 0;
             app_nf_leave(job->app);
-        } else if (err != MT_ERR_CANCELED) {
-            err = MT_ERR_UPSTREAM;
         }
     }
+    mt_sub_rules_free(rules, n);
     job->done(job->ud, job->id, err, changed);
     free(job->url);
     free(job);
@@ -896,7 +1021,7 @@ mt_err_t mt_app_sync_subscription_async(mt_app_t *app, mt_sub_fetcher_t *fetcher
     if (!job->url) { free(job); return MT_ERR_NOMEM; }
     job->app = app; job->id = id; job->now = now;
     job->revision = sub->revision; job->done = done; job->ud = ud;
-    mt_err_t err = mt_sub_fetcher_submit(fetcher, url, subscription_fetched, job);
+    mt_err_t err = mt_sub_fetcher_submit_rules(fetcher, url, subscription_fetched, job);
     if (err != MT_OK) { free(job->url); free(job); return err; }
     sub->sync_pending = true;
     return MT_OK;

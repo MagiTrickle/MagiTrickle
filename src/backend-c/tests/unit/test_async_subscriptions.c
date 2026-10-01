@@ -7,6 +7,7 @@
 #include "magitrickle/app.h"
 #include "magitrickle/httpd.h"
 #include "magitrickle/sub_fetch.h"
+#include "magitrickle/subparse.h"
 
 #define ASYNC_PORT 18903
 #define ASYNC_URL "http://127.0.0.1:18903/list"
@@ -173,17 +174,36 @@ TEST saturated_due_queue_resumes_at_unserved_subscriptions(void) {
     }
     ASSERT_EQ(MT_ERR_LIMIT, mt_app_sync_due_subscriptions_async(f.app, f.fetcher, 100, sync_done, &f));
     ASSERT(f.cfg.subscriptions[0]->sync_pending);
-    ASSERT(!f.cfg.subscriptions[32]->sync_pending);
+    ASSERT(!f.cfg.subscriptions[MT_SUB_FETCH_RULE_JOBS]->sync_pending);
     mt_sub_fetcher_destroy(f.fetcher); f.fetcher = NULL;
     ASSERT_EQ(MT_OK, mt_sub_fetcher_create(f.loop, &f.fetcher));
     ASSERT_EQ(MT_ERR_LIMIT, mt_app_sync_due_subscriptions_async(f.app, f.fetcher, 100, sync_done, &f));
-    ASSERT(f.cfg.subscriptions[32]->sync_pending);
-    ASSERT(f.cfg.subscriptions[39]->sync_pending);
+    ASSERT(f.cfg.subscriptions[MT_SUB_FETCH_RULE_JOBS]->sync_pending);
+    ASSERT(f.cfg.subscriptions[2 * MT_SUB_FETCH_RULE_JOBS - 1]->sync_pending);
     cleanup(&f); PASS();
 }
+static void canceled_rules(void *ud, mt_err_t err, mt_sub_rule_t **rules, size_t n) {
+    struct cancel_count *c = ud; c->n++;
+    if (err != MT_ERR_CANCELED || rules || n) { c->wrong++; }
+    mt_sub_rules_free(rules, n);
+}
+TEST parsed_queue_is_bounded_and_shutdown_discards_owned_results(void) {
+    mt_loop_t *loop; ASSERT_EQ(MT_OK, mt_loop_create(&loop));
+    mt_sub_fetcher_t *fetcher; ASSERT_EQ(MT_OK, mt_sub_fetcher_create(loop, &fetcher));
+    struct cancel_count count = {0};
+    for (unsigned i = 0; i < MT_SUB_FETCH_RULE_JOBS; i++) {
+        ASSERT_EQ(MT_OK, mt_sub_fetcher_submit_rules(fetcher, "http://127.0.0.1:9/", canceled_rules, &count));
+    }
+    ASSERT_EQ(MT_ERR_LIMIT, mt_sub_fetcher_submit_rules(fetcher, "http://127.0.0.1:9/", canceled_rules, &count));
+    mt_sub_fetcher_destroy(fetcher);
+    ASSERT_EQ(MT_SUB_FETCH_RULE_JOBS, count.n); ASSERT_EQ(0u, count.wrong);
+    mt_loop_destroy(loop); PASS();
+}
+
 GREATEST_MAIN_DEFS();
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN(); mt_sub_fetch_global_init();
+    RUN_TEST(parsed_queue_is_bounded_and_shutdown_discards_owned_results);
     RUN_TEST(slow_fetch_does_not_block_the_loop_serving_its_own_upstream);
     RUN_TEST(async_sync_applies_on_the_loop_and_rejects_duplicate_inflight_sync);
     RUN_TEST(reload_or_replace_during_fetch_cannot_overwrite_new_subscription_state);

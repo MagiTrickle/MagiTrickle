@@ -105,6 +105,10 @@ mt_ruleset_t *mt_app_find_group_by_id(const mt_app_t *app, mt_id_t id);
  * already running (the partially-added group is rolled back: disabled,
  * unwrapped, and cfg->groups is shrunk back down -- matches Go's
  * removeAdded closure). */
+/* Takes ownership of the array and ALL elements on success or failure.
+ * Stages complete input, publishes once, retains unchanged runtime groups. */
+mt_err_t mt_app_replace_groups(mt_app_t *app, mt_group_t **groups, size_t n);
+
 mt_err_t mt_app_add_group(mt_app_t *app, mt_group_t *group);
 
 /* Re-syncs a single already-registered ruleset using the app's shared cache

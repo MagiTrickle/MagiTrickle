@@ -33,7 +33,14 @@ for (const kind of ["groups", "subscriptions"] as const) {
       kind === "groups" ? "**/groups?save=true" : "**/subscriptions",
       async (route) => {
         if (route.request().method() === "PUT") saved = route.request().postDataJSON()[kind];
-        await route.fulfill({ json: { [kind]: items } });
+        await route.fulfill({
+          json: {
+            [kind]:
+              route.request().method() === "PUT"
+                ? saved.map((item) => ({ ...items.find((old) => old.id === item.id), ...item }))
+                : items,
+          },
+        });
       },
     );
     await page.route("**/subscriptions/*", async (route) => {

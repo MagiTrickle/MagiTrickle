@@ -2,6 +2,7 @@ import { token } from "../data/auth.svelte";
 import { t } from "../data/locale.svelte";
 
 import { toast } from "./events";
+import { HttpError } from "./http-error";
 
 const viteEnv = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env;
 export const API_BASE = viteEnv?.DEV ? "http://localhost:6969/api/v1" : "/api/v1";
@@ -33,9 +34,9 @@ export async function fetcher<T>(...args: any[]): Promise<T> {
 
     if (!res.ok || res.status < 200 || res.status > 299) {
       if (res.body) {
-        throw new Error(await res.text());
+        throw new HttpError(res.status, await res.text());
       } else {
-        throw new Error(res.statusText);
+        throw new HttpError(res.status, res.statusText);
       }
     }
     return (await res.json()) as T;

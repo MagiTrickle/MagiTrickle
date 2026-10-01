@@ -82,6 +82,7 @@ static harness_t *harness_start(void) {
     mt_httpd_route(h->tcp, "GET", "/hello", h_hello, NULL);
     mt_httpd_route(h->tcp, "GET", "/groups/{groupID}", h_param, NULL);
     mt_httpd_route(h->tcp, "POST", "/echo", h_echo_body, NULL);
+    mt_httpd_route(h->tcp, "PUT", "/api/v1/groups", h_hello, NULL);
     mt_httpd_route(h->tcp, "GET", "/blocked", h_hello, NULL);
     mt_httpd_set_not_found(h->tcp, h_not_found, NULL);
     mt_httpd_set_middleware(h->tcp, mw_reject_blocked, NULL);
@@ -301,10 +302,63 @@ TEST unix_socket_serves_same_routes(void) {
     PASS();
 }
 
+
+static bool send_all(int fd, const char *body, size_t len) {
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(fd, body + sent, len - sent, MSG_NOSIGNAL);
+        if (n <= 0) { return false; } sent += (size_t)n;
+    }
+    return true;
+}
+
+static int send_declared(const char *path, size_t len) {
+    int fd = connect_tcp(TEST_PORT);
+    if (fd < 0) { return -1; }
+    char header[512]; int n = snprintf(header, sizeof(header),
+        "PUT %s HTTP/1.1\r\nHost: x\r\nContent-Length: %zu\r\n\r\n", path, len);
+    if (n < 0 || (size_t)n >= sizeof(header) || !send_all(fd, header, (size_t)n)) { close(fd); return -1; }
+    return fd;
+}
+
+TEST large_rule_body_caps_budget_and_disconnect_cleanup(void) {
+    harness_t *h = harness_start(); ASSERT(h); char resp[4096];
+    int fd = send_declared("/echo", MT_HTTPD_MAX_BODY_BYTES + 1); ASSERT(fd >= 0);
+    ASSERT(recv_response(fd, resp, sizeof(resp)) > 0); ASSERT_EQ(413, status_code_of(resp)); close(fd);
+    fd = send_declared("/api/v1/groups", MT_HTTPD_MAX_RULE_BODY_BYTES + 1); ASSERT(fd >= 0);
+    ASSERT(recv_response(fd, resp, sizeof(resp)) > 0); ASSERT_EQ(413, status_code_of(resp)); close(fd);
+    int first = send_declared("/api/v1/groups", MT_HTTPD_MAX_RULE_BODY_BYTES); ASSERT(first >= 0);
+    int second = send_declared("/api/v1/groups", MT_HTTPD_MAX_RULE_BODY_BYTES); ASSERT(second >= 0);
+    struct timespec settle = {0, 50000000}; nanosleep(&settle, NULL);
+    fd = send_declared("/api/v1/groups", 1); ASSERT(fd >= 0);
+    ASSERT(recv_response(fd, resp, sizeof(resp)) > 0); ASSERT_EQ(503, status_code_of(resp)); close(fd);
+    close(first); nanosleep(&settle, NULL);
+    fd = send_declared("/api/v1/groups", 1); ASSERT(fd >= 0);
+    ASSERT(send_all(fd, "x", 1));
+    ASSERT(recv_response(fd, resp, sizeof(resp)) > 0); ASSERT_EQ(200, status_code_of(resp));
+    close(fd); close(second); harness_stop(h); PASS();
+}
+
+TEST large_bodies_are_released_on_keepalive_not_retained_per_connection(void) {
+    harness_t *h = harness_start(); ASSERT(h);
+    size_t len = 2u * 1024u * 1024u; char *body = malloc(len); ASSERT(body); memset(body, 'x', len);
+    int fd = connect_tcp(TEST_PORT); ASSERT(fd >= 0);
+    char header[512]; int n = snprintf(header, sizeof(header),
+        "PUT /api/v1/groups HTTP/1.1\r\nHost: x\r\nContent-Length: %zu\r\n\r\n", len);
+    char resp[4096];
+    for (int i = 0; i < 20; i++) {
+        ASSERT(send_all(fd, header, (size_t)n)); ASSERT(send_all(fd, body, len));
+        ASSERT(recv_response(fd, resp, sizeof(resp)) > 0); ASSERT_EQ(200, status_code_of(resp));
+    }
+    close(fd); free(body); harness_stop(h); PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
+    RUN_TEST(large_rule_body_caps_budget_and_disconnect_cleanup);
+    RUN_TEST(large_bodies_are_released_on_keepalive_not_retained_per_connection);
     RUN_TEST(get_with_query_param);
     RUN_TEST(path_param_extraction);
     RUN_TEST(post_body_roundtrip);

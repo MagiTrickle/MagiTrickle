@@ -15,8 +15,8 @@
  *
  * mt_sub_fetch_list's MT_SUB_FETCH_MAX_BODY_BYTES cap is C-side hardening
  * (dependencies.md's "size bound") -- Go's io.ReadAll has no such limit.
- * No real subscription list approaches this size; it exists only to
- * bound memory against a hostile or misbehaving server.
+ * It bounds memory against large or misbehaving sources; parsed expansion
+ * and concurrent rule jobs are bounded separately.
  */
 #ifndef MAGITRICKLE_SUB_FETCH_H
 #define MAGITRICKLE_SUB_FETCH_H
@@ -25,6 +25,7 @@
 
 #include "magitrickle/err.h"
 #include "magitrickle/loop.h"
+#include "magitrickle/models.h"
 #include <stdatomic.h>
 #include <stdbool.h>
 
@@ -55,7 +56,16 @@ mt_err_t mt_sub_fetch_list_cancel(const char *url, char **body, size_t *len,
 
 typedef struct mt_sub_fetcher mt_sub_fetcher_t;
 typedef void (*mt_sub_fetch_done_fn)(void *ud, mt_err_t err, const char *body, size_t len);
-/* Two bounded workers perform network I/O only. submit/done/destroy run
+/* Parsed jobs have a separate bound because expanded rules cost more than text. */
+#define MT_SUB_FETCH_RULE_JOBS 4u
+typedef void (*mt_sub_rules_done_fn)(void *ud, mt_err_t err,
+                                    mt_sub_rule_t **rules, size_t n);
+/* Fetch + parse in a worker; callback runs on the loop and ALWAYS owns rules.
+ * Error/cancellation returns NULL/0. No live model or HTTP object is read by a
+ * worker. Queue saturation returns MT_ERR_LIMIT without calling done. */
+mt_err_t mt_sub_fetcher_submit_rules(mt_sub_fetcher_t *fetcher, const char *url,
+                                     mt_sub_rules_done_fn done, void *ud);
+/* Two bounded workers perform network I/O (and optional parsing). submit/done/destroy run
  * on the loop owner; done borrows body only for the callback. At most 32
  * queued/active/completed requests exist. Accepted jobs get exactly one
  * callback, including MT_ERR_CANCELED during destroy. Destroy/join before

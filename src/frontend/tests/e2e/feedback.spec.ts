@@ -19,7 +19,7 @@ test.describe("Feedback Components", () => {
     await groupsPage.createGroup();
 
     await page.route("**/groups?save=true", async (route) => {
-      await route.fulfill({ status: 200, json: {} });
+      await route.fulfill({ status: 200, json: { groups: route.request().postDataJSON().groups } });
     });
 
     // Make valid
@@ -44,7 +44,7 @@ test.describe("Feedback Components", () => {
     await page.route("**/groups?save=true", async (route) => {
       // Wait a bit to ensure overlay appears
       await page.waitForTimeout(500);
-      await route.fulfill({ status: 200, json: {} });
+      await route.fulfill({ status: 200, json: { groups: route.request().postDataJSON().groups } });
     });
 
     // Click save but don't await immediately

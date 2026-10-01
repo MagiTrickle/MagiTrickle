@@ -2,21 +2,24 @@ import { tick } from "svelte";
 
 import { t } from "../../data/locale.svelte";
 import { ChangeTracker } from "../../utils/change-tracker.svelte";
+
+import { type Group, type Rule } from "../../types";
+import { appliedGroups } from "../../utils/applied-save";
 import { defaultGroup, defaultRule } from "../../utils/defaults";
 import { overlay, toast } from "../../utils/events";
 import { fetcher } from "../../utils/fetcher";
-import { type Group, type Rule } from "../../types";
 import { type SortDirection, type SortField } from "../../utils/rule-sorter";
-import { captureRuleMove } from "./rule-motion";
+import { buildGroupUpdate, snapshotGroupRules } from "./group-payload";
 import {
-  cloneGroupWithNewIds as cloneGroupWithNewIdsData,
   cloneGroupsWithNewIds as cloneGroupsWithNewIdsData,
+  cloneGroupWithNewIds as cloneGroupWithNewIdsData,
   prependGroups as prependGroupsData,
   prependRules as prependRulesData,
   restoreGroupRulesOrder as restoreGroupRulesOrderData,
   sortGroupRules as sortGroupRulesData,
   toConfigPayload as toConfigPayloadData,
 } from "./groups-data";
+import { captureRuleMove } from "./rule-motion";
 
 export const GROUPS_STORE_CONTEXT = Symbol("groups-store");
 
@@ -98,10 +101,14 @@ export class GroupsStore {
   onRenderComplete?: () => void;
 
   tracker = $state(new ChangeTracker<Group[]>([]));
+  #savedRules = new Map<string, Rule[]>();
+  saving = $state(false);
+  persistencePending = $state(false);
+  hasUnsavedChanges = $derived(this.tracker.isDirty || this.persistencePending);
   data = $derived.by(() => this.tracker.data);
   dataRevision = $state(0);
   valid_rules = $state(true);
-  canSave = $derived(this.tracker.isDirty && this.valid_rules);
+  canSave = $derived(this.hasUnsavedChanges && this.valid_rules && !this.saving);
 
   open_state = $state<Record<string, boolean>>({});
 
@@ -173,7 +180,7 @@ export class GroupsStore {
   #setupEffects() {
     this.#dispose = $effect.root(() => {
       $effect(() => {
-        if (typeof window === "undefined" || !this.canSave) return;
+        if (typeof window === "undefined" || !this.hasUnsavedChanges) return;
 
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
           event.preventDefault();
@@ -288,6 +295,7 @@ export class GroupsStore {
     try {
       const fetched =
         (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
+      this.#savedRules = snapshotGroupRules(fetched);
       this.tracker = new ChangeTracker(fetched);
       this.dataRevision = 0;
       if (typeof window !== "undefined") {
@@ -398,7 +406,10 @@ export class GroupsStore {
     this.searchRuleMatchMaskById = new Map();
   }
 
-  #splitSearchHighlightSegments(value: string, query: string): SearchHighlightSegment[] | undefined {
+  #splitSearchHighlightSegments(
+    value: string,
+    query: string,
+  ): SearchHighlightSegment[] | undefined {
     if (!value || !query) return undefined;
 
     const source = `${value}`;
@@ -610,22 +621,39 @@ export class GroupsStore {
     this.searchPending = false;
   }
 
-  saveChanges() {
-    if (!this.tracker.isDirty) return;
+  async saveChanges() {
+    if (!this.hasUnsavedChanges || this.saving) return;
+    this.saving = true;
     overlay.show(t("saving changes..."));
-
-    const rawData = $state.snapshot(this.data);
-
-    fetcher
-      .put("/groups?save=true", { groups: rawData })
-      .then(() => {
-        this.tracker.reset(rawData);
-        overlay.hide();
-        toast.success(t("Saved"));
-      })
-      .catch(() => {
-        overlay.hide();
-      });
+    try {
+      const rawData = $state.snapshot(this.data);
+      const groups = rawData.map((group) =>
+        buildGroupUpdate(group, this.#savedRules.get(group.id)),
+      );
+      const saved = await fetcher.put<{ groups: Group[] }>("/groups?save=true", { groups });
+      // The server assigns IDs to new/moved rules. Never keep client-only IDs
+      // as the next edit's baseline; that used to regenerate IDs on every save.
+      this.#savedRules = snapshotGroupRules(saved.groups);
+      this.tracker.reset(saved.groups);
+      this.persistencePending = false;
+      this.markDataRevision();
+      toast.success(t("Saved"));
+    } catch (error) {
+      const applied = appliedGroups(error);
+      if (applied) {
+        // Runtime apply succeeded (including newly assigned IDs), disk write did
+        // not. Retry against that exact live baseline while still warning about
+        // unsaved data, even when there are no additional editor changes.
+        this.#savedRules = snapshotGroupRules(applied);
+        this.tracker.reset(applied);
+        this.persistencePending = true;
+        this.markDataRevision();
+      }
+      // Other failures retain both the local edits and the old baseline.
+    } finally {
+      overlay.hide();
+      this.saving = false;
+    }
   }
 
   checkRulesValidityState = () => {
@@ -795,10 +823,8 @@ export class GroupsStore {
 
   isRuleDuplicate = (ruleId: string) => this.duplicateRuleIds.has(ruleId);
   getRuleSearchMatchMask = (ruleId: string) => this.searchRuleMatchMaskById.get(ruleId) ?? 0;
-  getSearchHighlightParts = (
-    value: string,
-    query: string,
-  ): SearchHighlightSegment[] | undefined => this.#splitSearchHighlightSegments(value, query);
+  getSearchHighlightParts = (value: string, query: string): SearchHighlightSegment[] | undefined =>
+    this.#splitSearchHighlightSegments(value, query);
 
   pinDuplicateByRuleId = (ruleId: string) => {
     const key = this.#resolveDuplicateKey(ruleId);
@@ -936,7 +962,9 @@ export class GroupsStore {
     }
     if (!focus) return;
     await tick();
-    const el = document.querySelector(`.rule[data-group-uuid="${group.id}"][data-uuid="${rule.id}"]`);
+    const el = document.querySelector(
+      `.rule[data-group-uuid="${group.id}"][data-uuid="${rule.id}"]`,
+    );
     if (el) {
       el.querySelector<HTMLInputElement>("div.name input")?.focus();
       el.querySelector<HTMLInputElement>("div.pattern input")?.classList.add("invalid");
@@ -1009,11 +1037,7 @@ export class GroupsStore {
     void animateMove();
   }
 
-  changeGroupIndex(
-    from_index: number,
-    to_index: number,
-    insert: "before" | "after" = "before",
-  ) {
+  changeGroupIndex(from_index: number, to_index: number, insert: "before" | "after" = "before") {
     if (from_index === to_index && insert !== "after") return;
 
     if (from_index < 0 || from_index >= this.data.length) return;

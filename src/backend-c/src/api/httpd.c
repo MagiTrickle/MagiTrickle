@@ -79,6 +79,7 @@ struct mt_httpd {
     mt_http_handler_fn not_found;
     void *not_found_ud;
     size_t n_conns;
+    size_t reserved_body_bytes;
     mt_http_conn_t *conns;
 };
 
@@ -93,6 +94,7 @@ struct mt_http_conn {
     bool headers_done;
     size_t header_end;
     size_t content_length;
+    size_t reserved_body_bytes;
     mt_http_req_t req;
     uint8_t *wbuf;
     size_t wbuf_len;
@@ -306,6 +308,8 @@ static void conn_destroy(mt_http_conn_t *c) {
     if (c->idle_timer_id) { mt_loop_del_timer(c->server->loop, c->idle_timer_id); }
     mt_loop_del_fd(c->server->loop, c->fd);
     close(c->fd);
+    c->server->reserved_body_bytes -= c->reserved_body_bytes;
+    c->reserved_body_bytes = 0;
     free(c->rbuf);
     free(c->wbuf);
     free(c);
@@ -338,6 +342,9 @@ static void reset_idle_timer(mt_http_conn_t *c) {
 }
 
 static void conn_reset_for_next_request(mt_http_conn_t *c) {
+    c->server->reserved_body_bytes -= c->reserved_body_bytes;
+    c->reserved_body_bytes = 0;
+    free(c->rbuf); c->rbuf = NULL; c->rbuf_cap = 0;
     c->rbuf_len = 0;
     c->headers_done = false;
     c->header_end = 0;
@@ -656,6 +663,26 @@ static void handle_complete_request(mt_http_conn_t *c) {
     start_write(c);
 }
 
+static size_t request_body_limit(const mt_http_req_t *req) {
+    if (strcmp(req->method, "PUT") != 0 && strcmp(req->method, "POST") != 0) {
+        return MT_HTTPD_MAX_BODY_BYTES;
+    }
+    const char *prefixes[] = {"/api/v1/groups", "/api/v1/subscriptions"};
+    for (size_t i = 0; i < 2; i++) {
+        size_t len = strlen(prefixes[i]);
+        if (strncmp(req->path, prefixes[i], len) == 0 &&
+            (req->path[len] == '\0' || req->path[len] == '/')) { return MT_HTTPD_MAX_RULE_BODY_BYTES; }
+    }
+    return MT_HTTPD_MAX_BODY_BYTES;
+}
+
+static void reject_input(mt_http_conn_t *c, int status, const char *message) {
+    mt_http_res_t res = {0};
+    c->close_after_write = true;
+    mt_http_res_write_error(&res, status, message);
+    build_response_bytes(c, &res); free(res.body); start_write(c);
+}
+
 static void on_conn_readable(mt_loop_t *loop, int fd, uint32_t events, void *ud) {
     (void)loop;
     mt_http_conn_t *c = ud;
@@ -729,15 +756,36 @@ static void on_conn_readable(mt_loop_t *loop, int fd, uint32_t events, void *ud)
                     return;
                 }
                 const char *cl = find_header(c->req.headers, c->req.n_headers, "Content-Length");
-                if (cl) { c->content_length = (size_t)strtoul(cl, NULL, 10); }
-                if (c->content_length > MT_HTTPD_MAX_BODY_BYTES) {
-                    static const char resp[] =
-                        "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\n"
-                        "Connection: close\r\n\r\n";
-                    send(fd, resp, strlen(resp), MSG_NOSIGNAL);
-                    conn_close(c);
-                    return;
+                if (cl) {
+                    size_t length = 0;
+                    if (!*cl) { reject_input(c, 400, "invalid Content-Length"); return; }
+                    for (const char *p = cl; *p; p++) {
+                        if (*p < '0' || *p > '9' || length > (SIZE_MAX - (size_t)(*p - '0')) / 10) {
+                            reject_input(c, 400, "invalid Content-Length"); return;
+                        }
+                        length = length * 10 + (size_t)(*p - '0');
+                    }
+                    c->content_length = length;
                 }
+                if (c->content_length > request_body_limit(&c->req)) {
+                    reject_input(c, 413, "request body exceeds route size limit"); return;
+                }
+                /* Authenticate large input before allocating its body. The
+                 * existing middleware only reads headers/path; normal requests
+                 * still take the original dispatch-time authentication path. */
+                if (c->content_length > MT_HTTPD_MAX_BODY_BYTES && c->server->middleware) {
+                    mt_http_res_t auth = {0};
+                    if (!c->server->middleware(&c->req, &auth, c->server->middleware_ud)) {
+                        c->close_after_write = true;
+                        build_response_bytes(c, &auth); free(auth.body); start_write(c); return;
+                    }
+                    free(auth.body);
+                }
+                if (c->content_length > MT_HTTPD_MAX_INFLIGHT_BODY_BYTES - c->server->reserved_body_bytes) {
+                    reject_input(c, 503, "request body budget exhausted; retry later"); return;
+                }
+                c->reserved_body_bytes = c->content_length;
+                c->server->reserved_body_bytes += c->reserved_body_bytes;
             } else if (c->rbuf_len >= MT_HTTPD_MAX_HEADER_BYTES) {
                 static const char resp[] =
                     "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: "
