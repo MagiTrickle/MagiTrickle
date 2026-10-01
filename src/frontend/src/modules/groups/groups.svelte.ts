@@ -2,15 +2,15 @@ import { tick } from "svelte";
 
 import { t } from "../../data/locale.svelte";
 import { ChangeTracker } from "../../utils/change-tracker.svelte";
-
-import { type Group, type Rule } from "../../types";
 import { defaultGroup, defaultRule } from "../../utils/defaults";
 import { overlay, toast } from "../../utils/events";
 import { fetcher } from "../../utils/fetcher";
+import { type Group, type Rule } from "../../types";
 import { type SortDirection, type SortField } from "../../utils/rule-sorter";
+import { captureRuleMove } from "./rule-motion";
 import {
-  cloneGroupsWithNewIds as cloneGroupsWithNewIdsData,
   cloneGroupWithNewIds as cloneGroupWithNewIdsData,
+  cloneGroupsWithNewIds as cloneGroupsWithNewIdsData,
   prependGroups as prependGroupsData,
   prependRules as prependRulesData,
   restoreGroupRulesOrder as restoreGroupRulesOrderData,
@@ -398,10 +398,7 @@ export class GroupsStore {
     this.searchRuleMatchMaskById = new Map();
   }
 
-  #splitSearchHighlightSegments(
-    value: string,
-    query: string,
-  ): SearchHighlightSegment[] | undefined {
+  #splitSearchHighlightSegments(value: string, query: string): SearchHighlightSegment[] | undefined {
     if (!value || !query) return undefined;
 
     const source = `${value}`;
@@ -798,8 +795,10 @@ export class GroupsStore {
 
   isRuleDuplicate = (ruleId: string) => this.duplicateRuleIds.has(ruleId);
   getRuleSearchMatchMask = (ruleId: string) => this.searchRuleMatchMaskById.get(ruleId) ?? 0;
-  getSearchHighlightParts = (value: string, query: string): SearchHighlightSegment[] | undefined =>
-    this.#splitSearchHighlightSegments(value, query);
+  getSearchHighlightParts = (
+    value: string,
+    query: string,
+  ): SearchHighlightSegment[] | undefined => this.#splitSearchHighlightSegments(value, query);
 
   pinDuplicateByRuleId = (ruleId: string) => {
     const key = this.#resolveDuplicateKey(ruleId);
@@ -937,9 +936,7 @@ export class GroupsStore {
     }
     if (!focus) return;
     await tick();
-    const el = document.querySelector(
-      `.rule[data-group-uuid="${group.id}"][data-uuid="${rule.id}"]`,
-    );
+    const el = document.querySelector(`.rule[data-group-uuid="${group.id}"][data-uuid="${rule.id}"]`);
     if (el) {
       el.querySelector<HTMLInputElement>("div.name input")?.focus();
       el.querySelector<HTMLInputElement>("div.pattern input")?.classList.add("invalid");
@@ -980,6 +977,7 @@ export class GroupsStore {
     if (!sourceRules.length) return;
 
     const fromIndex = clamp(from_rule_index, 0, sourceRules.length - 1);
+    const animateMove = captureRuleMove(sourceRules[fromIndex].id);
     const [movedRule] = sourceRules.splice(fromIndex, 1);
     if (!movedRule) return;
 
@@ -1008,9 +1006,14 @@ export class GroupsStore {
     targetRules.splice(insertIndex, 0, movedRule);
 
     this.markDataRevision();
+    void animateMove();
   }
 
-  changeGroupIndex(from_index: number, to_index: number, insert: "before" | "after" = "before") {
+  changeGroupIndex(
+    from_index: number,
+    to_index: number,
+    insert: "before" | "after" = "before",
+  ) {
     if (from_index === to_index && insert !== "after") return;
 
     if (from_index < 0 || from_index >= this.data.length) return;
@@ -1031,7 +1034,13 @@ export class GroupsStore {
     this.markDataRevision();
   }
 
+  canDropGroup = (source: GroupDragData, target: GroupDropSlotData) => {
+    const slot = target.group_index + (target.insert === "after" ? 1 : 0);
+    return source.group_index !== slot && source.group_index + 1 !== slot;
+  };
+
   handleGroupSlotDrop = (source: GroupDragData, target: GroupDropSlotData) => {
+    if (!this.canDropGroup(source, target)) return;
     const { group_index: from_index } = source;
     const { group_index: to_index, insert } = target;
     if (from_index === to_index && insert !== "after") return;
@@ -1052,8 +1061,8 @@ export class GroupsStore {
     el?.querySelector<HTMLInputElement>("input.group-name")?.focus();
   }
 
-  deleteGroup = (index: number) => {
-    if (!confirm(t("Delete this group?"))) return;
+  deleteGroup = (index: number, confirmed = false) => {
+    if (!confirmed && !confirm(t("Delete this group?"))) return;
     const removed = this.data[index];
     this.data.splice(index, 1);
     if (removed) {

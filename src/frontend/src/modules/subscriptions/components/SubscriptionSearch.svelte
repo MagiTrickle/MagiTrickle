@@ -13,6 +13,23 @@
 
   let inputRef: HTMLInputElement;
 
+  function handleSearchShortcut(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      event.altKey ||
+      event.shiftKey ||
+      !(event.metaKey || event.ctrlKey) ||
+      (event.code !== "KeyF" && event.key.toLowerCase() !== "f") ||
+      document.querySelector('[data-dialog-content][data-state="open"]') ||
+      !inputRef?.getClientRects().length
+    )
+      return;
+
+    event.preventDefault();
+    inputRef.focus();
+    inputRef.select();
+  }
+
   function handleContainerClick() {
     inputRef?.focus();
   }
@@ -24,7 +41,17 @@
     event.preventDefault();
     inputRef?.focus();
   }
+
+  function handleInputKeydown(event: KeyboardEvent) {
+    if (event.key !== "Escape") return;
+
+    event.preventDefault();
+    store.searchValue = "";
+    inputRef?.blur();
+  }
 </script>
+
+<svelte:window onkeydown={handleSearchShortcut} />
 
 <div class="subscription-controls-search">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -43,8 +70,10 @@
         bind:this={inputRef}
         type="search"
         class="search-input"
+        data-page-search
         placeholder={t("Search subscriptions and rules...")}
         bind:value={store.searchValue}
+        onkeydown={handleInputKeydown}
       />
     </div>
   </div>
@@ -77,7 +106,6 @@
     transition:
       background-color 0.1s ease-in-out,
       border-color 0.1s ease-in-out,
-      box-shadow 0.1s ease-in-out,
       color 0.1s ease-in-out,
       width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   }
@@ -94,9 +122,6 @@
     color: var(--text);
     border-color: var(--accent);
     max-width: 100%;
-    box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent),
-      0 6px 18px -14px color-mix(in oklab, var(--accent) 35%, transparent);
   }
 
   .icon-wrapper {
@@ -112,8 +137,8 @@
   }
 
   .input-wrapper {
-    width: 0;
-    margin-left: 0;
+    width: min(700px, 50vw);
+    margin-left: 0.3rem;
     overflow: hidden;
     transition:
       width 0.3s cubic-bezier(0.25, 1, 0.5, 1),
@@ -136,8 +161,7 @@
     font: inherit;
     color: inherit;
     width: 100%;
-    margin-left: 0.8rem;
-    opacity: 0;
+    opacity: 1;
     transition: opacity 0.2s ease;
   }
 
@@ -151,6 +175,15 @@
   }
 
   @media (max-width: 570px) {
+    .input-wrapper {
+      width: 0;
+      margin-left: 0;
+    }
+
+    .search-input {
+      opacity: 0;
+    }
+
     .subscription-controls-search {
       flex: 1 1 auto;
       min-width: 0;

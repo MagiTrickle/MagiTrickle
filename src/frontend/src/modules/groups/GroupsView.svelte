@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount, setContext, tick } from "svelte";
 
+  import BulkActions from "../../components/bulk/BulkActions.svelte";
+  import SelectionFrame from "../../components/bulk/SelectionFrame.svelte";
   import PageControls from "../../components/layout/PageControls.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import { t } from "../../data/locale.svelte";
@@ -17,6 +19,7 @@
 
   import { droppable } from "../../lib/dnd";
   import { parseConfig, type Group, type Rule } from "../../types";
+  import { copyRulePatternsToClipboard } from "../../utils/copy-rule-patterns";
   import { toast } from "../../utils/events";
 
   type Props = {
@@ -27,6 +30,27 @@
 
   const store = new GroupsStore({ onRenderComplete: () => onRenderComplete?.() });
   setContext(GROUPS_STORE_CONTEXT, store);
+
+  let selectedIds = $state<string[]>([]);
+  let selectedItems = $derived(store.data.filter((item) => selectedIds.includes(item.id)));
+  function toggleSelection(id: string) {
+    selectedIds = selectedIds.includes(id)
+      ? selectedIds.filter((value) => value !== id)
+      : [...selectedIds, id];
+  }
+  function applyToSelected(update: { interface: string } | { enable: boolean }) {
+    for (const item of selectedItems) Object.assign(item, update);
+    store.markDataRevision();
+  }
+  async function deleteSelected() {
+    if (!confirm(`${t("Delete selected items?")} (${selectedItems.length})`)) return;
+    const ids = selectedItems.map((item) => item.id);
+    for (const id of ids) {
+      const index = store.data.findIndex((item) => item.id === id);
+      if (index >= 0) await store.deleteGroup(index, true);
+    }
+    selectedIds = selectedIds.filter((id) => store.data.some((item) => item.id === id));
+  }
 
   let importRulesModal = $state<{ open: boolean; groupIndex: number | null }>({
     open: false,
@@ -228,36 +252,46 @@
       {@const isVisible = !store.searchActive || store.visibilityMap.has(group_index)}
 
       <div class="group-wrapper" class:is-hidden={!isVisible}>
-        <div class="group-wrapper-inner">
-          {#if group_index === store.firstVisibleGroupIndex}
-            <div
-              class="group-drop-slot group-drop-slot--top"
-              aria-hidden="true"
-              use:droppable={{
-                data: { group_index, insert: "before" } as GroupDropSlotData,
-                scope: "group",
-                canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
-                  source.group_index !== target.group_index,
-                dropEffect: "move",
-                onDrop: store.handleGroupSlotDrop,
-              }}
-            ></div>
-          {/if}
-
-          <GroupPanel {group_index} on:importRules={() => openImportRulesModal(group_index)} />
-
+        {#if group_index === store.firstVisibleGroupIndex}
           <div
-            class="group-drop-slot group-drop-slot--bottom"
+            class="group-drop-slot group-drop-slot--top"
             aria-hidden="true"
             use:droppable={{
-              data: { group_index, insert: "after" } as GroupDropSlotData,
+              data: { group_index, insert: "before" } as GroupDropSlotData,
               scope: "group",
-              canDrop: () => true,
+              canDrop: (source: GroupDragData, target: GroupDropSlotData) =>
+                store.canDropGroup(source, target),
               dropEffect: "move",
               onDrop: store.handleGroupSlotDrop,
             }}
           ></div>
-        </div>
+        {/if}
+
+        <SelectionFrame
+          selected={selectedIds.includes(group.id)}
+          name={group.name}
+          ontoggle={() => toggleSelection(group.id)}
+        >
+          <GroupPanel
+            {group_index}
+            selectionActive={selectedItems.length > 0}
+            selected={selectedIds.includes(group.id)}
+            ontoggleSelection={() => toggleSelection(group.id)}
+            on:importRules={() => openImportRulesModal(group_index)}
+          />
+        </SelectionFrame>
+
+        <div
+          class="group-drop-slot group-drop-slot--bottom"
+          aria-hidden="true"
+          use:droppable={{
+            data: { group_index, insert: "after" } as GroupDropSlotData,
+            scope: "group",
+            canDrop: store.canDropGroup,
+            dropEffect: "move",
+            onDrop: store.handleGroupSlotDrop,
+          }}
+        ></div>
       </div>
     {/each}
   </div>
@@ -278,6 +312,28 @@
   onimport={handleImportConfig}
 />
 
+{#if selectedItems.length}
+  <BulkActions
+    count={selectedItems.length}
+    totalCount={store.data.length}
+    currentInterface={selectedItems.every((item) => item.interface === selectedItems[0]?.interface)
+      ? selectedItems[0]?.interface
+      : undefined}
+    onclear={() => (selectedIds = [])}
+    onapply={(value) => applyToSelected({ interface: value })}
+    currentEnabled={selectedItems.every((item) => item.enable === selectedItems[0]?.enable)
+      ? selectedItems[0]?.enable
+      : undefined}
+    onenable={(enable) => applyToSelected({ enable })}
+    ondelete={deleteSelected}
+    oncopy={() => copyRulePatternsToClipboard(selectedItems.flatMap((item) => item.rules))}
+    onselectall={() =>
+      (selectedIds = store.data
+        .filter((_, index) => !store.searchActive || store.visibilityMap.has(index))
+        .map((item) => item.id))}
+  />
+{/if}
+
 <style>
   .group-list {
     min-height: 1px;
@@ -291,15 +347,6 @@
   .group-wrapper {
     position: relative;
     margin: 1rem 0;
-    display: grid;
-    grid-template-rows: 1fr;
-    opacity: 1;
-    transition: none;
-  }
-
-  .group-wrapper-inner {
-    min-height: 0;
-    overflow: hidden;
   }
 
   .group-wrapper.is-hidden {
@@ -312,9 +359,67 @@
     right: 0;
     height: 1rem;
     pointer-events: none;
-    background: color-mix(in oklab, var(--accent) 28%, transparent);
-    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 54%, transparent);
     opacity: 0;
+  }
+
+  /* Fill the gap, including the space around the rounded card corners. */
+  .group-drop-slot::before {
+    content: "";
+    position: absolute;
+    inset: -0.5rem 0;
+    pointer-events: none;
+    background: color-mix(in oklab, var(--accent) 35%, transparent);
+    mask:
+      radial-gradient(circle at 100% 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top left /
+        0.5rem 0.5rem,
+      radial-gradient(circle at 0 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top right /
+        0.5rem 0.5rem,
+      radial-gradient(circle at 100% 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        left / 0.5rem 0.5rem,
+      radial-gradient(circle at 0 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        right / 0.5rem 0.5rem,
+      linear-gradient(black, black) center / 100% 1rem;
+    mask-repeat: no-repeat;
+  }
+
+  .group-drop-slot--top::before {
+    mask:
+      radial-gradient(circle at 100% 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        left / 0.5rem 0.5rem no-repeat,
+      radial-gradient(circle at 0 100%, transparent 0.5rem, black calc(0.5rem + 0.5px)) bottom
+        right / 0.5rem 0.5rem no-repeat,
+      linear-gradient(black, black) center / 100% 1rem no-repeat;
+  }
+
+  .group-wrapper:not(:has(~ .group-wrapper:not(.is-hidden)))
+    .group-drop-slot--bottom::before {
+    mask:
+      radial-gradient(circle at 100% 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top left /
+        0.5rem 0.5rem no-repeat,
+      radial-gradient(circle at 0 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top right /
+        0.5rem 0.5rem no-repeat,
+      linear-gradient(black, black) center / 100% 1rem no-repeat;
+  }
+
+  .group-list :global([data-droppable="rule"]) {
+    position: relative;
+  }
+
+  .group-list :global([data-droppable="rule"].dragover)::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.25rem;
+    bottom: -1.5px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--accent);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .group-list :global([data-droppable="rule"][data-drop-edge="before"].dragover)::after {
+    top: -1.5px;
+    bottom: auto;
   }
 
   .group-drop-slot--top {

@@ -30,15 +30,23 @@
   } from "../../../components/ui/icons";
   import { draggable, droppable } from "../../../lib/dnd";
   import { type Rule } from "../../../types";
+  import { copyRulePatternsToClipboard } from "../../../utils/copy-rule-patterns";
   import { defaultRule } from "../../../utils/defaults";
-  import { toast } from "../../../utils/events";
   import { type SortDirection, type SortField } from "../../../utils/rule-sorter";
 
   type Props = {
     group_index: number;
+    selectionActive?: boolean;
+    selected?: boolean;
+    ontoggleSelection?: () => void;
   };
 
-  let { group_index }: Props = $props();
+  let {
+    group_index,
+    selectionActive = false,
+    selected = false,
+    ontoggleSelection,
+  }: Props = $props();
 
   const store = getContext<GroupsStore>(GROUPS_STORE_CONTEXT);
   if (!store) {
@@ -71,37 +79,8 @@
     store.open_state[group.id] = !effectiveOpen;
   }
 
-  async function copyRulePatterns() {
-    if (!group) return;
-
-    const patterns = group.rules.map((rule) => rule.rule.trim()).filter(Boolean);
-
-    if (patterns.length === 0) {
-      toast.error(t("Nothing to copy"));
-      return;
-    }
-
-    const textarea = document.createElement("textarea");
-
-    try {
-      textarea.value = patterns.join("\n");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-
-      document.body.appendChild(textarea);
-      textarea.select();
-
-      if (!document.execCommand("copy")) {
-        throw new Error("Copy command failed");
-      }
-
-      toast.success(t("Copied to clipboard"));
-    } catch (e) {
-      console.error("Failed to copy to clipboard:", e);
-      toast.error(t("Failed to copy"));
-    } finally {
-      textarea.remove();
-    }
+  function copyRulePatterns() {
+    if (group) copyRulePatternsToClipboard(group.rules);
   }
 
   type GroupDnD = {
@@ -345,13 +324,27 @@
         use:droppable={{
           data: { rule_id: "", rule_index: 0, group_id: group.id, group_index },
           scope: "rule",
-          canDrop: (src) => src.group_id === group.id,
+          canDrop: (src) => src.group_id !== group.id || src.rule_index !== 0,
+          onDrop: (source) =>
+            store.changeRuleIndex(source.group_index, source.rule_index, group_index, 0),
         }}
       >
         <div class="group-left">
-          <label class="group-color" style="background: {group.color}">
-            <input type="color" bind:value={group.color} />
-          </label>
+          {#if selectionActive}
+            <button
+              class="group-color"
+              style="background: {group.color}"
+              type="button"
+              aria-label={`${t("Toggle selection")}: ${group.name}`}
+              aria-pressed={selected}
+              title={t(selected ? "Deselect item" : "Select item")}
+              onclick={ontoggleSelection}
+            ></button>
+          {:else}
+            <label class="group-color" style="background: {group.color}">
+              <input type="color" bind:value={group.color} />
+            </label>
+          {/if}
 
           <div class="group-grip" title={t("Drag Group")}>
             <Grip />
@@ -577,11 +570,6 @@
       background-color: var(--bg-light);
       position: relative;
     }
-
-    &:global(.dragover) {
-      outline: 1px solid var(--accent);
-      box-shadow: inset 0 0 5px 0 var(--accent);
-    }
   }
 
   .group-left {
@@ -595,6 +583,8 @@
   .group-color {
     & {
       display: inline-block;
+      padding: 0;
+      border: 0;
       width: 2rem;
       height: 100%;
       border-top-left-radius: calc(0.5rem - 1px);
@@ -608,6 +598,11 @@
 
     & input {
       margin-left: 0.5rem;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
     }
   }
 

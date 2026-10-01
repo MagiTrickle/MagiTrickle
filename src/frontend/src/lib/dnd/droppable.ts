@@ -37,12 +37,14 @@ export function droppable<T>(node: HTMLElement, options: DroppableOptions<T>) {
     // статус для стилизации
     (node as HTMLElement).dataset.drop = valid ? "allowed" : "denied";
 
+    // Clear the previous target even when the new target rejects the drop.
+    if (CURRENT.node && CURRENT.node !== node && CURRENT.scope === options.scope) {
+      CURRENT.node.classList.remove("dragover");
+      CURRENT.node.dataset.drop = "";
+      CURRENT = { node: null, scope: null };
+    }
+
     if (valid) {
-      // обеспечить одну подсветку
-      if (CURRENT.node && CURRENT.node !== node && CURRENT.scope === options.scope) {
-        CURRENT.node.classList.remove("dragover");
-        (CURRENT.node as HTMLElement).dataset.drop = "";
-      }
       CURRENT = { node, scope: options.scope };
       node.classList.add("dragover");
     } else if (CURRENT.node === node) {
@@ -77,6 +79,7 @@ export function droppable<T>(node: HTMLElement, options: DroppableOptions<T>) {
   }
 
   function onDrop(e: DragEvent) {
+    if (!active()) return;
     const valid = validateAndDecorate(e);
     e.preventDefault();
     enterCount = 0;

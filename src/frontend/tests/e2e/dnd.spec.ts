@@ -107,4 +107,55 @@ test.describe("Drag and Drop", () => {
     await expect(page.locator(".rule").nth(0).locator(".name input")).toHaveValue("Rule 1");
     await expect(page.locator(".rule").nth(1).locator(".name input")).toHaveValue("Rule 2");
   });
+  test("should move a rule onto an empty group header", async ({ page }) => {
+    await groupsPage.createGroup();
+    await groupsPage.setRuleName(0, 0, "Moving rule");
+    await groupsPage.createGroup();
+    await groupsPage.deleteRule(0, 0);
+    const target = page.locator(".group-wrapper").nth(0);
+    await expect(target.locator(".rule")).toHaveCount(0);
+    await page
+      .locator(".group-wrapper")
+      .nth(1)
+      .locator(".grip")
+      .dragTo(target.locator(".group-header"));
+    await expect(target.locator(".rule .name input")).toHaveValue("Moving rule");
+    await expect(page.locator(".group-wrapper").nth(1).locator(".rule")).toHaveCount(0);
+  });
+
+  test("should insert a rule first when dropped onto a populated header", async ({ page }) => {
+    await groupsPage.createGroup();
+    await groupsPage.setRuleName(0, 0, "Moving rule");
+    await groupsPage.createGroup();
+    await groupsPage.setRuleName(0, 0, "Existing rule");
+    await page
+      .locator(".group-wrapper")
+      .nth(1)
+      .locator(".grip")
+      .dragTo(page.locator(".group-header").nth(0));
+    const rules = page.locator(".group-wrapper").nth(0).locator(".rule .name input");
+    await expect(rules.nth(0)).toHaveValue("Moving rule");
+    await expect(rules.nth(1)).toHaveValue("Existing rule");
+  });
+
+  test("should highlight only group slots that change the order", async ({ page }) => {
+    for (let i = 0; i < 3; i++) await groupsPage.createGroup();
+    const groups = page.locator(".group-wrapper");
+    const grip = await groups.nth(1).locator(".group-grip").boundingBox();
+    if (!grip) throw new Error("Grip not found");
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    const visitSlot = async (index: number, allowed: boolean) => {
+      const slot = groups.nth(index).locator(".group-drop-slot--bottom");
+      const box = await slot.boundingBox();
+      if (!box) throw new Error("Slot not found");
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 });
+      await expect(slot).toHaveAttribute("data-drop", allowed ? "allowed" : "denied");
+      await expect(page.locator(".group-drop-slot.dragover")).toHaveCount(allowed ? 1 : 0);
+    };
+    await visitSlot(2, true);
+    await visitSlot(1, false);
+    await visitSlot(0, false);
+    await page.mouse.up();
+  });
 });

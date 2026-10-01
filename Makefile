@@ -120,6 +120,12 @@ SYSROOT ?=
 DEPS_IPK := libatomic, libyaml, libpcre2, libmnl, libcurl
 DEPS_APK := libatomic libyaml libpcre2 libmnl libcurl libcjson
 
+ifeq ($(shell id -u),0)
+	ROOT_WRAP :=
+else
+	ROOT_WRAP := fakeroot --
+endif
+
 # Incremental data
 
 BACKEND_DEPENDENCIES :=
@@ -318,7 +324,7 @@ package_apk: prepare_files $(BUILD_KEY_APK_SEC)
 	fi
 	(cd $(ROOT_APK_DIR) && find . -type f,l -printf "/%P\n") > $(ROOT_APK_DIR)/lib/apk/packages/$(PKG_NAME).list
 
-	apk mkpkg \
+	$(ROOT_WRAP) apk mkpkg \
 		-I "name:$(PKG_NAME)" \
 		-I "version:$(PKG_VERSION_APK)-r$(PKG_REVISION)" \
 		-I "description:$(PKG_DESCRIPTION)" \

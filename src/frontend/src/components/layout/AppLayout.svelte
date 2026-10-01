@@ -28,7 +28,32 @@
 
   const toggleMenu = () => (isMenuOpen = !isMenuOpen);
   const closeMenu = () => (isMenuOpen = false);
+
+  function handleSearchShortcut(event: KeyboardEvent) {
+    if (
+      event.isComposing ||
+      event.altKey ||
+      event.shiftKey ||
+      !(event.ctrlKey || event.metaKey) ||
+      event.code !== "KeyF"
+    ) {
+      return;
+    }
+
+    if (document.querySelector('[data-dialog-content][data-state="open"]')) return;
+
+    const searchInput = document.querySelector<HTMLInputElement>(
+      '[data-tabs-content][data-state="active"] [data-page-search]',
+    );
+    if (!searchInput) return;
+
+    event.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  }
 </script>
+
+<svelte:window onkeydown={handleSearchShortcut} />
 
 <Toast />
 <Overlay />

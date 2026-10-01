@@ -29,7 +29,16 @@ mt-c (произносится как *Мэджитрикл*, по назван�
 
 ## Установка
 
-Пакеты для Entware/Keenetic и обеих актуальных веток OpenWrt собираются в GitHub Actions и публикуются на странице [Releases](https://github.com/dan0102dan/mt-c/releases). Скачайте пакет под версию OpenWrt и архитектуру роутера:
+### Entware/Keenetic: установка из репозитория [feedly](https://github.com/spatiumstas/feedly)
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/spatiumstas/feedly/main/add-repo.sh | sh
+opkg install magitrickle
+```
+
+### Установка пакета вручную
+
+Скачайте пакет со страницы [Releases](https://github.com/dan0102dan/mt-c/releases) под вашу платформу, версию OpenWrt и архитектуру роутера.
 
 **Entware/Keenetic:**
 ```shell
