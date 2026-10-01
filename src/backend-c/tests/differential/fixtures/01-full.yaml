@@ -1,0 +1,87 @@
+configVersion: 0.7.0
+app:
+  httpWeb:
+    enabled: true
+    auth:
+      enabled: true
+    host:
+      address: "0.0.0.0"
+      port: 8081
+    skin: custom
+  dnsProxy:
+    host:
+      address: '[::]'
+      port: 3553
+    upstream:
+      address: 192.168.1.1
+      port: 53
+    disableRemap53: true
+    disableFakePTR: false
+    disableDropAAAA: true
+    maxIdleConns: 20
+    maxConcurrent: 200
+    timeout: 7s
+  netfilter:
+    iptables:
+      chainPrefix: XX_
+    ipset:
+      tablePrefix: xx_
+      additionalTTL: 30m
+    disableIPv4: false
+    disableIPv6: true
+    startMarkTableIndex: 1000
+  link:
+    - br0
+    - br1
+  showAllInterfaces: true
+  logLevel: debug
+groups:
+  - id: d663876a
+    name: Example
+    color: '#AABBCC'
+    interface: nwg0
+    enable: true
+    rules:
+      - id: 6f34ee91
+        name: Wildcard Example
+        type: wildcard
+        rule: '*wildcard.example.com'
+        enable: true
+      - id: 00ae5f7c
+        name: RegEx Example
+        type: regex
+        rule: '^.*\.regex\.example\.com$'
+        enable: false
+      - id: 6120dc8a
+        name: Domain Example
+        type: domain
+        rule: domain.example.com
+        enable: true
+      - id: b9751782
+        name: Namespace Example
+        type: namespace
+        rule: namespace.example.com
+        enable: true
+      - id: 12345678
+        name: Digits ID
+        type: subnet
+        rule: 10.0.0.0/8
+        enable: true
+      - id: 666e0000
+        name: Floaty ID
+        type: subnet6
+        rule: fd00::/8
+        enable: true
+subscriptions:
+  - id: aabbccdd
+    name: My Sub
+    interface: nwg1
+    enable: true
+    url: https://example.com/list.txt
+    interval: 86400
+    last_update: 1700000000
+    rules:
+      - id: deadbeef
+        rule: sub.example.com
+        type: namespace
+        enable: true

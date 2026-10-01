@@ -1,0 +1,12 @@
+date_utc: 2026-07-22T19:35:07Z
+kernel: Linux 6.18.5
+arch: x86_64
+go_version: go version go1.24.7 linux/amd64
+cpu_model: Intel(R) Xeon(R) Processor @ 2.80GHz
+cpus: 4
+governor: n/a
+libc: ldd (Ubuntu GLIBC 2.39-0ubuntu8.7) 2.39
+git_commit: 8c8bd1234062261ffc61f5113e7dbdc4cb227c24
+binary_size_bytes: 9556260
+group_enable: 0
+load_sec: 4  repeats: 3  soak_sec: 60

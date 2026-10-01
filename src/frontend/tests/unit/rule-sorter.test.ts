@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { describe, it } from "jsr:@std/testing@1.0.19/bdd";
 
 import type { Rule } from "../../src/types";
 import { sortRules } from "../../src/utils/rule-sorter";

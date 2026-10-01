@@ -1,0 +1,1 @@
+{"proto":"udp","concurrency":30,"duration_sec":90,"ndomains":100000,"sent":1197353,"ok":1197353,"errors":0,"timeouts":0,"rps":13303.922222222222,"p50_ms":2.191,"p95_ms":3.177,"p99_ms":3.961,"max_ms":77.981}

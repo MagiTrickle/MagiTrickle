@@ -1,0 +1,16 @@
+# subscription list corpus
+example.com
+sub.example.net
+*.wild.example.org
+10.0.0.0/8
+192.168.1.1
+fd00::/8
+2001:db8::1
+^regex\.example\.com$
+example.com
+# duplicate above must collapse
+  padded.example.com  
+a.com,b.com,c.com
+300.1.2.3
+weird**pattern
+plain?mark

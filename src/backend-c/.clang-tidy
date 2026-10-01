@@ -1,0 +1,18 @@
+# clang-tidy configuration for the MagiTrickle C backend.
+# DeprecatedOrUnsafeBufferHandling flags every memset/memcpy with a computed
+# size; the C11 Annex K replacements it suggests are not implemented by
+# glibc/musl, so the check is pure noise for this codebase.
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  readability-braces-around-statements,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -bugprone-sizeof-expression
+WarningsAsErrors: 'clang-diagnostic-*,clang-analyzer-core.*'
+HeaderFilterRegex: 'include/magitrickle/.*'

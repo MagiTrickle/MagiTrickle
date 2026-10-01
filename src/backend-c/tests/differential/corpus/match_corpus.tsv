@@ -1,0 +1,68 @@
+# TYPE	RULE	DOMAIN — rule-matching differential corpus
+domain	example.com	example.com
+domain	example.com	noexample.com
+domain	example.com	sub.example.com
+domain	example.com	example.com.ru
+domain	example.com	
+domain	Example.com	example.com
+namespace	example.com	example.com
+namespace	example.com	sub.example.com
+namespace	example.com	deep.sub.example.com
+namespace	example.com	noexample.com
+namespace	example.com	example.com.ru
+namespace	example.com	.example.com
+namespace	ru	ru
+namespace	ru	example.ru
+namespace	ru	ru.com
+namespace	ru	r
+namespace		domain.
+namespace		domain
+wildcard	ex*le.com	example.com
+wildcard	ex*le.com	exle.com
+wildcard	ex*le.com	noexample.com
+wildcard	*.example.com	sub.example.com
+wildcard	*.example.com	example.com
+wildcard	*example*	example.com
+wildcard	*example*	myexamplesite.ru
+wildcard	test*.com	test123.com
+wildcard	test??.com	test12.com
+wildcard	test??.com	test123.com
+wildcard	test.com	test12.com
+wildcard	test.com	testXcom
+wildcard	a.b	aXb
+wildcard	a.b	ab
+wildcard	*	anything.at.all
+wildcard	*	
+wildcard		
+wildcard		x
+wildcard	?	x
+wildcard	?	
+wildcard	??	x
+wildcard	a?	ab
+wildcard	a?c	abc
+wildcard	*a*b*c*	xaybzc
+wildcard	*a*b*c*	cba
+wildcard	a*	a
+wildcard	*a	a
+wildcard	foo*bar?baz	fooXXbarYbaz
+wildcard	foo*bar?baz	foobarbaz
+regex	^ex[apm]{3}le.com$	example.com
+regex	^ex[apm]{3}le.com$	exapple.com
+regex	^ex[apm]{3}le.com$	noexample.com
+regex	example	example.com
+regex	^example$	example.com
+regex	(?i)EXAMPLE	example.com
+regex	\d+\.example	123.example
+regex	EXAMPLE	example.com
+regex	^.*\.example\.com$	sub.example.com
+regex	^.*\.example\.com$	example.com
+regex	[invalid(regex	anything
+regex	^(?!www\.).*\.example\.com$	cdn.example.com
+regex	^(?!www\.).*\.example\.com$	www.example.com
+regex	^(\w+)\.\1\.example\.com$	foo.foo.example.com
+regex	^(\w+)\.\1\.example\.com$	foo.bar.example.com
+regex	^(?<sub>[a-z]+)\.example\.com$	mail.example.com
+subnet	10.0.0.0/8	example.com
+subnet	10.0.0.0/8	10.0.0.1
+subnet6	fd00::/8	example.com
+unknowntype	example.com	example.com

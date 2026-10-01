@@ -1,0 +1,11 @@
+configVersion: 0.7.0
+someUnknownTopLevel: 42
+app:
+  mysteryKey: [a, b]
+  dnsProxy:
+    host:
+      port: 5353
+      futureOption: yes
+groups:
+  - id: 0a0b0c0d
+    unknown: true

@@ -1,0 +1,30 @@
+configVersion: 0.7.0
+app:
+  logLevel: "info"
+groups:
+  - id: 0a0b0c0d
+    name: "123"
+    color: '#ffffff'
+    interface: 'y'
+    enable: true
+    rules:
+      - id: 01020304
+        name: 'has: colon'
+        type: domain
+        rule: 'true'
+        enable: true
+      - id: 01020305
+        name: " leading space"
+        type: domain
+        rule: "12:30:45"
+        enable: false
+      - id: 01020306
+        name: "line1\nline2"
+        type: wildcard
+        rule: '*star'
+        enable: true
+      - id: 01020307
+        name: "null"
+        type: domain
+        rule: "-dash"
+        enable: true

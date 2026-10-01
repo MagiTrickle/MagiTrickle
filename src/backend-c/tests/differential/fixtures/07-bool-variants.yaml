@@ -1,0 +1,6 @@
+configVersion: 0.7.0
+app:
+  httpWeb:
+    enabled: yes
+  netfilter:
+    disableIPv4: On

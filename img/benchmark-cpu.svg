@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Загрузка CPU Go MagiTrickle и mt-c</title>
+  <desc id="desc">Медиана загрузки CPU при 100, 1000 и 10000 namespace-правил. mt-c: 64.8, 65.8, 67.2 процента. Go: 143.2, 148.2, 192.8 процента.</desc>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #424750;
+      --muted: #6b7280;
+      --axis: #59606b;
+      --grid: #e7e7e7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #c9cdd3;
+        --muted: #a6abb3;
+        --axis: #b5bac2;
+        --grid: #383838;
+      }
+    }
+    text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: var(--ink); }
+    .subtitle { font-size: 17px; fill: var(--muted); }
+    .axis-label { font-size: 17px; font-weight: 600; }
+    .tick { font-size: 15px; fill: var(--muted); }
+    .legend { font-size: 18px; font-weight: 600; }
+    .value { font-size: 15px; font-weight: 700; }
+    .note { font-size: 14px; fill: var(--muted); }
+    .axis { stroke: var(--axis); }
+    .grid { stroke: var(--grid); }
+  </style>
+
+  <text class="subtitle" x="76" y="68">Та же нагрузка и те же прогоны · 100% = одно полностью занятое ядро</text>
+
+  <circle cx="80" cy="116" r="7" fill="#4f73c6"/>
+  <text class="legend" x="97" y="122">mt-c</text>
+  <circle cx="182" cy="116" r="7" fill="#c8d9fa"/>
+  <text class="legend" x="199" y="122">Go MagiTrickle</text>
+
+  <line class="axis" x1="150" y1="218" x2="150" y2="550" stroke-width="2"/>
+  <line class="axis" x1="150" y1="550" x2="1120" y2="550" stroke-width="2"/>
+
+  <g class="grid" stroke-width="1">
+    <line x1="150" y1="467" x2="1120" y2="467"/>
+    <line x1="150" y1="384" x2="1120" y2="384"/>
+    <line x1="150" y1="301" x2="1120" y2="301"/>
+    <line x1="150" y1="218" x2="1120" y2="218"/>
+  </g>
+
+  <g class="tick" text-anchor="end">
+    <text x="132" y="555">0%</text>
+    <text x="132" y="472">50%</text>
+    <text x="132" y="389">100%</text>
+    <text x="132" y="306">150%</text>
+    <text x="132" y="223">200%</text>
+  </g>
+
+  <g class="tick" text-anchor="middle">
+    <text x="250" y="583">100</text>
+    <text x="635" y="583">1 000</text>
+    <text x="1020" y="583">10 000</text>
+  </g>
+
+  <text class="axis-label" x="635" y="625" text-anchor="middle">Количество правил</text>
+  <text class="axis-label" transform="translate(56 384) rotate(-90)" text-anchor="middle">CPU процесса</text>
+
+  <path d="M250 442 L635 441 L1020 438" fill="none" stroke="#4f73c6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M250 312 L635 304 L1020 230" fill="none" stroke="#c8d9fa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g fill="#4f73c6">
+    <circle cx="250" cy="442" r="9"/>
+    <circle cx="635" cy="441" r="9"/>
+    <circle cx="1020" cy="438" r="9"/>
+  </g>
+  <g fill="#c8d9fa">
+    <circle cx="250" cy="312" r="9"/>
+    <circle cx="635" cy="304" r="9"/>
+    <circle cx="1020" cy="230" r="9"/>
+  </g>
+
+  <g class="value" text-anchor="middle">
+    <text x="250" y="472">64.8%</text>
+    <text x="635" y="471">65.8%</text>
+    <text x="1020" y="468">67.2%</text>
+    <text x="250" y="291">143.2%</text>
+    <text x="635" y="283">148.2%</text>
+    <text x="1020" y="209">192.8%</text>
+  </g>
+
+  <text class="note" x="1120" y="648" text-anchor="end">Источник: docs/c-rewrite/baseline-raw{,-c}/results.jsonl</text>
+</svg>

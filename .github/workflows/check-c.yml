@@ -1,0 +1,87 @@
+name: Checking C backend
+
+on:
+  pull_request:
+    paths:
+      - 'src/backend-c/**'
+      - '.github/workflows/check-c.yml'
+  push:
+    paths:
+      - 'src/backend-c/**'
+      - '.github/workflows/check-c.yml'
+
+jobs:
+  build_test:
+    name: Build, test, sanitize (host)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy cppcheck libpcre2-dev libyaml-dev libmnl-dev libcjson-dev libcurl4-openssl-dev
+
+      - name: Build (warnings as errors)
+        working-directory: src/backend-c
+        run: make CFLAGS_EXTRA=-Werror
+
+      - name: Unit tests
+        working-directory: src/backend-c
+        run: make test
+
+      - name: Sanitizers (ASan+UBSan)
+        working-directory: src/backend-c
+        run: make sanitize
+
+      - name: Static analysis
+        working-directory: src/backend-c
+        run: make static_analysis
+
+      - name: Fuzz smoke (libFuzzer, short)
+        working-directory: src/backend-c
+        run: |
+          sudo apt-get install -y clang libclang-rt-18-dev || \
+            sudo apt-get install -y clang
+          make fuzz FUZZ_RUNS=200000
+
+  differential:
+    name: Differential/regression suites (vs golden snapshots)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcre2-dev libyaml-dev libmnl-dev libcjson-dev libcurl4-openssl-dev
+
+      - name: Run differential/regression suites
+        working-directory: src/backend-c
+        # sudo: the HTTP contract suite exercises the real /var/lib/magitrickle path
+        run: sudo -E env "PATH=$PATH" sh tests/differential/run_diff.sh
+
+  cross_build:
+    name: Cross-build skeleton (mipsel)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mipsel-linux-gnu
+
+      - name: Cross build
+        working-directory: src/backend-c
+        run: |
+          make CROSS_COMPILE=mipsel-linux-gnu- CFLAGS_EXTRA=-Werror
+          # No feed sysroot is set up here, so this is core-only (see the
+          # Makefile's `all` rule) -- mt-dnstool is the dependency-free
+          # binary that build actually produces; magitrickled-c itself
+          # needs libyaml/cJSON/PCRE2/libmnl/libcurl for the target arch,
+          # which is Phase 8 territory (root Makefile's C_SYSROOT).
+          file build/cross-mipsel-linux-gnu/mt-dnstool | grep -q MIPS

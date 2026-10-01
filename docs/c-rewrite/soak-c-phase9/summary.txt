@@ -1,0 +1,7 @@
+Phase 9 soak (task #55) — host, group disabled (sandbox ipset unavailable, see D-42/D-43)
+duration_sec: 180
+rules: 500 (namespace)
+udp: concurrency=30, ndomains=100000, sent=3023131, ok=3023131, errors=0, timeouts=0, rps=16795.17
+tcp: concurrency=10, ndomains=100000, sent=389421, ok=389421, errors=0, timeouts=0, rps=2163.45
+rss_kb: flat at 31928 across all 13 samples (t=0..165s, 15s interval) and at final read (t=180s)
+peak_rss_kb (VmHWM): 31928 (identical to steady-state RSS -- no transient spike either)

@@ -1,0 +1,5 @@
+duration_sec: 90
+final_rss_kb: 23836
+peak_rss_kb (VmHWM): 23836
+load_udp: {"proto":"udp","concurrency":30,"duration_sec":90,"ndomains":100000,"sent":1197353,"ok":1197353,"errors":0,"timeouts":0,"rps":13303.922222222222,"p50_ms":2.191,"p95_ms":3.177,"p99_ms":3.961,"max_ms":77.981}
+load_tcp: {"proto":"tcp","concurrency":10,"duration_sec":90,"ndomains":100000,"sent":153825,"ok":153825,"errors":0,"timeouts":0,"rps":1709.1666666666667,"p50_ms":5.882,"p95_ms":7.678,"p99_ms":8.712,"max_ms":56.552}

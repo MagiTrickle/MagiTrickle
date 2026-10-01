@@ -208,7 +208,9 @@ test.describe("Duplicate Indicators - empty patterns", () => {
     await groupsPage.goto();
   });
 
-  test("should ignore empty and whitespace-only patterns in duplicate detection", async ({ page }) => {
+  test("should ignore empty and whitespace-only patterns in duplicate detection", async ({
+    page,
+  }) => {
     const groupHeaders = page.locator(".group-header");
     await expect(groupHeaders).toHaveCount(2);
 

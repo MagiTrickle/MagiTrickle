@@ -1,5 +1,4 @@
 PLATFORM=entware
 TARGET=mipsel-3.4_kn
-GOOS=linux
-GOARCH=mipsle
-GOMIPS=softfloat
+CROSS_COMPILE=
+SYSROOT=

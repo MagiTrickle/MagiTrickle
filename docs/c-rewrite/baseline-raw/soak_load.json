@@ -1,0 +1,1 @@
+{"label":"soak","proto":"udp","concurrency":50,"duration_sec":60,"ndomains":10000,"sent":1110581,"ok":1110581,"errors":0,"timeouts":0,"rps":18509.683333333334,"p50_ms":2.432,"p95_ms":5.528,"p99_ms":7.261,"max_ms":42.21}

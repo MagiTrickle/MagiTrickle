@@ -1,0 +1,65 @@
+id=17451 qr=false opcode=0 rcode=0 ra=false
+Q example.com. A 1
+===
+id=56510 qr=false opcode=0 rcode=0 ra=false
+Q example.com. AAAA 1
+===
+id=45165 qr=false opcode=0 rcode=0 ra=false
+Q sub.example.com. A 1
+===
+id=28495 qr=false opcode=0 rcode=0 ra=false
+Q 1.0.0.127.in-addr.arpa. PTR 1
+===
+id=58777 qr=false opcode=0 rcode=0 ra=false
+Q a.very.long.chain.of.many.labels.example.com. A 1
+===
+id=30316 qr=false opcode=0 rcode=0 ra=false
+Q . NS 1
+===
+id=3520 qr=true opcode=0 rcode=0 ra=true
+Q www.example.com. A 1
+AN www.example.com. 300 A A=93.184.216.34
+===
+id=3520 qr=true opcode=0 rcode=0 ra=true
+Q www.example.com. A 1
+AN www.example.com. 300 A A=93.184.216.34
+===
+id=38274 qr=true opcode=0 rcode=0 ra=false
+Q dual.example.com. A 1
+AN dual.example.com. 60 A A=10.0.0.1
+AN dual.example.com. 60 AAAA AAAA=2606:2800:220:1:248:1893:25c8:1946
+AN dual.example.com. 60 A A=10.0.0.2
+===
+id=10744 qr=true opcode=0 rcode=0 ra=false
+Q alias.example.com. A 1
+AN alias.example.com. 120 CNAME CNAME=target.example.net.
+AN target.example.net. 120 CNAME CNAME=final.example.org.
+AN final.example.org. 120 A A=203.0.113.5
+===
+id=29833 qr=true opcode=0 rcode=3 ra=false
+Q nope.example.com. A 1
+NS example.com. 3600 SOA SOA=ns.example.com.,hostmaster.example.com.,2024010101
+===
+id=31186 qr=true opcode=0 rcode=0 ra=false
+Q example.com. MX 1
+AN example.com. 300 MX MX=10,mail.example.com.
+AR mail.example.com. 300 A A=192.0.2.25
+===
+id=48446 qr=false opcode=0 rcode=0 ra=false
+Q edns.example.com. A 1
+AR . 32768 OPT OPT
+===
+PARSE_ERROR
+===
+id=0 qr=false opcode=0 rcode=0 ra=false
+===
+PARSE_ERROR
+===
+PARSE_ERROR
+===
+PARSE_ERROR
+===
+PARSE_ERROR
+===
+PARSE_ERROR
+===

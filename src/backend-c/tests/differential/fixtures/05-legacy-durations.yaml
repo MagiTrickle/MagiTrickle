@@ -1,0 +1,7 @@
+configVersion: 0.7.0
+app:
+  dnsProxy:
+    timeout: 5000
+  netfilter:
+    ipset:
+      additionalTTL: 3600

@@ -1,13 +1,13 @@
 <script lang="ts">
   import { token } from "../data/auth.svelte";
   import { t } from "../data/locale.svelte";
-  import Button from "./ui/Button.svelte";
   import InfoDialog from "./InfoDialog.svelte";
+  import Button from "./ui/Button.svelte";
 
+  import logoUrl from "../assets/logo.svg";
   import { toast } from "../utils/events";
   import { fetcher } from "../utils/fetcher";
   import { Info, Password, User } from "./ui/icons";
-  import logoUrl from "../assets/logo.svg";
 
   let login = $state("");
   let password = $state("");
@@ -40,7 +40,6 @@
       loading = false;
     }
   }
-
 </script>
 
 <div class="auth-page">
@@ -61,24 +60,14 @@
           <label for="login">{t("Login")}</label>
           <div class="input-wrapper">
             <span class="icon"><User size={18} /></span>
-            <input
-              id="login"
-              type="text"
-              bind:value={login}
-              placeholder="..."
-            />
+            <input id="login" type="text" bind:value={login} placeholder="..." />
           </div>
         </div>
         <div class="field">
           <label for="password">{t("Password")}</label>
           <div class="input-wrapper">
             <span class="icon"><Password size={18} /></span>
-            <input
-              id="password"
-              type="password"
-              bind:value={password}
-              placeholder="..."
-            />
+            <input id="password" type="password" bind:value={password} placeholder="..." />
           </div>
         </div>
         <div class="actions">
@@ -128,8 +117,18 @@
     pointer-events: none;
     z-index: 0;
     background:
-      radial-gradient(78rem 52rem at 8% 20%, rgba(66, 189, 249, 0.08) 0%, rgba(66, 189, 249, 0.03) 38%, transparent 74%),
-      radial-gradient(72rem 56rem at 92% 82%, rgba(85, 158, 255, 0.07) 0%, rgba(85, 158, 255, 0.025) 40%, transparent 76%),
+      radial-gradient(
+        78rem 52rem at 8% 20%,
+        rgba(66, 189, 249, 0.08) 0%,
+        rgba(66, 189, 249, 0.03) 38%,
+        transparent 74%
+      ),
+      radial-gradient(
+        72rem 56rem at 92% 82%,
+        rgba(85, 158, 255, 0.07) 0%,
+        rgba(85, 158, 255, 0.025) 40%,
+        transparent 76%
+      ),
       radial-gradient(54rem 40rem at 52% 58%, rgba(11, 17, 30, 0.42) 0%, transparent 72%);
     filter: blur(16px);
     opacity: 0.72;
@@ -296,7 +295,9 @@
     gap: 0.35rem;
     opacity: 0;
     transform: translateY(0.15rem);
-    transition: opacity 0.45s ease, transform 0.45s ease;
+    transition:
+      opacity 0.45s ease,
+      transform 0.45s ease;
   }
 
   .helper-text.visible {

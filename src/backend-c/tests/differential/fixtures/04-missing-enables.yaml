@@ -1,0 +1,11 @@
+configVersion: 0.7.0
+groups:
+  - id: 0a0b0c0d
+    name: NoEnable
+    rules:
+      - id: 01020304
+        type: domain
+        rule: example.com
+subscriptions:
+  - id: 0f0e0d0c
+    url: https://example.com/x.txt

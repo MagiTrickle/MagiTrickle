@@ -1,0 +1,5 @@
+configVersion: 0.7.0
+app:
+  httpWeb:
+    host:
+      port: "8080"

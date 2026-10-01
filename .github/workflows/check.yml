@@ -8,77 +8,25 @@ on:
       - '!.github/workflows/check.yml'
 
 jobs:
-  check:
-    name: Finding suspicious constructs for ${{ matrix.goarch }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: mipsle
-            gomips: softfloat
-          - goos: linux
-            goarch: mips
-            gomips: softfloat
-          - goos: linux
-            goarch: arm64
-          - goos: linux
-            goarch: arm
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: '1.23'
-
-      - name: Finding suspicious constructs
-        working-directory: ./src/backend
-        run: |
-          GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" GOMIPS="${{ matrix.gomips }}" GOARM="${{ matrix.goarm }}" go vet ./...
-
-  test_backend:
-    name: Backend testing
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: '1.23'
-
-      - name: Backend tests
-        working-directory: ./src/backend
-        run: |
-          GOOS=linux go test ./...
-
   test_frontend:
     name: Frontend testing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Set up Node.JS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
 
       - name: Set up Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: Install frontend dependencies
         working-directory: ./src/frontend

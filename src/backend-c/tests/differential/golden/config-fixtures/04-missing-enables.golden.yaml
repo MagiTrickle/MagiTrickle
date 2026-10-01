@@ -1,0 +1,57 @@
+configVersion: 0.99.0
+app:
+  httpWeb:
+    enabled: true
+    auth:
+      enabled: false
+    host:
+      address: '[::]'
+      port: 8080
+    skin: default
+  dnsProxy:
+    host:
+      address: '[::]'
+      port: 3553
+    upstream:
+      address: 127.0.0.1
+      port: 53
+    disableRemap53: false
+    disableFakePTR: false
+    disableDropAAAA: false
+    maxIdleConns: 10
+    maxConcurrent: 100
+    timeout: 5s
+  netfilter:
+    iptables:
+      chainPrefix: MT_
+    ipset:
+      tablePrefix: mt_
+      additionalTTL: 1h0m0s
+    disableIPv4: false
+    disableIPv6: false
+    startMarkTableIndex: 1298229097
+  link:
+  - br0
+  showAllInterfaces: false
+  logLevel: info
+groups:
+- id: 0a0b0c0d
+  name: NoEnable
+  color: '#ffffff'
+  interface: ""
+  enable: false
+  rules:
+  - id: "01020304"
+    name: ""
+    type: domain
+    rule: example.com
+    enable: false
+subscriptions:
+- id: 0f0e0d0c
+  name: ""
+  interface: ""
+  enable: false
+  url: https://example.com/x.txt
+  interval: 0
+  last_update: 0
+  rules: []

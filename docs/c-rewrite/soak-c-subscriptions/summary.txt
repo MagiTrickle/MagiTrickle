@@ -1,0 +1,9 @@
+duration_sec: 60
+daemon_alive_at_end_of_soak: yes
+daemon_terminated_cleanly_on_sigterm: yes
+final_rss_kb: 15464
+peak_rss_kb (VmHWM): 23324
+sighup_reloads_sent: 2
+sighup_reloads_logged: 2
+subscription_fetch_failures_logged (expected: loop/404/oversized/refused, every ~4s each): 9
+dns_load: {"proto":"udp","concurrency":10,"duration_sec":60,"ndomains":5000,"sent":1951493,"ok":1951493,"errors":0,"timeouts":0,"rps":32524.883333333335,"p50_ms":0.289,"p95_ms":0.494,"p99_ms":0.643,"max_ms":70.508}

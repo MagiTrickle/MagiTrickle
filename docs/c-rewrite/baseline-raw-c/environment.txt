@@ -1,0 +1,10 @@
+date_utc: 2026-07-23T17:36:56Z
+kernel: Linux 6.18.5
+arch: x86_64
+cc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cpu_model: Intel(R) Xeon(R) Processor @ 2.10GHz
+cpus: 4
+libc: ldd (Ubuntu GLIBC 2.39-0ubuntu8.7) 2.39
+git_commit: 4ce46dd44597a564dace841e80d2d2152fce3ebd
+binary_size_bytes: 266576
+note: full pipeline (transport+parse+hooks+rule matching+cache; group disabled so ipset writes are skipped, same as the Go baseline)

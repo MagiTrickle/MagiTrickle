@@ -1,0 +1,15 @@
+namespace|example.com|true
+namespace|sub.example.net|true
+wildcard|*.wild.example.org|true
+subnet|10.0.0.0/8|true
+subnet|192.168.1.1|true
+subnet6|fd00::/8|true
+subnet6|2001:db8::1|true
+regex|^regex\.example\.com$|true
+namespace|padded.example.com|true
+namespace|a.com|true
+namespace|b.com|true
+namespace|c.com|true
+namespace|300.1.2.3|true
+|weird**pattern|true
+regex|plain?mark|true

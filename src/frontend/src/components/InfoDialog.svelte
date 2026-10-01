@@ -73,10 +73,10 @@
           <Sponsorship size={22} />
         </div>
         <div class="text">
-           {t("Financial Contributions")}
-           <a target="_blank" rel="noopener noreferrer" href="https://boosty.to/magitrickle">
-             https://boosty.to/magitrickle
-           </a>
+          {t("Financial Contributions")}
+          <a target="_blank" rel="noopener noreferrer" href="https://boosty.to/magitrickle">
+            https://boosty.to/magitrickle
+          </a>
         </div>
       </div>
     </div>

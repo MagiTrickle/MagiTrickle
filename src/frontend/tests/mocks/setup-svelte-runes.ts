@@ -11,7 +11,8 @@ export function installSvelteRunesMocks() {
     }
   };
 
-  const derived = ((value: unknown) => (typeof value === "function" ? (value as any)() : value)) as any;
+  const derived = ((value: unknown) =>
+    typeof value === "function" ? (value as any)() : value) as any;
   derived.by = (fn: () => unknown) => fn();
 
   const effect = (() => {}) as any;

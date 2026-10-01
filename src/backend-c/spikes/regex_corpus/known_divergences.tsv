@@ -1,0 +1,6 @@
+-^[[:alpha:]]+\.example\.com$	abc.example.com	nomatch
++^[[:alpha:]]+\.example\.com$	abc.example.com	match
+-^a*+b$	aaab	compile_error
++^a*+b$	aaab	match
+-^(?<open>\()+(?<-open>\))+(?(open)(?!))$	(())	match
++^(?<open>\()+(?<-open>\))+(?(open)(?!))$	(())	compile_error

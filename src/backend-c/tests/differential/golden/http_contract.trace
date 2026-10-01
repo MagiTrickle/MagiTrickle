@@ -1,0 +1,189 @@
+STEP 1 GET /api/v1/auth
+STATUS 200
+BODY {"enabled":false}
+---
+STEP 2 GET /api/v1/groups
+STATUS 200
+BODY {"groups":[]}
+---
+STEP 3 POST /api/v1/groups
+REQBODY {"color":"#ABCDEF","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"name":"r1","rule":"example.com","type":"domain"}]}
+STATUS 200
+BODY {"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+---
+STEP 4 GET /api/v1/groups?with_rules=true
+STATUS 200
+BODY {"groups":[{"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}]}
+---
+STEP 5 GET /api/v1/groups/aabbccdd?with_rules=true
+STATUS 200
+BODY {"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+---
+STEP 6 GET /api/v1/groups/nothex!
+STATUS 400
+BODY {"error":"<ERR>"}
+---
+STEP 7 GET /api/v1/groups/deadbeef
+STATUS 404
+BODY {"error":"<ERR>"}
+---
+STEP 8 PUT /api/v1/groups/aabbccdd
+REQBODY {"color":"#222222","enable":false,"interface":"eth1","name":"g1-renamed"}
+STATUS 200
+BODY {"color":"#222222","enable":false,"id":"aabbccdd","interface":"eth1","name":"g1-renamed","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+---
+STEP 9 POST /api/v1/groups/aabbccdd/rules
+REQBODY {"enable":true,"name":"r2","rule":"*.example.org","type":"wildcard"}
+STATUS 200
+BODY {"enable":true,"id":"<RULE-R2>","name":"r2","rule":"*.example.org","type":"wildcard"}
+---
+STEP 10 GET /api/v1/groups/aabbccdd/rules
+STATUS 200
+BODY {"rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"},{"enable":true,"id":"<RULE-R2>","name":"r2","rule":"*.example.org","type":"wildcard"}]}
+---
+STEP 11 GET /api/v1/groups/aabbccdd/rules/<RULE-R2>
+STATUS 200
+BODY {"enable":true,"id":"<RULE-R2>","name":"r2","rule":"*.example.org","type":"wildcard"}
+---
+STEP 12 PUT /api/v1/groups/aabbccdd/rules/<RULE-R2>
+REQBODY {"enable":false,"name":"r2-renamed","rule":"*.example.net","type":"wildcard"}
+STATUS 200
+BODY {"enable":false,"id":"<RULE-R2>","name":"r2-renamed","rule":"*.example.net","type":"wildcard"}
+---
+STEP 13 DELETE /api/v1/groups/aabbccdd/rules/<RULE-R2>
+STATUS 200
+BODY <empty>
+---
+STEP 14 GET /api/v1/groups/aabbccdd/rules
+STATUS 200
+BODY {"rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+---
+STEP 15 GET /api/v1/groups/aabbccdd/rules/deadbeef
+STATUS 404
+BODY {"error":"<ERR>"}
+---
+STEP 16 DELETE /api/v1/groups/aabbccdd
+STATUS 200
+BODY <empty>
+---
+STEP 17 GET /api/v1/groups
+STATUS 200
+BODY {"groups":[]}
+---
+STEP 18 PUT /api/v1/groups
+REQBODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","rules":[{"enable":true,"name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2"}]}
+STATUS 200
+BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","rules":[{"enable":true,"id":"<RULE-BR1>","name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","rules":[]}]}
+---
+STEP 19 GET /api/v1/groups?with_rules=true
+STATUS 200
+BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","rules":[{"enable":true,"id":"<RULE-BR1>","name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","rules":[]}]}
+---
+STEP 20 PUT /api/v1/groups
+REQBODY {}
+STATUS 400
+BODY {"error":"<ERR>"}
+---
+STEP 21 GET /api/v1/system/interfaces
+STATUS 200
+BODY {"interfaces":[{"id":"blackhole"},{"id":"<HOST-INTERFACES>"}]}
+---
+STEP 22 POST /api/v1/system/hooks/netfilterd
+REQBODY {"table":"nat","type":"iptables"}
+STATUS 200
+BODY <empty>
+---
+STEP 23 POST /api/v1/system/config/save
+STATUS 200
+BODY <empty>
+---
+STEP 24 GET /api/v1/subscriptions
+STATUS 200
+BODY {"subscriptions":[]}
+---
+STEP 25 POST /api/v1/subscriptions
+REQBODY {"enable":false,"id":"40404040","interface":"eth0","name":"s1","url":"https://example.com/list.txt"}
+STATUS 200
+BODY {"status":"ok"}
+---
+STEP 26 POST /api/v1/subscriptions
+REQBODY {"enable":false,"id":"40404040","interface":"eth0","name":"s1","url":"https://example.com/list.txt"}
+STATUS 409
+BODY {"error":"<ERR>"}
+---
+STEP 27 POST /api/v1/subscriptions
+REQBODY {"name":"no-url"}
+STATUS 400
+BODY {"error":"<ERR>"}
+---
+STEP 28 GET /api/v1/subscriptions
+STATUS 200
+BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"eth0","interval":0,"lastUpdate":0,"name":"s1","rules":[],"url":"https://example.com/list.txt"}]}
+---
+STEP 29 PUT /api/v1/subscriptions
+REQBODY {"subscriptions":[{"enable":false,"id":"40404040","name":"s1-renamed","url":"https://example.com/list.txt"}]}
+STATUS 200
+BODY {"status":"ok"}
+---
+STEP 30 GET /api/v1/subscriptions
+STATUS 200
+BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"","interval":0,"lastUpdate":0,"name":"s1-renamed","rules":[],"url":"https://example.com/list.txt"}]}
+---
+STEP 31 PUT /api/v1/subscriptions
+REQBODY {}
+STATUS 400
+BODY {"error":"<ERR>"}
+---
+STEP 32 GET /api/v1/subscriptions/rules
+STATUS 400
+BODY {"error":"<ERR>"}
+---
+STEP 33 GET /api/v1/subscriptions/rules?url=http://127.0.0.1:18099/list.txt
+STATUS 200
+BODY {"rules":[{"enable":true,"id":"<PREVIEWRULE-0>","rule":"one.example","type":"namespace"},{"enable":true,"id":"<PREVIEWRULE-1>","rule":"two.example","type":"namespace"}]}
+---
+STEP 34 GET /api/v1/subscriptions/rules?url=http://127.0.0.1:1/nope
+STATUS 502
+BODY {"error":"<ERR>"}
+---
+STEP 35 POST /api/v1/subscriptions/deadbeef/sync
+STATUS 404
+BODY {"error":"<ERR>"}
+---
+STEP 36 POST /api/v1/subscriptions/40404040/sync
+REQBODY {"url":"http://127.0.0.1:18099/list.txt"}
+STATUS 200
+BODY {"lastUpdate":"<TS>","rules":[{"enable":true,"id":"<SUBRULE-0>","rule":"one.example","type":"namespace"},{"enable":true,"id":"<SUBRULE-1>","rule":"two.example","type":"namespace"}],"url":"http://127.0.0.1:18099/list.txt"}
+---
+STEP 37 GET /api/v1/subscriptions
+STATUS 200
+BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"","interval":0,"lastUpdate":"<TS>","name":"s1-renamed","rules":[{"enable":true,"id":"<SUBRULE-0>","rule":"one.example","type":"namespace"},{"enable":true,"id":"<SUBRULE-1>","rule":"two.example","type":"namespace"}],"url":"http://127.0.0.1:18099/list.txt"}]}
+---
+STEP 38 POST /api/v1/subscriptions/40404040/sync
+STATUS 200
+BODY {"lastUpdate":"<TS>","rules":[{"enable":true,"id":"<SUBRULE-0>","rule":"one.example","type":"namespace"},{"enable":true,"id":"<SUBRULE-1>","rule":"two.example","type":"namespace"}],"url":"http://127.0.0.1:18099/list.txt"}
+---
+STEP 39 DELETE /api/v1/subscriptions/40404040
+STATUS 200
+BODY {"status":"ok"}
+---
+STEP 40 DELETE /api/v1/subscriptions/40404040
+STATUS 404
+BODY {"error":"<ERR>"}
+---
+STEP 41 GET /api/v1/subscriptions
+STATUS 200
+BODY {"subscriptions":[]}
+---
+STEP 1 GET /api/v1/groups
+STATUS 200
+BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1"},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2"}]}
+---
+STEP 2 GET /api/v1/subscriptions
+STATUS 200
+BODY {"subscriptions":[]}
+---
+STEP 3 GET /api/v1/auth
+STATUS 200
+BODY {"enabled":false}
+---

@@ -1,0 +1,20 @@
+2026-07-23T15:41:30Z INF starting MagiTrickle daemon (C) version=0.7.0
+2026-07-23T15:41:30Z INF DNS proxy listening on 127.0.0.1:3557 (udp+tcp), upstream 127.0.0.1:5397
+2026-07-23T15:41:30Z INF Unix socket API listening on /var/run/magitrickle.sock
+2026-07-23T15:41:30Z INF HTTP WebUI listening on 127.0.0.1:18301
+2026-07-23T15:41:30Z INF service started
+2026-07-23T15:41:30Z ERR failed to fetch subscription 10000001: i/o error
+2026-07-23T15:41:30Z ERR failed to fetch subscription 10000002: i/o error
+2026-07-23T15:41:30Z ERR failed to fetch subscription 10000003: i/o error
+2026-07-23T15:41:30Z ERR failed to fetch subscription 10000004: i/o error
+2026-07-23T15:41:30Z ERR failed to fetch subscription 10000005: i/o error
+2026-07-23T15:41:51Z INF received signal: hangup (reloading config)
+2026-07-23T15:41:51Z INF config reloaded from /tmp/mt-c-subscription-fault-soak.yaml
+2026-07-23T15:42:11Z INF received signal: hangup (reloading config)
+2026-07-23T15:42:11Z INF config reloaded from /tmp/mt-c-subscription-fault-soak.yaml
+2026-07-23T15:42:30Z ERR failed to fetch subscription 10000002: invalid argument
+2026-07-23T15:42:30Z ERR failed to fetch subscription 10000003: protocol error
+2026-07-23T15:42:30Z ERR failed to fetch subscription 10000004: limit reached
+2026-07-23T15:42:30Z ERR failed to fetch subscription 10000005: i/o error
+2026-07-23T15:42:32Z INF received signal: Terminated
+2026-07-23T15:42:32Z INF service stopped

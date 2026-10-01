@@ -1,5 +1,5 @@
 <script lang="ts">
-  import LoaderCircle from "lucide-svelte/icons/loader-circle";
+  import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import { createEventDispatcher, tick } from "svelte";
   import { slide } from "svelte/transition";
 

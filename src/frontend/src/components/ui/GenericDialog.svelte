@@ -46,8 +46,7 @@
                 bind:value={textareaValue}
                 placeholder={textareaPlaceholder}
                 class:invalid={triedSubmit && !textareaValue.trim()}
-                on:input={(e) =>
-                  dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
+                on:input={(e) => dispatch("textareaInput", (e.target as HTMLTextAreaElement).value)}
               ></textarea>
             </slot>
           </div>

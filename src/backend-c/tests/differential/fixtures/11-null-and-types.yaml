@@ -1,0 +1,10 @@
+configVersion: 0.7.0
+app:
+  httpWeb: null
+  dnsProxy:
+    upstream:
+      address: ~
+      port: null
+  logLevel: 123
+groups: ~
+subscriptions: null

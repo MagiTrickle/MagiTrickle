@@ -1,0 +1,59 @@
+# Regex compatibility corpus: dlclark/regexp2 (Go, IgnoreCase) vs PCRE2 (C, CASELESS).
+# Format: PATTERN<TAB>INPUT ; lines starting with # are comments.
+# Sources: repo tests/examples/README + representative user-style patterns +
+# .NET-specific constructs to surface divergence.
+^[a-z]*example\.com$	example.com
+^[a-z]*example\.com$	anotherexample.com
+^[a-z]*example\.com$	sub.example.com
+^ex[apm]{3}le.com$	example.com
+^ex[apm]{3}le.com$	exapple.com
+^ex[apm]{3}le.com$	noexample.com
+example	example.com
+^example$	example.com
+^example$	example
+(?i)EXAMPLE	example.com
+\d+\.example	123.example
+^.*\.example\.com$	sub.example.com
+^.*\.example\.com$	example.com
+^.*.regex.example.com$	foo.regex.example.com
+^#[0-9a-f]{6}$	#AABBCC
+^#[0-9a-f]{6}$	#aabbcc
+^(www\.)?example\.(com|net|org)$	www.example.net
+^(www\.)?example\.(com|net|org)$	example.org
+^(?:[a-z0-9-]+\.)+example\.com$	a.b.example.com
+^(?:[a-z0-9-]+\.)+example\.com$	example.com
+# lookahead / lookbehind
+^(?!www\.).*\.example\.com$	cdn.example.com
+^(?!www\.).*\.example\.com$	www.example.com
+(?<=\.)example\.com$	sub.example.com
+(?<=\.)example\.com$	example.com
+# backreference
+^(\w+)\.\1\.example\.com$	foo.foo.example.com
+^(\w+)\.\1\.example\.com$	foo.bar.example.com
+# named groups, .NET syntax variants
+^(?<sub>[a-z]+)\.example\.com$	mail.example.com
+^(?'sub'[a-z]+)\.example\.com$	mail.example.com
+\k<sub>	anything
+# inline options / anchors
+(?m)^example$	example
+\Aexample\.com\z	example.com
+\Aexample\.com\Z	example.com
+# unicode / classes
+^\p{L}+\.example\.com$	мой.example.com
+^\w+\.example\.com$	tst.example.com
+^[[:alpha:]]+\.example\.com$	abc.example.com
+# quantifiers, possessive/atomic (regexp2 supports atomic groups)
+^(?>ab|a)b$	abb
+^a*+b$	aaab
+# conditionals (.NET) — expected PCRE2 syntax overlap check
+^(?(1)a|b)$	b
+# balancing groups (.NET only) — expected to fail on PCRE2
+^(?<open>\()+(?<-open>\))+(?(open)(?!))$	(())
+# escaped dot vs bare dot
+domain.example.com	domainXexample.com
+domain\.example\.com	domainXexample.com
+# empty-ish edge cases
+.*
+^$
+# char class ranges with dash
+^[a-z-]+\.example\.com$	a-b.example.com

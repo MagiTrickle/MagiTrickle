@@ -1,0 +1,67 @@
+domain	example.com	example.com	match
+domain	example.com	noexample.com	nomatch
+domain	example.com	sub.example.com	nomatch
+domain	example.com	example.com.ru	nomatch
+domain	example.com		nomatch
+domain	Example.com	example.com	nomatch
+namespace	example.com	example.com	match
+namespace	example.com	sub.example.com	match
+namespace	example.com	deep.sub.example.com	match
+namespace	example.com	noexample.com	nomatch
+namespace	example.com	example.com.ru	nomatch
+namespace	example.com	.example.com	match
+namespace	ru	ru	match
+namespace	ru	example.ru	match
+namespace	ru	ru.com	nomatch
+namespace	ru	r	nomatch
+namespace		domain.	match
+namespace		domain	nomatch
+wildcard	ex*le.com	example.com	match
+wildcard	ex*le.com	exle.com	match
+wildcard	ex*le.com	noexample.com	nomatch
+wildcard	*.example.com	sub.example.com	match
+wildcard	*.example.com	example.com	nomatch
+wildcard	*example*	example.com	match
+wildcard	*example*	myexamplesite.ru	match
+wildcard	test*.com	test123.com	match
+wildcard	test??.com	test12.com	match
+wildcard	test??.com	test123.com	nomatch
+wildcard	test.com	test12.com	nomatch
+wildcard	test.com	testXcom	match
+wildcard	a.b	aXb	match
+wildcard	a.b	ab	nomatch
+wildcard	*	anything.at.all	match
+wildcard	*		match
+wildcard			match
+wildcard		x	nomatch
+wildcard	?	x	match
+wildcard	?		match
+wildcard	??	x	match
+wildcard	a?	ab	match
+wildcard	a?c	abc	match
+wildcard	*a*b*c*	xaybzc	match
+wildcard	*a*b*c*	cba	nomatch
+wildcard	a*	a	match
+wildcard	*a	a	match
+wildcard	foo*bar?baz	fooXXbarYbaz	match
+wildcard	foo*bar?baz	foobarbaz	match
+regex	^ex[apm]{3}le.com$	example.com	match
+regex	^ex[apm]{3}le.com$	exapple.com	match
+regex	^ex[apm]{3}le.com$	noexample.com	nomatch
+regex	example	example.com	match
+regex	^example$	example.com	nomatch
+regex	(?i)EXAMPLE	example.com	match
+regex	\d+\.example	123.example	match
+regex	EXAMPLE	example.com	match
+regex	^.*\.example\.com$	sub.example.com	match
+regex	^.*\.example\.com$	example.com	nomatch
+regex	[invalid(regex	anything	nomatch
+regex	^(?!www\.).*\.example\.com$	cdn.example.com	match
+regex	^(?!www\.).*\.example\.com$	www.example.com	nomatch
+regex	^(\w+)\.\1\.example\.com$	foo.foo.example.com	match
+regex	^(\w+)\.\1\.example\.com$	foo.bar.example.com	nomatch
+regex	^(?<sub>[a-z]+)\.example\.com$	mail.example.com	match
+subnet	10.0.0.0/8	example.com	nomatch
+subnet	10.0.0.0/8	10.0.0.1	nomatch
+subnet6	fd00::/8	example.com	nomatch
+unknowntype	example.com	example.com	nomatch

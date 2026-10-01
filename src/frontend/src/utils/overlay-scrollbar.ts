@@ -232,7 +232,10 @@ export const initOverlayScrollbar = (options: OverlayScrollbarOptions = {}) => {
 
     state.scrollRatio = maxThumbTop > 0 && scrollable > 0 ? scrollable / maxThumbTop : 1;
 
-    state.scrollStart = Math.min(Math.max(state.scrollStart - offsetTop, 0), Math.max(scrollable, 0));
+    state.scrollStart = Math.min(
+      Math.max(state.scrollStart - offsetTop, 0),
+      Math.max(scrollable, 0),
+    );
 
     thumb.setPointerCapture(event.pointerId);
     setVisible(track, state);

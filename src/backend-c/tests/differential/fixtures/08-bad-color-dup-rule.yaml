@@ -1,0 +1,11 @@
+configVersion: 0.7.0
+groups:
+  - id: 0a0b0c0d
+    color: banana
+    rules:
+      - id: 01020304
+        type: domain
+        rule: a.example.com
+      - id: 01020304
+        type: domain
+        rule: b.example.com

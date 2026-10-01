@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { describe, it } from "jsr:@std/testing@1.0.19/bdd";
 
 import { installSvelteRunesMocks } from "../mocks/setup-svelte-runes";
 
@@ -449,7 +449,7 @@ describe("ChangeTracker", () => {
 
     it("should clean up dirty state of children when parent is updated", () => {
       const tracker = new ChangeTracker([
-        { id: "p1", name: "Parent", children: [{ id: "c1", name: "Child" }] }
+        { id: "p1", name: "Parent", children: [{ id: "c1", name: "Child" }] },
       ]);
       const proxy = tracker.data;
 
@@ -460,12 +460,16 @@ describe("ChangeTracker", () => {
       // Acknowledge parent update
       tracker.acknowledgeUpdate(proxy[0]);
 
-      assert.strictEqual(tracker.isDirty, false, "Tracker should be clean after acknowledging parent update");
+      assert.strictEqual(
+        tracker.isDirty,
+        false,
+        "Tracker should be clean after acknowledging parent update",
+      );
     });
 
     it("should clean up dirty state of children when parent is deleted", () => {
       const tracker = new ChangeTracker([
-        { id: "p1", name: "Parent", children: [{ id: "c1", name: "Child" }] }
+        { id: "p1", name: "Parent", children: [{ id: "c1", name: "Child" }] },
       ]);
       const proxy = tracker.data;
 
@@ -482,7 +486,11 @@ describe("ChangeTracker", () => {
         console.log("Dirty Arrays:", tracker["dirtyArrays"]);
       }
 
-      assert.strictEqual(tracker.isDirty, false, "Tracker should be clean after acknowledging parent delete");
+      assert.strictEqual(
+        tracker.isDirty,
+        false,
+        "Tracker should be clean after acknowledging parent delete",
+      );
     });
   });
 });

@@ -88,7 +88,9 @@ body.has-overlay-scrollbar::-webkit-scrollbar {
   border-radius: 0.5rem;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
+  transition:
+    opacity 0.2s ease-in-out,
+    background-color 0.2s ease-in-out;
 }
 
 .overlay-scrollbar.is-visible {
@@ -136,7 +138,9 @@ body.has-overlay-scrollbar::-webkit-scrollbar {
   border: 1px solid var(--bg-light-extra);
   background-clip: padding-box;
   cursor: grab;
-  transition: background-color 0.2s ease-in-out, opacity 0.2s ease-in-out;
+  transition:
+    background-color 0.2s ease-in-out,
+    opacity 0.2s ease-in-out;
   will-change: transform, height;
 }
 

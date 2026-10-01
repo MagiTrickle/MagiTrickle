@@ -1,0 +1,83 @@
+# DNS cache differential script — driven identically by cache_oracle_go
+# and mt-cachetool. Ported from records_test.go's scenarios. Only
+# structural presence is compared (never exact remaining TTL), since each
+# side runs in its own process with its own wall clock.
+
+# --- basic A record ---
+ADDR example.com 1.2.3.4 60
+GETADDRS example.com
+
+# --- CNAME resolution (single hop) ---
+ADDR target.example.com 5.6.7.8 60
+ALIAS gateway.example.com target.example.com 60
+GETADDRS gateway.example.com
+
+# --- multiple addresses on one domain ---
+ADDR multi.example.com 1.1.1.1 60
+ADDR multi.example.com 2.2.2.2 60
+ADDR multi.example.com 3.3.3.3 60
+GETADDRS multi.example.com
+
+# --- address dedup + deadline refresh (same IP, longer ttl) ---
+ADDR refresh.example.com 9.9.9.9 60
+ADDR refresh.example.com 9.9.9.9 3600
+GETADDRS refresh.example.com
+
+# --- alias repoint ---
+ADDR t1.example.com 10.0.0.1 60
+ADDR t2.example.com 10.0.0.2 60
+ALIAS alias.example.com t1.example.com 60
+GETADDRS alias.example.com
+ALIAS alias.example.com t2.example.com 60
+GETADDRS alias.example.com
+GETALIASES t1.example.com
+GETALIASES t2.example.com
+
+# --- fan-in aliases (BFS) ---
+ADDR root.example.com 11.0.0.1 60
+ALIAS child1.example.com root.example.com 60
+ALIAS child2.example.com root.example.com 60
+ALIAS grand1.example.com child1.example.com 60
+GETALIASES root.example.com
+
+# --- deep CNAME chain ---
+ADDR level5.example.com 12.0.0.5 60
+ALIAS level4.example.com level5.example.com 60
+ALIAS level3.example.com level4.example.com 60
+ALIAS level2.example.com level3.example.com 60
+ALIAS level1.example.com level2.example.com 60
+GETADDRS level1.example.com
+
+# --- mutual alias loop: no address resolves ---
+ALIAS loop1.example.com loop2.example.com 60
+ALIAS loop2.example.com loop1.example.com 60
+GETADDRS loop1.example.com
+GETADDRS loop2.example.com
+
+# --- self-alias ignored ---
+ADDR self.example.com 13.0.0.1 60
+ALIAS self.example.com self.example.com 60
+GETADDRS self.example.com
+
+# --- unknown domain lookups ---
+GETADDRS never-added.example.com
+GETALIASES never-added.example.com
+
+# --- known domains union ---
+KNOWNDOMAINS
+
+# --- expiry + cleanup ---
+ADDR expiring.example.com 14.0.0.1 1
+ADDR persistent.example.com 14.0.0.2 60
+ALIAS expiring-alias.example.com persistent.example.com 1
+ALIAS persistent-alias.example.com persistent.example.com 60
+SLEEP 1500
+GETADDRS expiring.example.com
+CLEANUP
+KNOWNDOMAINS
+
+# --- partial expiry within one domain ---
+ADDR partial.example.com 15.0.0.1 1
+ADDR partial.example.com 15.0.0.2 60
+SLEEP 1500
+GETADDRS partial.example.com

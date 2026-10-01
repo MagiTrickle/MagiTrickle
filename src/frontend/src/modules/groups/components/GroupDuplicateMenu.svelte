@@ -3,8 +3,9 @@
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import { t } from "../../../data/locale.svelte";
-  import { TriangleAlert } from "../../../components/ui/icons";
   import type { GroupDuplicateConflict } from "../groups.svelte";
+
+  import { TriangleAlert } from "../../../components/ui/icons";
 
   type Props = {
     conflicts: GroupDuplicateConflict[];

@@ -1,0 +1,4 @@
+build/
+spikes/*/out/
+tests/differential/out/
+tests/fuzz/corpus/

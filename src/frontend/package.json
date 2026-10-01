@@ -16,7 +16,7 @@
     "dev:backend": "deno -A ./dev/backend-mock.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:unit": "deno test --no-check --ignore=tests/e2e tests/"
+    "test:unit": "deno test --allow-scripts=npm:esbuild --no-check --unstable-sloppy-imports --ignore=tests/e2e tests/"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
@@ -26,7 +26,7 @@
     "@types/node": "^25.0.3",
     "bits-ui": "^2.15.4",
     "hono": "^4.7.1",
-    "lucide-svelte": "^0.562.0",
+    "@lucide/svelte": "1.25.0",
     "prettier": "^3.8.0",
     "prettier-plugin-svelte": "^3.3.3",
     "svelte": "^5.46.1",

@@ -1,0 +1,19 @@
+ADDRS example.com: 1.2.3.4
+ADDRS gateway.example.com: 5.6.7.8
+ADDRS multi.example.com: 1.1.1.1,2.2.2.2,3.3.3.3
+ADDRS refresh.example.com: 9.9.9.9
+ADDRS alias.example.com: 10.0.0.1
+ADDRS alias.example.com: 10.0.0.2
+ALIASES t1.example.com: t1.example.com
+ALIASES t2.example.com: alias.example.com,t2.example.com
+ALIASES root.example.com: child1.example.com,child2.example.com,grand1.example.com,root.example.com
+ADDRS level1.example.com: 12.0.0.5
+ADDRS loop1.example.com: NONE
+ADDRS loop2.example.com: NONE
+ADDRS self.example.com: 13.0.0.1
+ADDRS never-added.example.com: NONE
+ALIASES never-added.example.com: never-added.example.com
+KNOWN: alias.example.com,child1.example.com,child2.example.com,example.com,gateway.example.com,grand1.example.com,level1.example.com,level2.example.com,level3.example.com,level4.example.com,level5.example.com,loop1.example.com,loop2.example.com,multi.example.com,refresh.example.com,root.example.com,self.example.com,t1.example.com,t2.example.com,target.example.com
+ADDRS expiring.example.com: NONE
+KNOWN: alias.example.com,child1.example.com,child2.example.com,example.com,gateway.example.com,grand1.example.com,level1.example.com,level2.example.com,level3.example.com,level4.example.com,level5.example.com,loop1.example.com,loop2.example.com,multi.example.com,persistent-alias.example.com,persistent.example.com,refresh.example.com,root.example.com,self.example.com,t1.example.com,t2.example.com,target.example.com
+ADDRS partial.example.com: 15.0.0.2

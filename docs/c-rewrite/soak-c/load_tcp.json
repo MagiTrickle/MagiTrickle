@@ -1,0 +1,1 @@
+{"proto":"tcp","concurrency":10,"duration_sec":90,"ndomains":100000,"sent":153825,"ok":153825,"errors":0,"timeouts":0,"rps":1709.1666666666667,"p50_ms":5.882,"p95_ms":7.678,"p99_ms":8.712,"max_ms":56.552}
