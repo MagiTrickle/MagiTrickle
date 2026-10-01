@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Select } from "bits-ui";
+  import type { Snippet } from "svelte";
 
   import { Check, SelectOpen } from "./icons";
 
@@ -9,6 +10,9 @@
     selected?: string;
     onValueChange?: (v: string) => void;
     ariaLabel?: string;
+    trigger?: Snippet;
+    triggerClass?: string;
+    disabled?: boolean;
     [key: string]: any;
   };
 
@@ -17,6 +21,9 @@
     selected = $bindable<string>(),
     onValueChange,
     ariaLabel = "Select",
+    trigger,
+    triggerClass,
+    disabled = false,
     ...rest
   }: Props = $props();
 
@@ -30,22 +37,26 @@
 </script>
 
 <div class="select-wrap" class:missing={missing_selection} {...rest}>
-  <Select.Root type="single" {onValueChange} items={options} bind:value={selected}>
-    <Select.Trigger aria-label={ariaLabel}>
-      <div class="selected" class:has-descriptions={hasDescriptions}>
-        <div class="selected-text">
-          <div class="selected-value">{selected_label}</div>
-          {#if selected_description}
-            <div class="selected-description">{selected_description}</div>
-          {/if}
+  <Select.Root type="single" {onValueChange} {disabled} items={options} bind:value={selected}>
+    <Select.Trigger aria-label={ariaLabel} class={triggerClass}>
+      {#if trigger}
+        {@render trigger()}
+      {:else}
+        <div class="selected" class:has-descriptions={hasDescriptions}>
+          <div class="selected-text">
+            <div class="selected-value">{selected_label}</div>
+            {#if selected_description}
+              <div class="selected-description">{selected_description}</div>
+            {/if}
+          </div>
+          <div class="selected-open" aria-hidden="true">
+            <SelectOpen size={16} />
+          </div>
         </div>
-        <div class="selected-open" aria-hidden="true">
-          <SelectOpen size={16} />
-        </div>
-      </div>
+      {/if}
     </Select.Trigger>
 
-    <Select.Content align="start" sideOffset={4}>
+    <Select.Content align="start" sideOffset={4} aria-label={ariaLabel}>
       {#each options as option}
         <Select.Item value={option.value} label={option.label}>
           {#snippet children({ selected })}

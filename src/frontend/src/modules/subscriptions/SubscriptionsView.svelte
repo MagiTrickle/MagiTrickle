@@ -173,8 +173,15 @@
 {#if selectedItems.length}
   <BulkActions
     count={selectedItems.length}
+    totalCount={store.data.length}
+    currentInterface={selectedItems.every((item) => item.interface === selectedItems[0]?.interface)
+      ? selectedItems[0]?.interface
+      : undefined}
     onclear={() => (selectedIds = [])}
     onapply={(value) => applyToSelected({ interface: value })}
+    currentEnabled={selectedItems.every((item) => item.enable === selectedItems[0]?.enable)
+      ? selectedItems[0]?.enable
+      : undefined}
     onenable={(enable) => applyToSelected({ enable })}
     ondelete={deleteSelected}
     oncopy={() => copyRulePatternsToClipboard(selectedItems.flatMap((item) => item.rules))}

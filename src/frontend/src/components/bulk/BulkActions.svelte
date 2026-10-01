@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { DropdownMenu, Popover } from "bits-ui";
   import { backOut, cubicIn } from "svelte/easing";
   import { fly } from "svelte/transition";
 
@@ -21,6 +20,9 @@
 
   let {
     count,
+    totalCount,
+    currentInterface,
+    currentEnabled,
     onclear,
     onapply,
     ondelete,
@@ -29,6 +31,9 @@
     onselectall,
   }: {
     count: number;
+    totalCount: number;
+    currentInterface?: string;
+    currentEnabled?: boolean;
     onclear: () => void;
     onapply: (value: string) => void;
     ondelete: () => void | Promise<void>;
@@ -36,9 +41,7 @@
     onenable: (enabled: boolean) => void;
     onselectall: () => void;
   } = $props();
-  let selectedInterface = $state("");
   let busy = $state(false);
-  let interfaceOpen = $state(false);
 
   function panelMotion(node: HTMLElement, { entering }: { entering: boolean }) {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -85,72 +88,51 @@
   out:panelMotion|global={{ entering: false }}
 >
   <fieldset class="selection-controls" disabled={busy} aria-label={t("Selection")}>
-    <div class="selection-count" role="status"><strong>{count} {t("selected")}</strong></div>
+    <div class="selection-count" role="status">
+      <strong>
+        <span class="count-placeholder" aria-hidden="true"
+          >{"0".repeat(String(totalCount).length)} {t("selected")}</span
+        >
+        <span>{count} {t("selected")}</span>
+      </strong>
+    </div>
     <Button class="bulk-button" onclick={onselectall}><Check size={18} />{t("Select all")}</Button>
     <Button class="bulk-button" onclick={onclear}><X size={18} />{t("Clear selection")}</Button>
   </fieldset>
   <fieldset class="item-actions" disabled={busy} aria-label={t("Actions for selected items")}>
-    <Popover.Root bind:open={interfaceOpen}>
-      <Popover.Trigger class="bulk-button" disabled={busy}>
-        <Network size={18} />{t("Interface")}<SelectOpen size={16} />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          class="bulk-interface-popover"
-          role="dialog"
-          side="top"
-          align="start"
-          sideOffset={12}
-          collisionPadding={12}
-          aria-label={t("Change interface")}
-        >
-          <h3>{t("Change interface")}</h3>
-          <div class="interface-form">
-            <Select
-              ariaLabel={t("Choose interface")}
-              options={[
-                { value: "", label: t("Choose interface") },
-                ...interfaces.list.map((item) => ({
-                  value: item.id,
-                  label: item.id,
-                  description: item.name,
-                })),
-              ]}
-              bind:selected={selectedInterface}
-            />
-            <Button
-              class="apply"
-              disabled={!selectedInterface || busy}
-              onclick={() => {
-                onapply(selectedInterface);
-                interfaceOpen = false;
-              }}>{t("Apply")}</Button
-            >
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger class="bulk-button" disabled={busy}>
-        <ToggleRight size={18} />{t("State")}<SelectOpen size={16} />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          class="bulk-menu"
-          align="start"
-          side="top"
-          sideOffset={12}
-          collisionPadding={12}
-        >
-          <DropdownMenu.Item onSelect={() => onenable(true)}
-            ><ToggleRight size={18} />{t("Enable selected")}</DropdownMenu.Item
-          >
-          <DropdownMenu.Item onSelect={() => onenable(false)}
-            ><ToggleLeft size={18} />{t("Disable selected")}</DropdownMenu.Item
-          >
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+    <Select
+      ariaLabel={t("Interface")}
+      triggerClass="bulk-button"
+      selected={currentInterface ?? ""}
+      disabled={busy || !interfaces.list.length}
+      options={interfaces.list.map((item) => ({
+        value: item.id,
+        label: item.id,
+        description: item.name,
+      }))}
+      onValueChange={onapply}
+    >
+      {#snippet trigger()}
+        <Network size={18} />{currentInterface || t("Interface")}<SelectOpen size={16} />
+      {/snippet}
+    </Select>
+    <Select
+      ariaLabel={t("State")}
+      triggerClass="bulk-button"
+      selected={currentEnabled === undefined ? "" : String(currentEnabled)}
+      disabled={busy}
+      options={[
+        { value: "true", label: t("Enabled") },
+        { value: "false", label: t("Disabled") },
+      ]}
+      onValueChange={(value) => onenable(value === "true")}
+    >
+      {#snippet trigger()}
+        {#if currentEnabled === false}<ToggleLeft size={18} />{:else}<ToggleRight size={18} />{/if}
+        {currentEnabled === undefined ? t("State") : t(currentEnabled ? "Enabled" : "Disabled")}
+        <SelectOpen size={16} />
+      {/snippet}
+    </Select>
     {#if oncopy}
       <Button class="bulk-button" aria-label={t("Copy to Clipboard")} onclick={() => run(oncopy!)}
         ><Copy size={18} />{t("Copy")}</Button
@@ -186,7 +168,17 @@
   }
   .selection-count {
     white-space: nowrap;
-    padding: 0 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .selection-count strong {
+    display: grid;
+    font-variant-numeric: tabular-nums;
+  }
+  .selection-count strong > span {
+    grid-area: 1 / 1;
+  }
+  .count-placeholder {
+    visibility: hidden;
   }
   fieldset {
     display: flex;
@@ -212,13 +204,17 @@
     border: 1px solid var(--bg-light-extra);
     border-radius: 0.5rem;
     background: var(--bg-light);
-    color: var(--text-2);
+    color: var(--text);
     font: 400 1rem var(--font);
     white-space: nowrap;
     cursor: pointer;
+    transition:
+      background-color 0.1s ease-in-out,
+      color 0.1s ease-in-out,
+      border-color 0.1s ease-in-out;
   }
-  .bulk-actions :global(.bulk-button:hover),
-  .bulk-actions :global(.bulk-button[data-state="open"]) {
+  .bulk-actions :global(.bulk-button:hover:not(:disabled)),
+  .bulk-actions :global(.bulk-button[data-state="open"]:not(:disabled)) {
     background: var(--bg-light-extra);
     color: var(--text);
   }
@@ -226,66 +222,13 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  .bulk-actions :global(.delete:hover) {
+  .bulk-actions :global(.delete:hover:not(:disabled)) {
     color: var(--red);
     border-color: var(--red);
   }
-  .bulk-actions :global(button:disabled),
-  :global(.bulk-interface-popover button:disabled) {
+  .bulk-actions :global(button:disabled) {
     opacity: 0.4;
     cursor: default;
-  }
-  :global(.bulk-interface-popover),
-  :global(.bulk-menu) {
-    z-index: 10;
-    box-sizing: border-box;
-    max-width: calc(100vw - 1.5rem);
-    padding: 0.4rem;
-    border: 1px solid var(--bg-light-extra);
-    border-radius: 0.75rem;
-    background: var(--bg-dark-extra);
-    color: var(--text);
-    box-shadow: var(--shadow-popover);
-  }
-  :global(.bulk-interface-popover) {
-    padding: 1rem;
-  }
-  :global(.bulk-interface-popover h3) {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    font-weight: 600;
-  }
-  .interface-form {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-  .interface-form :global(.select-wrap) {
-    max-width: 100%;
-  }
-  .interface-form :global([data-select-trigger]) {
-    max-width: 100%;
-    height: 3.25rem;
-    box-sizing: border-box;
-    padding: 0.5rem 0.7rem;
-    background: var(--bg-light);
-  }
-  .interface-form :global(.apply) {
-    background: var(--accent);
-    color: var(--bg-dark-extra);
-  }
-  :global(.bulk-menu [data-dropdown-menu-item]) {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
-    border-radius: 0.4rem;
-  }
-  :global(.bulk-menu [data-dropdown-menu-item]:hover),
-  :global(.bulk-menu [data-dropdown-menu-item][data-highlighted]) {
-    background: var(--bg-light-extra);
-    color: var(--text);
   }
   @media (max-width: 1100px) {
     .bulk-actions {
