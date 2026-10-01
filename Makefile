@@ -27,7 +27,7 @@ ifeq ($(strip $(PKG_VERSION)),)
 	endif
 
 	ifeq ($(strip $(PKG_VERSION)),)
-		PKG_VERSION_PRERELEASE := $(if $(TAG),$(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//' | awk -F. 'BEGIN{OFS="."} {$$NF=$$NF+1; print}'),0.0.0)
+		PKG_VERSION_PRERELEASE := $(if $(TAG),$(shell echo "$(TAG)" | sed 's/-rev[0-9]*$$//' | awk -F. 'BEGIN{OFS="."} {if (NF >= 3) {$$3=$$3+1; NF=3} else {$$NF=$$NF+1}; print}'),0.0.0)
 		PRERELEASE_DATE := $(shell date -u +%Y%m%d%H%M%S)
 		COMMIT := $(shell git rev-parse --short HEAD)
 		PKG_VERSION := $(PKG_VERSION_PRERELEASE)~git$(PRERELEASE_DATE).$(COMMIT)
@@ -74,9 +74,8 @@ ifeq ($(PLATFORM),entware)
 	USRSHARE_DIR := $(ROOT_DIR)/opt/usr/share
 	STATE_DIR := $(ROOT_DIR)/opt/var/lib/magitrickle
 
-	GO_TAGS += entware
 	ifeq ($(filter %_kn,$(TARGET)),$(TARGET))
-		GO_TAGS += entware_kn
+		ENTWARE_KN := 1
 	endif
 endif
 
@@ -86,8 +85,6 @@ ifeq ($(PLATFORM),openwrt)
 	LIB_DIR := $(ROOT_DIR)/lib
 	USRSHARE_DIR := $(ROOT_DIR)/usr/share
 	STATE_DIR := $(ROOT_DIR)/etc/magitrickle/state
-
-	GO_TAGS += openwrt
 endif
 
 IPK_DIR := $(BUILD_DIR)/ipk
@@ -97,14 +94,31 @@ APK_DIR := $(BUILD_DIR)/apk
 
 # Build properties
 
-GO_FLAGS := \
-	$(if $(GOOS),GOOS="$(GOOS)") \
-	$(if $(GOARCH),GOARCH="$(GOARCH)") \
-	$(if $(GOMIPS),GOMIPS="$(GOMIPS)") \
-	$(if $(GOARM),GOARM="$(GOARM)") \
-	$(if $(GO386),GO386="$(GO386)") \
+# Cross-toolchain prefix (passed straight to src/backend-c/Makefile's
+# CROSS_COMPILE) and the sysroot providing the 5 feed deps (libyaml,
+# cJSON, PCRE2, libmnl, libcurl) built for that target/libc. Empty means
+# host-native gcc -- correct only when TARGET actually matches the build
+# host's own architecture (e.g. local dev, or a real per-target CI runner
+# image). See docs/c-rewrite/toolchains.md for the real Entware/OpenWrt
+# toolchain descriptors and decisions.md D-45 for which targets have
+# actually been built+verified this way (only a handful of glibc proxies
+# via Ubuntu's own cross packages, in a sandbox -- not real Entware/
+# OpenWrt toolchains, which were never reachable from this branch's
+# development environment; see D-37/D-38/D-40).
+CROSS_COMPILE ?=
+SYSROOT ?=
 
-GO_PARAMS = -v -trimpath -ldflags="-X 'magitrickle/constant.Version=$(PKG_VERSION)' -w -s" $(if $(GO_TAGS),-tags "$(GO_TAGS)")
+# Runtime library deps the C backend links that the old Go binary didn't
+# (libyaml, cJSON, PCRE2, libmnl, libcurl -- see
+# docs/c-rewrite/dependencies.md, confirmed available in both feeds during
+# the Phase 0 audit). Package NAMES below are this project's best-effort
+# reading of each feed's naming convention (lib-prefixed, unversioned,
+# matching the existing Depends entries below). Entware's cJSON package is
+# named `cJSON`; OpenWrt uses `libcjson`.
+# ipk Depends fields are comma-separated; apk's `-I "depends:..."` is
+# space-separated.
+DEPS_IPK := libatomic, libyaml, libpcre2, libmnl, libcurl
+DEPS_APK := libatomic libyaml libpcre2 libmnl libcurl libcjson
 
 ifeq ($(shell id -u),0)
 	ROOT_WRAP :=
@@ -114,10 +128,9 @@ endif
 
 # Incremental data
 
-BACKEND_DEPENDENCIES := ./src/backend/go.mod ./src/backend/go.sum
-BACKEND_SOURCES := $(shell find ./src/backend -type f -name '*.go' 2>/dev/null)
-BACKEND_SOURCES += $(BACKEND_DEPENDENCIES)
-BACKEND_BUILD_PROPERTIES := PLATFORM=\"$(PLATFORM)\" TARGET=\"$(TARGET)\" GOOS=\"$(GOOS)\" GOARCH=\"$(GOARCH)\" GOMIPS=\"$(GOMIPS)\" GOARM=\"$(GOARM)\" GO386=\"$(GO386)\" GO_TAGS=\"$(GO_TAGS)\" PKG_VERSION=\"$(PKG_VERSION)\"
+BACKEND_DEPENDENCIES :=
+BACKEND_SOURCES := $(shell find ./src/backend-c/src ./src/backend-c/include -type f \( -name '*.c' -o -name '*.h' \) 2>/dev/null)
+BACKEND_BUILD_PROPERTIES := PLATFORM=\"$(PLATFORM)\" TARGET=\"$(TARGET)\" PKG_VERSION=\"$(PKG_VERSION)\" CROSS_COMPILE=\"$(CROSS_COMPILE)\" SYSROOT=\"$(SYSROOT)\" ENTWARE_KN=\"$(ENTWARE_KN)\"
 
 FRONTEND_DEPENDENCIES := ./src/frontend/package.json ./src/frontend/package-lock.json
 FRONTEND_SOURCES := $(shell find ./src/frontend/src -type f 2>/dev/null)
@@ -143,6 +156,7 @@ _return_export_dynamic_env:
 	@bash -c 'printf "COMMITS_SINCE_TAG=%q\n" "$(COMMITS_SINCE_TAG)"'
 	@bash -c 'printf "PKG_REVISION=%q\n" "$(PKG_REVISION)"'
 	@bash -c 'printf "PKG_VERSION=%q\n" "$(PKG_VERSION)"'
+	@bash -c 'printf "PKG_VERSION_APK=%q\n" "$(PKG_VERSION_APK)"'
 	@bash -c 'printf "PKG_VERSION_DISPLAY=%q\n" "$(PKG_VERSION_DISPLAY)"'
 	@bash -c 'printf "PKG_VERSION_PRERELEASE=%q\n" "$(PKG_VERSION_PRERELEASE)"'
 	@bash -c 'printf "PRERELEASE_DATE=%q\n" "$(PRERELEASE_DATE)"'
@@ -166,8 +180,6 @@ build: build_backend build_frontend
 # Backend
 
 $(STAMPS_DIR)/download-backend: $(BACKEND_DEPENDENCIES)
-	cd ./src/backend && go mod tidy
-
 	@mkdir -p $(STAMPS_DIR)
 	@touch "$(STAMPS_DIR)/download-backend"
 
@@ -183,10 +195,12 @@ $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME): FORCE
 
 $(STAMPS_DIR)/build-backend-$(UNIQUE_NAME): $(STAMPS_DIR)/download-backend $(BACKEND_SOURCES) $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME)
 	mkdir -p "$(COMPILE_DIR)"
-	cd ./src/backend && $(GO_FLAGS) go build $(GO_PARAMS) -o "../../$(COMPILE_DIR)/magitrickled" ./cmd/magitrickled
-ifneq ($(filter $(GOARCH),riscv64 mips64 mips64le loong64),$(GOARCH))
-	upx -9 --lzma "$(COMPILE_DIR)/magitrickled"
-endif
+	$(MAKE) -C ./src/backend-c BUILD="$(UNIQUE_NAME)" MT_VERSION="$(PKG_VERSION)" \
+	    $(if $(PLATFORM),PLATFORM="$(PLATFORM)") \
+	    $(if $(CROSS_COMPILE),CROSS_COMPILE="$(CROSS_COMPILE)") \
+	    $(if $(SYSROOT),SYSROOT="$(SYSROOT)") \
+	    $(if $(ENTWARE_KN),ENTWARE_KN=1)
+	cp "./src/backend-c/build/$(UNIQUE_NAME)/magitrickled-c" "$(COMPILE_DIR)/magitrickled"
 
 	@mkdir -p $(STAMPS_DIR)
 	@touch "$(STAMPS_DIR)/build-backend-$(UNIQUE_NAME)"
@@ -280,14 +294,14 @@ package_ipk: prepare_files
 	echo 'Section: net' >> $(IPK_CONTROL_DIR)/control
 	echo 'Priority: optional' >> $(IPK_CONTROL_DIR)/control
 ifeq ($(PLATFORM),entware)
-	@DEPS="libc, iptables"; \
+	@DEPS="libc, iptables, $(DEPS_IPK), cJSON"; \
 	if echo "$(TARGET)" | grep -q '_kn$$'; then \
 		DEPS="$$DEPS, socat"; \
 	fi; \
 	echo "Depends: $$DEPS" >> $(IPK_CONTROL_DIR)/control
 endif
 ifeq ($(PLATFORM),openwrt)
-	echo "Depends: libc, iptables-nft, iptables-mod-conntrack-extra, kmod-ipt-nat, kmod-ipt-ipset, ip6tables-nft" >> $(IPK_CONTROL_DIR)/control
+	echo "Depends: libc, iptables-nft, iptables-mod-conntrack-extra, kmod-ipt-nat, kmod-ipt-ipset, ip6tables-nft, $(DEPS_IPK), libcjson" >> $(IPK_CONTROL_DIR)/control
 endif
 
 	tar -C "$(IPK_CONTROL_DIR)" -czvf "$(IPK_DIR)/control.tar.gz" --owner=0 --group=0 .
@@ -320,7 +334,7 @@ package_apk: prepare_files $(BUILD_KEY_APK_SEC)
 		-I "maintainer:$(PKG_MAINTAINER)" \
 		-I "url:$(PKG_URL)" \
 		-I "provider-priority:100" \
-		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft" \
+		-I "depends:libc iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft $(DEPS_APK)" \
 		-s "post-install:$(APK_DIR)/post-install.sh" \
 		-s "pre-deinstall:$(APK_DIR)/pre-deinstall.sh" \
 		-s "post-upgrade:$(APK_DIR)/post-upgrade.sh" \

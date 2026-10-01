@@ -1,4 +1,4 @@
-name: Build and Package OPKG
+name: Build OpenWrt and Entware packages
 
 on:
   push:
@@ -10,8 +10,124 @@ on:
       - '!.github/workflows/build.yml'
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to rebuild and populate
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # Which OpenWrt target/subtarget builds a given package architecture is
+  # not guessable -- D-51/D-53/D-54 guessed it 4 times wrong out of 32 --
+  # but every release states it: each subtarget publishes a profiles.json
+  # whose arch_packages field is exactly the package arch its SDK builds.
+  # This job inverts that into the arch -> target/subtarget table the
+  # build job's case statement needs, and writes it to the run summary.
+  # It is advisory: it never gates the matrix, so a layout change or a
+  # slow mirror costs a missing report, not a failed run. Mappings are
+  # still applied by hand, from data instead of from memory.
+  discover:
+    name: Discover OpenWrt arch mappings
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Resolve package arch for every published subtarget
+        env:
+          # "snapshot" is not a release: it builds far more targets than
+          # the release lines do, so it is the place to look for an arch
+          # no release publishes (D-60). Its packages suit self-built
+          # images rather than stock release firmware, since the tree
+          # moves and the SDK URL cannot be pinned.
+          OPENWRT_VERSIONS: 24.10.4 25.12.5 snapshot
+        run: |
+          set -eu
+
+          resolve_base() {
+            case "$1" in
+              snapshot) echo "https://downloads.openwrt.org/snapshots/targets" ;;
+              *) echo "https://downloads.openwrt.org/releases/$1/targets" ;;
+            esac
+          }
+
+          # Apache-style index: one <a href="name/"> per child directory.
+          list_dirs() {
+            curl --retry 3 --retry-delay 5 --connect-timeout 30 -sSL "$1/" |
+              sed -nE 's/.*href="([A-Za-z0-9._+-]+)\/".*/\1/p' |
+              grep -vx '\.\.' | sort -u
+          }
+
+          for version in $OPENWRT_VERSIONS; do
+            base=$(resolve_base "$version")
+            targets=$(list_dirs "$base" || true)
+            if [ -z "$targets" ]; then
+              echo "::warning::No target index for OpenWrt ${version} at ${base}/"
+              continue
+            fi
+            for target in $targets; do
+              for subtarget in $(list_dirs "$base/$target" || true); do
+                printf '%s %s %s %s\n' "$version" "$base" "$target" "$subtarget"
+              done
+            done
+          done > subtargets.txt
+          echo "Subtargets to probe: $(wc -l < subtargets.txt)"
+
+          fetch_arch() {
+            url="$2/$3/$4/profiles.json"
+            arch=$(
+              curl --retry 3 --retry-delay 5 --connect-timeout 30 -sSL "$url" |
+                grep -oE '"arch_packages"[[:space:]]*:[[:space:]]*"[^"]+"' |
+                head -n1 |
+                sed -E 's/.*"([^"]+)"$/\1/'
+            )
+            if [ -n "$arch" ]; then
+              printf '%s\t%s\t%s/%s\n' "$1" "$arch" "$3" "$4"
+            fi
+          }
+          export -f fetch_arch
+
+          # ~150 subtargets per release and more in snapshots, so probe
+          # them in parallel.
+          xargs -a subtargets.txt -P 8 -n 4 \
+            bash -c 'fetch_arch "$0" "$1" "$2" "$3"' > mappings.txt || true
+          sort -o mappings.txt mappings.txt
+          echo "Resolved mappings: $(wc -l < mappings.txt)"
+
+          {
+            echo "## OpenWrt package arch -> target/subtarget"
+            echo
+            echo "Authoritative, from each subtarget's own profiles.json."
+            echo
+            echo "| arch | release | target/subtarget |"
+            echo "|---|---|---|"
+            while IFS="$(printf '\t')" read -r version arch path; do
+              printf '| `%s` | %s | `%s` |\n' "$arch" "$version" "$path"
+            done < mappings.txt
+            echo
+            echo "### Architectures this repo has a config for"
+            echo
+            echo "| arch | 24.10.4 | 25.12.5 | snapshot |"
+            echo "|---|---|---|---|"
+            for cfg in config/openwrt/*.config; do
+              arch=$(basename "$cfg" .config)
+              old=$(awk -F'\t' -v a="$arch" '$1 ~ /^24\./ && $2 == a { printf "%s ", $3 }' mappings.txt)
+              new=$(awk -F'\t' -v a="$arch" '$1 ~ /^25\./ && $2 == a { printf "%s ", $3 }' mappings.txt)
+              snap=$(awk -F'\t' -v a="$arch" '$1 == "snapshot" && $2 == a { printf "%s ", $3 }' mappings.txt)
+              printf '| `%s` | %s | %s | %s |\n' "$arch" \
+                "${old:-**none**}" "${new:-**none**}" "${snap:-**none**}"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
   prepare:
     name: Prepare build matrix
     runs-on: ubuntu-latest
@@ -19,7 +135,7 @@ jobs:
       configs: ${{ steps.collect.outputs.configs }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build config matrix
         id: collect
@@ -28,125 +144,813 @@ jobs:
           import json
           from pathlib import Path
 
+          SNAPSHOT_ONLY_ARCHS = {"mips64_mips64r2", "mips64el_mips64r2"}
+
           configs = sorted(Path("config").glob("*/*.config"))
 
           if not configs:
               raise SystemExit("No build configs found")
 
-          matrix = [
-              {
+          matrix = []
+          for config in configs:
+              item = {
                   "config": config.as_posix(),
                   "name": config.stem,
+                  "label": config.stem,
+                  "openwrt_version": "",
+                  "package_ext": "ipk",
               }
-              for config in configs
-          ]
+              if config.parent.name == "openwrt":
+                  # No release line publishes a target for these, but
+                  # snapshots build malta, which does declare them
+                  # (D-60). Build them from there instead of twice
+                  # against release SDKs that 404.
+                  if config.stem in SNAPSHOT_ONLY_ARCHS:
+                      versions = (("snapshot", "apk"),)
+                  else:
+                      versions = (("24.10.4", "ipk"), ("25.12.5", "apk"))
+                  for version, package_ext in versions:
+                      matrix.append({
+                          **item,
+                          "label": f"{config.stem} / OpenWrt {version}",
+                          "openwrt_version": version,
+                          "package_ext": package_ext,
+                      })
+              else:
+                  matrix.append(item)
 
           print(f"configs={json.dumps(matrix, separators=(',', ':'))}")
           PY
 
   build:
-    name: Build packages (${{ matrix.name }})
+    name: Build packages (${{ matrix.label }})
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Feed repositories rate-limit/fail when every OpenWrt architecture
+      # clones them at once. Keep enough concurrency for useful throughput
+      # without creating a synchronized clone storm -- each job now clones
+      # only the two feeds it needs, so this can sit well above the six
+      # parallel jobs the full-feed setup had to be held to.
+      max-parallel: 12
       matrix:
         include: ${{ fromJson(needs.prepare.outputs.configs) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
+      - name: Check cross-toolchain availability
+        id: toolchain
+        env:
+          OPENWRT_VERSION: "${{ matrix.openwrt_version || '24.10.4' }}"
+        run: |
+          cp "${{ matrix.config }}" .config
+          . ./.config
+          case "$PLATFORM/$TARGET" in
+            entware/*_kn)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "entware_config=${TARGET%_kn}" >> "$GITHUB_OUTPUT"
+              ;;
+            # Plain (non-Keenetic) Entware targets reuse the exact same
+            # proven ownik/gh-action-entware-sdk mechanism as the _kn
+            # targets above (D-48) -- entware_config is just the arch
+            # name verbatim, no _kn suffix to strip. tools/ci/entware-
+            # package/Makefile is target-aware and skips ENTWARE_KN,
+            # the NDM hook, and the socat dep for these (D-51).
+            entware/aarch64-3.10 | entware/mips-3.4 | entware/mipsel-3.4 | entware/armv7-3.2)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "entware_config=$TARGET" >> "$GITHUB_OUTPUT"
+              ;;
+            # Package arch -> target/subtarget, taken from each
+            # subtarget's own profiles.json rather than guessed: the
+            # `discover` job above rebuilds this table from the release
+            # index on every run and prints it to the run summary. Re-read
+            # it before editing anything here. Guessing had produced 11
+            # wrong entries out of 28 (D-58), several of them not merely
+            # suboptimal but a different CPU family entirely.
+            #
+            # Two archs differ between the two releases and are mapped to
+            # the release that has them; the other release answers 404 on
+            # its SDK and the job skips with a warning:
+            #   mips_4kec        realtek/rtl838x  24.10 only
+            #   riscv64_generic  sifiveu/generic  25.12 only
+            openwrt/aarch64_cortex-a53)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm27xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=bcm2710" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/aarch64_cortex-a72)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm27xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=bcm2711" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/aarch64_cortex-a76)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm27xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=bcm2712" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/aarch64_generic)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=armsr" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=armv8" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_arm1176jzf-s_vfp)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm27xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=bcm2708" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_arm926ej-s)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=at91" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=sam9x" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a15_neon-vfpv4)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=ipq806x" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a5_vfpv4)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=at91" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=sama5" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a7)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=mediatek" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=mt7629" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a7_neon-vfpv4)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=sunxi" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=cortexa7" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a7_vfpv4)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=at91" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=sama7" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a8_vfpv3)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=sunxi" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=cortexa8" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a9)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm53xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a9_neon)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=imx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=cortexa9" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_cortex-a9_vfpv3-d16)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=mvebu" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=cortexa9" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_fa526)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=gemini" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/arm_xscale)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=kirkwood" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/i386_pentium-mmx)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=x86" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=geode" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/i386_pentium4)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=x86" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/loongarch64_generic)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=loongarch64" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mips64_octeonplus)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=octeon" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mips_24kc)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=ath79" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mips_4kec)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=realtek" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=rtl838x" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mips_mips32)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bmips" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=bcm6368" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mipsel_24kc)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=ramips" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=mt7621" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mipsel_24kc_24kf)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=pistachio" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mipsel_74kc)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm47xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=mips74k" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mipsel_mips32)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=bcm47xx" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            # 24.10 calls this arch riscv64_riscv64 and 25.12 renamed it
+            # to riscv64_generic, so both names map to the same target
+            # and each is skipped on the line that does not use its name.
+            # Without the older name, 24.10 riscv64 devices get no
+            # package at all -- the rename is not cosmetic (D-60).
+            openwrt/riscv64_generic | openwrt/riscv64_riscv64)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=sifiveu" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=generic" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/x86_64)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=x86" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=64" >> "$GITHUB_OUTPUT"
+              ;;
+            # Snapshot-only, per SNAPSHOT_ONLY_ARCHS in the matrix above:
+            # no release line publishes a target declaring these, but
+            # snapshots build malta, which does (D-60).
+            openwrt/mips64_mips64r2)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=malta" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=be64" >> "$GITHUB_OUTPUT"
+              ;;
+            openwrt/mips64el_mips64r2)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "openwrt_target=malta" >> "$GITHUB_OUTPUT"
+              echo "openwrt_subtarget=le64" >> "$GITHUB_OUTPUT"
+              ;;
+            # Every config in config/ is mapped above, so reaching this
+            # means a config was added without one. That is a mistake to
+            # report, not a package to silently drop (D-61).
+            *)
+              echo "No target/subtarget mapping for PLATFORM=$PLATFORM TARGET=$TARGET, so no package can be built for it. Add one to the case above -- the 'Discover OpenWrt arch mappings' job summary lists which target builds which package arch." >&2
+              exit 1
+              ;;
+          esac
+          echo "openwrt_version=$OPENWRT_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node.JS
-        uses: actions/setup-node@v4
+        if: steps.toolchain.outputs.ready == 'true'
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: '1.23'
-
-      - name: Install dependencies
+      - name: Prepare Entware package feed
+        id: entware_feed
+        if: steps.toolchain.outputs.entware_config != ''
         run: |
-          sudo apt-get update
-          sudo apt-get install -y fakeroot upx meson ninja-build pkg-config libssl-dev zlib1g-dev libzstd-dev
-
-      - name: Building apk-tools
-        run: |
-          git clone --depth 1 --branch v3.0.7 https://github.com/alpinelinux/apk-tools.git /tmp/apk-tools
-          cd /tmp/apk-tools
-          meson setup build -Dpython=disabled -Dtests=disabled -Ddocs=disabled
-          ninja -C build
-          sudo ninja -C build install
-          sudo ldconfig
-
-      - name: Build and package
-        env:
-          BUILD_KEY_APK_SEC_CONTENT: ${{ secrets.BUILD_KEY_APK_SEC }}
-        run: |
+          mkdir -p .build
           eval export $(make _return_export_dynamic_env);
           cp "${{ matrix.config }}" .config
-          if [ -n "$BUILD_KEY_APK_SEC_CONTENT" ]; then
-            KEY_FILE=$(mktemp)
-            printf '%s' "$BUILD_KEY_APK_SEC_CONTENT" > "$KEY_FILE"
-            export BUILD_KEY_APK_SEC="$KEY_FILE"
-          fi
-          make
+          make build_frontend
+          make _return_export_dynamic_env > .build/entware-package.env
 
-      - name: Collect package files
-        id: package_outputs
+          feed_dir="${RUNNER_TEMP}/magitrickle-feed-${{ matrix.name }}"
+          artifacts_dir="${RUNNER_TEMP}/magitrickle-artifacts-${{ matrix.name }}"
+          mkdir -p "$feed_dir/magitrickle" "$artifacts_dir"
+          cp tools/ci/entware-package/Makefile "$feed_dir/magitrickle/Makefile"
+          {
+            printf 'MAGITRICKLE_VERSION:=%s\n' "$PKG_VERSION"
+            printf 'MAGITRICKLE_RELEASE:=%s\n' "$PKG_REVISION"
+            printf 'MAGITRICKLE_TARGET:=%s\n' "${{ matrix.name }}"
+          } > "$feed_dir/magitrickle/version.mk"
+          tar -czf "$feed_dir/magitrickle/magitrickle-source.tar.gz" \
+            --transform "s,^,magitrickle-${PKG_VERSION}/," \
+            LICENSE files src/backend-c src/frontend/dist
+
+          echo "feed_dir=$feed_dir" >> "$GITHUB_OUTPUT"
+          echo "artifacts_dir=$artifacts_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Build with prebuilt Entware SDK
+        id: entware_sdk
+        if: steps.toolchain.outputs.entware_config != ''
+        continue-on-error: true
+        # v1, pinned to its verified commit rather than a mutable tag.
+        uses: ownik/gh-action-entware-sdk@003ddc33bb3b12a2f96e0c4689c56351614cf01a
+        env:
+          ARCH: ${{ steps.toolchain.outputs.entware_config }}
+          ARTIFACTS_DIR: ${{ steps.entware_feed.outputs.artifacts_dir }}
+          BUILD_LOG: 1
+          FEED_DIR: ${{ steps.entware_feed.outputs.feed_dir }}
+          PACKAGES: magitrickle
+          V: s
+
+      - name: Report Entware SDK build failure
+        if: steps.entware_sdk.outcome == 'failure'
         run: |
-          mapfile -t packages < <(
-            find .build -maxdepth 1 -type f \( -name "magitrickle_*.ipk" -o -name "magitrickle_*.apk" \) | sort
+          log_root="${{ steps.entware_feed.outputs.artifacts_dir }}/logs"
+          if [ -d "$log_root" ]; then
+            {
+              echo "Entware package build failed. Relevant log lines:"
+              while IFS= read -r -d '' log; do
+                matches=$(
+                  grep -E \
+                    'make\[[0-9]+\]: \*\*\*|(^|: )(fatal )?error:|undefined reference|No rule to make target|collect2: error|ld returned [0-9]+ exit status' \
+                    "$log" || true
+                )
+                if [ -n "$matches" ]; then
+                  echo "==> $log <=="
+                  printf '%s\n' "$matches" | tail -n 80
+                  echo "Last 20 lines:"
+                  tail -n 20 "$log"
+                fi
+              done < <(find "$log_root" -type f -print0 | sort -z)
+            } | tee "${RUNNER_TEMP}/entware-sdk-failure.txt"
+          else
+            echo "Entware package build failed and produced no BUILD_LOG files." |
+              tee "${RUNNER_TEMP}/entware-sdk-failure.txt"
+          fi
+
+          message=$(
+            tail -n 200 "${RUNNER_TEMP}/entware-sdk-failure.txt" |
+              sed -e 's/%/%25/g' -e 's/\r/%0D/g' |
+              awk 'BEGIN { ORS="%0A" } { print }'
+          )
+          echo "::error title=Entware SDK ${{ matrix.name }}::$message"
+          exit 1
+
+      - name: Prepare OpenWrt SDK + package
+        id: openwrt_sdk
+        if: steps.toolchain.outputs.openwrt_target != ''
+        continue-on-error: true
+        run: |
+          set -eu
+          mkdir -p .build
+          eval export $(make _return_export_dynamic_env);
+          cp "${{ matrix.config }}" .config
+          make build_frontend
+          make _return_export_dynamic_env > .build/openwrt-package.env
+          . .build/openwrt-package.env
+
+          version="${{ steps.toolchain.outputs.openwrt_version }}"
+          target="${{ steps.toolchain.outputs.openwrt_target }}"
+          subtarget="${{ steps.toolchain.outputs.openwrt_subtarget }}"
+          # Snapshots are not a release: they live outside releases/ and
+          # carry no version in the path. The tree moves, so the SDK URL
+          # cannot be pinned -- acceptable for the archs only built there,
+          # whose users are running self-built images anyway (D-60).
+          # The only architectures a release line legitimately lacks, with
+          # the reason it lacks them. Every other way of not producing a
+          # package -- a 404, an arch mismatch, an arch that cannot be
+          # determined -- is a defect, and failing loudly is the point:
+          # a silent skip is a package quietly missing from a release
+          # while the run stays green (D-61).
+          expected_absent=false
+          case "${{ matrix.name }}/${version}" in
+            # rtl838x declared mips_4kec in 24.10 and builds mips_24kc in
+            # 25.12; the arch is retired and its devices are served by the
+            # mips_24kc package.
+            mips_4kec/25.12.5) expected_absent=true ;;
+            # The same arch is riscv64_riscv64 in 24.10 and riscv64_generic
+            # in 25.12, so each name is absent from the other line.
+            riscv64_generic/24.10.4 | riscv64_riscv64/25.12.5) expected_absent=true ;;
+          esac
+
+          if [ "$version" = snapshot ]; then
+            base_url="https://downloads.openwrt.org/snapshots/targets/${target}/${subtarget}"
+          else
+            base_url="https://downloads.openwrt.org/releases/${version}/targets/${target}/${subtarget}"
+          fi
+
+          sdk_root="${RUNNER_TEMP}/openwrt-sdk-${{ matrix.name }}"
+          mkdir -p "$sdk_root"
+          log_dir="${RUNNER_TEMP}/openwrt-logs-${{ matrix.name }}"
+          mkdir -p "$log_dir"
+          echo "log_dir=$log_dir" >> "$GITHUB_OUTPUT"
+
+          # A release only publishes the targets it still supports, so a
+          # 404 here means "this OpenWrt version has no SDK for the
+          # target/subtarget this package arch maps to", not a broken
+          # build. Report it and skip, the same way an unmapped arch is
+          # skipped above. Anything else (5xx, DNS, timeouts) is a real
+          # failure -- --retry covers the transient ones, and a 404 is
+          # deliberately not retried.
+          http_code=$(
+            curl --retry 5 --retry-delay 5 --connect-timeout 30 -sSL \
+              -o "$sdk_root/sha256sums" -w '%{http_code}' \
+              "${base_url}/sha256sums" 2>>"$log_dir/download.log" || echo 000
+          )
+          echo "GET ${base_url}/sha256sums -> $http_code" >> "$log_dir/download.log"
+          if [ "$http_code" = 404 ]; then
+            if [ "$expected_absent" != true ]; then
+              echo "OpenWrt ${version} publishes no SDK for ${target}/${subtarget} (HTTP 404), so no package would be built for ${{ matrix.name }}. This arch is not one of the known per-release absences, so the mapping is wrong or the target was renamed -- see the 'Discover OpenWrt arch mappings' job summary." >&2
+              exit 1
+            fi
+            echo "::notice title=${{ matrix.name }}::OpenWrt ${version} publishes no SDK for ${target}/${subtarget}. This arch is a known absence on this release line, so no package is built for it here."
+            echo "sdk_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$http_code" != 200 ]; then
+            echo "Failed to fetch ${base_url}/sha256sums (HTTP $http_code)" >&2
+            exit 1
+          fi
+
+          (
+            cd "$sdk_root"
+            sdk_file=$(grep -oE 'openwrt-sdk-[^ ]+\.tar\.(zst|xz)' sha256sums | head -n1)
+            if [ -z "$sdk_file" ]; then
+              echo "Could not find an SDK archive name in ${base_url}/sha256sums" | tee -a "$log_dir/download.log" >&2
+              exit 1
+            fi
+            echo "SDK archive: $sdk_file" | tee -a "$log_dir/download.log"
+            curl --retry 5 --retry-all-errors --retry-delay 5 \
+              --connect-timeout 30 -fsSL -o "$sdk_file" \
+              "${base_url}/${sdk_file}" 2>&1 | tee -a "$log_dir/download.log"
+            grep -- "$sdk_file\$" sha256sums | sha256sum -c - 2>&1 | tee -a "$log_dir/download.log"
+
+            case "$sdk_file" in
+              *.tar.zst) tar --use-compress-program=unzstd -xf "$sdk_file" ;;
+              *.tar.xz) tar -xJf "$sdk_file" ;;
+              *) echo "Unrecognized SDK archive extension: $sdk_file" >&2; exit 1 ;;
+            esac
+          )
+          echo "sdk_root=$sdk_root" >> "$GITHUB_OUTPUT"
+
+          sdk_dir=$(find "$sdk_root" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*')
+          if [ -z "$sdk_dir" ]; then
+            echo "Extracted SDK directory not found under $sdk_root" >&2
+            exit 1
+          fi
+          echo "sdk_dir=$sdk_dir" >> "$GITHUB_OUTPUT"
+
+          # Every arch is reached through a hand-written target/subtarget
+          # guess, and a wrong guess that happens to hit a real SDK
+          # builds a perfectly good package for the wrong architecture.
+          # The SDK states which package arch it produces, so compare
+          # that against the arch this config is named for, right after
+          # extraction rather than ten minutes into the build. This
+          # covers every arch, unlike the per-arch readelf checks later,
+          # which only know about aarch64/mips/mipsel/x86_64.
+          #
+          # Treated as "no SDK for this arch" rather than a hard failure,
+          # for the same reason as the 404 above: not shipping a package
+          # is the correct outcome, and it is the mapping that needs
+          # fixing, not the build.
+          # Read from .config when it carries the symbol, and otherwise
+          # from staging_dir/target-<arch>_<libc>, which every SDK has.
+          # Relying on .config alone made this check a no-op: it found
+          # nothing, the empty value was treated as "unverified", and two
+          # mislabeled packages shipped (D-59). An arch that cannot be
+          # determined at all is now said out loud rather than passed.
+          sdk_arch=$(
+            sed -nE 's/^CONFIG_TARGET_ARCH_PACKAGES="(.*)"$/\1/p' "$sdk_dir/.config" 2>/dev/null |
+              head -n1
+          )
+          sdk_arch_source=".config"
+          if [ -z "$sdk_arch" ]; then
+            sdk_arch=$(
+              find "$sdk_dir/staging_dir" -mindepth 1 -maxdepth 1 -type d -name 'target-*' \
+                -printf '%f\n' 2>/dev/null |
+                head -n1 |
+                sed -E 's/^target-(.*)_(musl|glibc|uclibc)([_-].*)?$/\1/' |
+                tr '+' '_'
+            )
+            sdk_arch_source="staging_dir"
+          fi
+          if [ -z "$sdk_arch" ]; then
+            echo "Could not determine which package arch SDK ${target}/${subtarget} builds -- neither .config nor staging_dir/target-* yielded one. Shipping an unverified package is exactly the failure D-59 was about, so this stops here." >&2
+            exit 1
+          else
+            echo "SDK ${target}/${subtarget} builds package arch '$sdk_arch' (from $sdk_arch_source)"
+          fi
+          # staging_dir carries the MIPS64 ABI in the path but the package
+          # arch does not -- octeon's is target-mips64_octeonplus_64_musl
+          # against a package arch of mips64_octeonplus -- so accept one
+          # trailing ABI token from that source. Dropping a bare "64"
+          # token instead would eat the one in x86_64.
+          arch_matches=false
+          case "$sdk_arch" in
+            "${{ matrix.name }}") arch_matches=true ;;
+            "${{ matrix.name }}_64" | "${{ matrix.name }}_32" | "${{ matrix.name }}_n32")
+              [ "$sdk_arch_source" = staging_dir ] && arch_matches=true ;;
+          esac
+          if [ "$arch_matches" != true ]; then
+            if [ "$expected_absent" != true ]; then
+              echo "SDK ${target}/${subtarget} builds package arch '$sdk_arch', not '${{ matrix.name }}'. This arch is not one of the known per-release absences, so the mapping is wrong -- see the 'Discover OpenWrt arch mappings' job summary for what builds what." >&2
+              exit 1
+            fi
+            echo "::notice title=${{ matrix.name }}::SDK ${target}/${subtarget} builds '$sdk_arch' on OpenWrt ${version}, which is the known absence of '${{ matrix.name }}' on this release line, so no package is built for it here."
+            echo "sdk_available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          pkg_dir="$sdk_dir/package/net/magitrickle"
+          mkdir -p "$pkg_dir"
+          cp tools/ci/openwrt-package/Makefile "$pkg_dir/Makefile"
+          magitrickle_version="$PKG_VERSION"
+          if [ "${{ matrix.package_ext }}" = apk ]; then
+            magitrickle_version="$PKG_VERSION_APK"
+          fi
+          magitrickle_release="$PKG_REVISION"
+          {
+            printf 'MAGITRICKLE_VERSION:=%s\n' "$magitrickle_version"
+            printf 'MAGITRICKLE_RELEASE:=%s\n' "$magitrickle_release"
+          } > "$pkg_dir/version.mk"
+          tar -czf "$pkg_dir/magitrickle-source.tar.gz" \
+            --transform "s,^,magitrickle-${magitrickle_version}/," \
+            LICENSE files src/backend-c src/frontend/dist
+
+          # cJSON isn't in any OpenWrt feed for this release (confirmed via
+          # CI: "WARNING: No feed for package 'libcjson' found" -- see
+          # decisions.md D-50), so it's vendored as its own in-tree SDK
+          # package, discovered by the package scanner the same way
+          # `magitrickle` itself is, with no `feeds install` step needed.
+          cjson_pkg_dir="$sdk_dir/package/libs/libcjson"
+          mkdir -p "$cjson_pkg_dir"
+          cp tools/ci/openwrt-package-libcjson/Makefile "$cjson_pkg_dir/Makefile"
+
+          # Project version variables use generic PKG_* names. Do not leak
+          # them into the SDK: OpenWrt make otherwise applies them to system
+          # packages too, producing invalid apk versions.
+          unset COMMIT COMMITS_SINCE_TAG PKG_REVISION PKG_VERSION PKG_VERSION_APK \
+            PKG_VERSION_DISPLAY PKG_VERSION_PRERELEASE PRERELEASE_DATE TAG
+
+          (
+            cd "$sdk_dir"
+            # Every dependency resolves out of `base` or `packages` (see
+            # feeds-install.log), so cloning luci/routing/telephony/video
+            # on top of those is pure cost. `base` is also declared
+            # src-git-full, i.e. the entire openwrt.git history, where a
+            # shallow clone builds the same packages. Together this is
+            # what lets the matrix run more jobs in parallel without the
+            # feed servers throttling. Fall back to the SDK's own list if
+            # the layout ever stops matching.
+            awk '
+              $1 ~ /^src-git(-full)?$/ && ($2 == "base" || $2 == "packages") {
+                # url;ref names a branch or tag, which clones shallow
+                # fine; url^sha needs a fetch by commit the server may
+                # refuse on a shallow clone, so leave those alone.
+                if ($3 !~ /\^/) { $1 = "src-git" }
+                print
+              }
+            ' feeds.conf.default > feeds.conf
+            if [ "$(wc -l < feeds.conf)" -ne 2 ]; then
+              echo "unexpected feeds.conf.default layout; using it unchanged" >&2
+              rm -f feeds.conf
+            fi
+
+            : > "$log_dir/feeds-update.log"
+            feeds_updated=false
+            for attempt in 1 2 3 4; do
+              echo "feeds update attempt $attempt/4" >> "$log_dir/feeds-update.log"
+              if ./scripts/feeds update -a >> "$log_dir/feeds-update.log" 2>&1; then
+                feeds_updated=true
+                break
+              fi
+              if [ "$attempt" -lt 4 ]; then
+                sleep $((attempt * 10))
+              fi
+            done
+            if [ "$feeds_updated" != true ]; then
+              echo "feeds update failed after 4 attempts" >> "$log_dir/feeds-update.log"
+              exit 1
+            fi
+            ./scripts/feeds install libyaml pcre2 libmnl libcurl \
+              iptables-nft iptables-mod-conntrack-extra kmod-ipt-nat kmod-ipt-ipset ip6tables-nft libatomic \
+              > "$log_dir/feeds-install.log" 2>&1
+
+            make defconfig > "$log_dir/defconfig.log" 2>&1
+            # `feeds install` only exposes recipes; it does not stage their
+            # headers or libraries. Build compile-time dependencies first.
+            # cJSON installs a private static archive into staging. PCRE2,
+            # yaml, libmnl and curl remain normal runtime libraries.
+            make package/yaml/{clean,compile} \
+                 package/pcre2/{clean,compile} \
+                 package/libmnl/{clean,compile} \
+                 package/curl/{clean,compile} \
+                 package/libcjson/{clean,compile} \
+                 V=s > "$log_dir/deps-build.log" 2>&1
+            make package/magitrickle/{clean,compile} V=s > "$log_dir/build.log" 2>&1
           )
 
-          if [ "${#packages[@]}" -eq 0 ]; then
-            echo "No package files found" >&2
-            exit 1
-          fi
+      - name: Report OpenWrt SDK build failure
+        if: steps.openwrt_sdk.outcome == 'failure'
+        run: |
+          log_dir="${{ steps.openwrt_sdk.outputs.log_dir }}"
+          {
+            echo "OpenWrt SDK package build failed. Relevant log lines:"
+            if [ -n "$log_dir" ] && [ -d "$log_dir" ]; then
+              while IFS= read -r -d '' log; do
+                matches=$(
+                  grep -E \
+                    'make\[[0-9]+\]: \*\*\*|(^|: )(fatal )?error:|undefined reference|No rule to make target|collect2: error|ld returned [0-9]+ exit status|curl:|sha256sum:.*FAILED|WARNING:|[Nn]o feed for package|[Nn]ot found' \
+                    "$log" || true
+                )
+                if [ -n "$matches" ]; then
+                  echo "==> $log <=="
+                  printf '%s\n' "$matches" | tail -n 80
+                  echo "Last 20 lines:"
+                  tail -n 20 "$log"
+                fi
+              done < <(find "$log_dir" -type f -print0 | sort -z)
+            else
+              echo "No log directory captured (failure before SDK extraction)."
+            fi
+            # feeds-install.log rarely matches the error patterns above (a
+            # missing/misnamed package prints a WARNING, not an error) but is
+            # exactly what explains a later "No rule to make target
+            # package/<name>/..." failure, so always show its tail regardless
+            # of match.
+            feeds_install_log="$log_dir/feeds-install.log"
+            if [ -f "$feeds_install_log" ]; then
+              echo "==> $feeds_install_log (full) <=="
+              cat "$feeds_install_log"
+            fi
+          } | tee "${RUNNER_TEMP}/openwrt-sdk-failure.txt"
 
-          if [ "${#packages[@]}" -gt 2 ]; then
-            echo "Expected at most 2 package files, found ${#packages[@]}" >&2
-            exit 1
-          fi
+          message=$(
+            tail -n 400 "${RUNNER_TEMP}/openwrt-sdk-failure.txt" |
+              sed -e 's/%/%25/g' -e 's/\r/%0D/g' |
+              awk 'BEGIN { ORS="%0A" } { print }'
+          )
+          echo "::error title=OpenWrt SDK ${{ matrix.name }}::$message"
+          exit 1
 
-          for i in "${!packages[@]}"; do
-            index=$((i + 1))
-            file="${packages[$i]}"
-            echo "package_${index}_path=${file}" >> "$GITHUB_OUTPUT"
-            echo "package_${index}_name=$(basename "${file}")" >> "$GITHUB_OUTPUT"
-          done
+      - name: Collect and verify package
+        id: package_outputs
+        if: steps.toolchain.outputs.ready == 'true' && steps.openwrt_sdk.outputs.sdk_available != 'false'
+        run: |
+          set -eu
+          if [ -n "${{ steps.toolchain.outputs.entware_config }}" ]; then
+            mapfile -t packages < <(
+              find "${{ steps.entware_feed.outputs.artifacts_dir }}" \
+                -type f -name 'magitrickle_*.ipk' | sort
+            )
+            if [ "${#packages[@]}" -ne 1 ]; then
+              echo "Expected exactly one magitrickle IPK, found ${#packages[@]}" >&2
+              printf '%s\n' "${packages[@]}" >&2
+              exit 1
+            fi
+
+            . .build/entware-package.env
+            package=".build/magitrickle_${PKG_VERSION}-${PKG_REVISION}_entware_${{ matrix.name }}.ipk"
+            cp "${packages[0]}" "$package"
+
+            data_archive=$(mktemp)
+            binary=$(mktemp)
+            if ar t "$package" >/dev/null 2>&1; then
+              ar p "$package" data.tar.gz > "$data_archive"
+            else
+              data_member=$(
+                tar -tf "$package" |
+                  awk '$0 == "data.tar.gz" || $0 == "./data.tar.gz" { print; exit }'
+              )
+              if [ -z "$data_member" ]; then
+                echo "No data.tar.gz member in $package" >&2
+                exit 1
+              fi
+              tar -xOf "$package" "$data_member" > "$data_archive"
+            fi
+            binary_member=$(
+              tar -tzf "$data_archive" |
+                awk '$0 == "opt/bin/magitrickled" || $0 == "./opt/bin/magitrickled" { print; exit }'
+            )
+            if [ -z "$binary_member" ]; then
+              echo "No /opt/bin/magitrickled in $package" >&2
+              exit 1
+            fi
+            tar -xzOf "$data_archive" "$binary_member" > "$binary"
+
+            readelf -h "$binary"
+            readelf -l "$binary"
+            case "${{ matrix.name }}" in
+              aarch64-*)
+                readelf -h "$binary" | grep -Eq 'Machine:.*AArch64'
+                readelf -h "$binary" | grep -Eq 'Data:.*little endian'
+                readelf -l "$binary" | grep -F '/opt/lib/ld-linux-aarch64.so.1'
+                ;;
+              mips-*)
+                readelf -h "$binary" | grep -Eq 'Machine:.*MIPS'
+                readelf -h "$binary" | grep -Eq 'Data:.*big endian'
+                readelf -l "$binary" | grep -F '/opt/lib/ld.so.1'
+                ;;
+              mipsel-*)
+                readelf -h "$binary" | grep -Eq 'Machine:.*MIPS'
+                readelf -h "$binary" | grep -Eq 'Data:.*little endian'
+                readelf -l "$binary" | grep -F '/opt/lib/ld.so.1'
+                ;;
+            esac
+
+            echo "package_1_path=$package" >> "$GITHUB_OUTPUT"
+            echo "package_1_name=$(basename "$package")" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ steps.toolchain.outputs.openwrt_target }}" ]; then
+            sdk_dir="${{ steps.openwrt_sdk.outputs.sdk_dir }}"
+            package_ext="${{ matrix.package_ext }}"
+            case "$package_ext" in
+              ipk) package_glob='magitrickle_*.ipk' ;;
+              apk) package_glob='magitrickle-*.apk' ;;
+              *) echo "Unsupported package extension: $package_ext" >&2; exit 1 ;;
+            esac
+            mapfile -t packages < <(
+              find "$sdk_dir/bin/packages" -type f -name "$package_glob" 2>/dev/null | sort
+            )
+            if [ "${#packages[@]}" -ne 1 ]; then
+              echo "Expected exactly one magitrickle .$package_ext under $sdk_dir/bin/packages, found ${#packages[@]}" >&2
+              printf '%s\n' "${packages[@]}" >&2
+              exit 1
+            fi
+
+            . .build/openwrt-package.env
+            artifact_version="$PKG_VERSION"
+            if [ "$package_ext" = apk ]; then
+              artifact_version="$PKG_VERSION_APK"
+            fi
+            package=".build/magitrickle_${artifact_version}-${PKG_REVISION}_openwrt-${{ matrix.openwrt_version }}_${{ matrix.name }}.${package_ext}"
+            cp "${packages[0]}" "$package"
+
+            if [ "$package_ext" = ipk ]; then
+              sh tools/ci/check-openwrt-ipk-scripts.sh "$package"
+            fi
+
+            # Release SDKs ship with CONFIG_AUTOREMOVE enabled, which wipes
+            # a package's build directory the moment it finishes compiling
+            # -- everything except .pkgdir, the staged install tree the
+            # package is packed from. Read the binary from there (it is the
+            # exact file that ends up in the package), and fall back to the
+            # raw build output for SDKs that keep their build directories.
+            binary=$(find "$sdk_dir/build_dir" -type f \( \
+              -path '*/magitrickle-*/.pkgdir/magitrickle/usr/bin/magitrickled' -o \
+              -path '*/magitrickle-*/src/backend-c/build/openwrt-*/magitrickled-c' \
+              \) -print -quit)
+            if [ -z "$binary" ] || [ ! -x "$binary" ]; then
+              echo "Built magitrickled binary not found under $sdk_dir/build_dir" >&2
+              exit 1
+            fi
+
+            readelf -h "$binary"
+            readelf -l "$binary"
+            if readelf -d "$binary" | grep -Eq 'NEEDED.*libcjson'; then
+              echo "OpenWrt binary still has a dynamic cJSON dependency" >&2
+              exit 1
+            fi
+            case "${{ matrix.name }}" in
+              aarch64_*)
+                readelf -h "$binary" | grep -Eq 'Machine:.*AArch64'
+                readelf -h "$binary" | grep -Eq 'Data:.*little endian'
+                ;;
+              mips_*)
+                readelf -h "$binary" | grep -Eq 'Machine:.*MIPS'
+                readelf -h "$binary" | grep -Eq 'Data:.*big endian'
+                ;;
+              mipsel_*)
+                readelf -h "$binary" | grep -Eq 'Machine:.*MIPS'
+                readelf -h "$binary" | grep -Eq 'Data:.*little endian'
+                ;;
+              x86_64)
+                readelf -h "$binary" | grep -Eq 'Machine:.*X86-64'
+                ;;
+            esac
+
+            echo "package_1_path=$package" >> "$GITHUB_OUTPUT"
+            echo "package_1_name=$(basename "$package")" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload package artifact 1
-        if: ${{ github.event_name != 'release' && steps.package_outputs.outputs.package_1_path != '' }}
-        uses: actions/upload-artifact@v4
+        if: ${{ github.event_name != 'release' && github.event_name != 'workflow_dispatch' && steps.package_outputs.outputs.package_1_path != '' }}
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.package_outputs.outputs.package_1_name }}
           path: ${{ steps.package_outputs.outputs.package_1_path }}
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload package artifact 2
-        if: ${{ github.event_name != 'release' && steps.package_outputs.outputs.package_2_path != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.package_outputs.outputs.package_2_name }}
-          path: ${{ steps.package_outputs.outputs.package_2_path }}
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Upload package asset 1 to release
-        if: ${{ github.event_name == 'release' && steps.package_outputs.outputs.package_1_path != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.package_outputs.outputs.package_1_path }}
-          token: ${{ secrets.RELEASE_TOKEN }}
-
-      - name: Upload package asset 2 to release
-        if: ${{ github.event_name == 'release' && steps.package_outputs.outputs.package_2_path != '' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.package_outputs.outputs.package_2_path }}
-          token: ${{ secrets.RELEASE_TOKEN }}
+      - name: Upload package assets to release
+        if: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          PACKAGE_1: ${{ steps.package_outputs.outputs.package_1_path }}
+        run: |
+          for package in "$PACKAGE_1"; do
+            if [ -n "$package" ]; then
+              gh release upload "$RELEASE_TAG" "$package" \
+                --repo "$GITHUB_REPOSITORY" \
+                --clobber
+            fi
+          done
