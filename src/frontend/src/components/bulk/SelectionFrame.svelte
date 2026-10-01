@@ -52,11 +52,12 @@
     padding: 0;
     border: 0;
     border-radius: 0.5rem 0 0 0;
-    clip-path: polygon(0 0, 100% 0, 0 100%);
     background: transparent;
     cursor: pointer;
   }
   .tail-surface {
+    /* Clip the artwork, keeping the entire square available for selection. */
+    clip-path: polygon(0 0, 100% 0, 0 100%);
     position: absolute;
     inset: 0;
     display: flex;

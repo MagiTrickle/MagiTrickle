@@ -6,7 +6,7 @@ for (const kind of ["groups", "subscriptions"] as const) {
       id: `item-${i}`,
       name,
       interface: "eth0",
-      enable: true,
+      enable: i !== 1,
       color: "#7755aa",
       rules: [{ id: `rule-${i}`, rule: `${i}.example.com`, type: "domain", enable: true }],
       url: `https://example.com/${i}`,
@@ -75,44 +75,79 @@ for (const kind of ["groups", "subscriptions"] as const) {
     await page.keyboard.press("Space");
     await page.keyboard.press("Tab");
     await expect(firstSurface).toHaveCSS("visibility", "hidden");
+    // The transparent half of the corner is also a selection target.
+    await firstTail.click({ position: { x: 26, y: 26 } });
+    await expect(firstTail).toHaveAttribute("aria-pressed", "true");
+    if (kind === "groups") {
+      await expect(frames.locator('input[type="color"]')).toHaveCount(0);
+      const secondStrip = frames.nth(1).getByRole("button", { name: "Toggle selection: Second" });
+      const clickStrip = async (strip: typeof secondStrip) => {
+        const bounds = await strip.boundingBox();
+        await strip.click({ position: { x: bounds!.width / 2, y: bounds!.height - 5 } });
+      };
+      await clickStrip(secondStrip);
+      await expect(secondStrip).toHaveAttribute("aria-pressed", "true");
+      await clickStrip(frames.first().getByRole("button", { name: "Toggle selection: First" }));
+      await expect(firstTail).toHaveAttribute("aria-pressed", "false");
+      await expect(frames.locator('input[type="color"]')).toHaveCount(0);
+      await secondStrip.focus();
+      await page.keyboard.press("Space");
+      await expect(frames.locator('input[type="color"]')).toHaveCount(3);
+      for (const input of await frames.locator('input[type="color"]').all()) {
+        await expect(input).toHaveValue("#7755aa");
+      }
+    } else {
+      await firstTail.click({ position: { x: 26, y: 26 } });
+    }
+    await expect(page.locator(".selection-frame.selected")).toHaveCount(0);
     await frames.nth(0).hover();
     await page.getByRole("button", { name: "Select item: First", exact: true }).click();
+    const bar = page.getByRole("region", { name: "Bulk actions" });
+    const barGeometry = () =>
+      bar.evaluate((node) => {
+        const { x, width } = node.getBoundingClientRect();
+        return { x, width };
+      });
+    await expect(bar).toBeVisible();
+    const singleSelectionGeometry = await barGeometry();
     await frames.nth(2).hover();
     await page.getByRole("button", { name: "Select item: Third", exact: true }).click();
-    const bar = page.getByRole("region", { name: "Bulk actions" });
     await expect(bar.getByRole("status")).toContainText("2 selected");
+    await expect.poll(barGeometry).toEqual(singleSelectionGeometry);
     await bar.getByRole("button", { name: "Copy to Clipboard" }).click();
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe("0.example.com\n2.example.com");
     await expect(frames).toHaveCount(3);
     await expect(page.locator(".selection-frame.selected")).toHaveCount(2);
-    await bar.getByRole("button", { name: "Interface", exact: true }).click();
-    const interfacePopover = page.getByRole("dialog", { name: "Change interface" });
-    await expect(
-      interfacePopover.getByRole("button", { name: "Apply", exact: true }),
-    ).toBeDisabled();
+    const interfaceButton = bar.getByRole("button", { name: "Interface", exact: true });
+    await expect(interfaceButton).toContainText("eth0");
     const initialHeight = await bar.evaluate((node) => node.getBoundingClientRect().height);
-    const initialSelectWidth = await interfacePopover
-      .getByRole("button", { name: "Choose interface" })
-      .evaluate((node) => node.getBoundingClientRect().width);
     const initialCardHeights = await frames.evaluateAll((nodes) =>
       nodes.map((node) => node.getBoundingClientRect().height),
     );
-    await interfacePopover.getByRole("button", { name: "Choose interface" }).click();
-    await page.getByRole("option", { name: "wlan0" }).click();
+    await interfaceButton.click();
+    const interfaceMenu = page.getByRole("listbox", { name: "Interface" });
+    await expect(interfaceMenu.getByRole("option", { name: "eth0", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await interfaceMenu.getByRole("option", { name: "wlan0" }).click();
+    await expect(interfaceMenu).toHaveCount(0);
+    await expect(interfaceButton).toContainText("wlan0");
     await expect
       .poll(() => bar.evaluate((node) => node.getBoundingClientRect().height))
       .toBe(initialHeight);
-    await expect
-      .poll(() =>
-        interfacePopover
-          .getByRole("button", { name: "Choose interface" })
-          .evaluate((node) => node.getBoundingClientRect().width),
-      )
-      .not.toBe(initialSelectWidth);
-    await interfacePopover.getByRole("button", { name: "Apply", exact: true }).click();
-    await expect(interfacePopover).toHaveCount(0);
+    // A mixed selection has no common interface or checked option.
+    await frames.nth(1).locator(".selection-tail").click();
+    await expect(interfaceButton).toHaveText("Interface");
+    await interfaceButton.click();
+    await expect(interfaceMenu.locator('[aria-selected="true"]')).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(interfaceMenu).toHaveCount(0);
+    await expect(bar.getByRole("status")).toContainText("3 selected");
+    await frames.nth(1).locator(".selection-tail").click();
+    await expect(interfaceButton).toContainText("wlan0");
     await expect
       .poll(() =>
         frames.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height)),
@@ -129,25 +164,43 @@ for (const kind of ["groups", "subscriptions"] as const) {
     await page.getByRole("button", { name: "Select item: Second", exact: true }).click();
     await bar.getByRole("button", { name: "Select all" }).click();
     await expect(bar.getByRole("status")).toContainText("3 selected");
-    await bar.getByRole("button", { name: "State" }).click();
-    await page.getByRole("menuitem", { name: "Disable selected" }).click();
+    const stateButton = bar.getByRole("button", { name: "State", exact: true });
+    await expect(stateButton).toHaveText("State");
+    await stateButton.click();
+    const stateMenu = page.getByRole("listbox", { name: "State" });
+    await expect(stateMenu.locator('[aria-selected="true"]')).toHaveCount(0);
+    await stateMenu.getByRole("option", { name: "Enabled", exact: true }).click();
+    await expect(stateMenu).toHaveCount(0);
+    await expect(stateButton).toHaveText("Enabled");
+    await page.locator(kind === "groups" ? "#save-changes" : "#save-subscriptions").click();
+    await expect.poll(() => saved.every((item) => item.enable)).toBe(true);
+    await stateButton.click();
+    await expect(stateMenu.getByRole("option", { name: "Enabled", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await page.keyboard.press("Escape");
+    await expect(stateMenu).toHaveCount(0);
+    await expect(bar.getByRole("status")).toContainText("3 selected");
+    await stateButton.click();
+    await stateMenu.getByRole("option", { name: "Disabled", exact: true }).click();
+    await expect(stateButton).toHaveText("Disabled");
     await page.locator(kind === "groups" ? "#save-changes" : "#save-subscriptions").click();
     await expect.poll(() => saved.every((item) => !item.enable)).toBe(true);
     await page.setViewportSize({ width: 390, height: 844 });
     const bounds = await bar.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-    await bar.getByRole("button", { name: "Interface", exact: true }).click();
-    await interfacePopover.getByRole("button", { name: "Choose interface" }).click();
-    await page.getByRole("option", { name: "wlan0" }).click();
     const mobileHeight = await bar.evaluate((node) => node.getBoundingClientRect().height);
-    await interfacePopover.getByRole("button", { name: "Choose interface" }).click();
-    await page.getByRole("option", { name: "eth0", exact: true }).click();
+    await interfaceButton.click();
+    await interfaceMenu.getByRole("option", { name: "eth0", exact: true }).click();
+    await expect(interfaceButton).toContainText("eth0");
     await expect
       .poll(() => bar.evaluate((node) => node.getBoundingClientRect().height))
       .toBe(mobileHeight);
+    await interfaceButton.click();
     await page.keyboard.press("Escape");
-    await expect(interfacePopover).toHaveCount(0);
+    await expect(interfaceMenu).toHaveCount(0);
     await expect(bar).toBeVisible();
     page.once("dialog", (dialog) => dialog.accept());
     await bar.getByRole("button", { name: "Delete selected", exact: true }).click();

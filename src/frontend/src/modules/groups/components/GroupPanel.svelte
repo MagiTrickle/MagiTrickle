@@ -36,9 +36,17 @@
 
   type Props = {
     group_index: number;
+    selectionActive?: boolean;
+    selected?: boolean;
+    ontoggleSelection?: () => void;
   };
 
-  let { group_index }: Props = $props();
+  let {
+    group_index,
+    selectionActive = false,
+    selected = false,
+    ontoggleSelection,
+  }: Props = $props();
 
   const store = getContext<GroupsStore>(GROUPS_STORE_CONTEXT);
   if (!store) {
@@ -322,9 +330,21 @@
         }}
       >
         <div class="group-left">
-          <label class="group-color" style="background: {group.color}">
-            <input type="color" bind:value={group.color} />
-          </label>
+          {#if selectionActive}
+            <button
+              class="group-color"
+              style="background: {group.color}"
+              type="button"
+              aria-label={`${t("Toggle selection")}: ${group.name}`}
+              aria-pressed={selected}
+              title={t(selected ? "Deselect item" : "Select item")}
+              onclick={ontoggleSelection}
+            ></button>
+          {:else}
+            <label class="group-color" style="background: {group.color}">
+              <input type="color" bind:value={group.color} />
+            </label>
+          {/if}
 
           <div class="group-grip" title={t("Drag Group")}>
             <Grip />
@@ -563,6 +583,8 @@
   .group-color {
     & {
       display: inline-block;
+      padding: 0;
+      border: 0;
       width: 2rem;
       height: 100%;
       border-top-left-radius: calc(0.5rem - 1px);
@@ -576,6 +598,11 @@
 
     & input {
       margin-left: 0.5rem;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
     }
   }
 
