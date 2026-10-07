@@ -141,6 +141,14 @@ typedef struct mt_ipt mt_ipt_t;
 /* Takes ownership of exe (freed by mt_ipt_free). */
 mt_ipt_t *mt_ipt_new(mt_ipt_executable_t *exe);
 void mt_ipt_free(mt_ipt_t *ipt);
+
+/* Discards all staged patch/override/delete registrations, without changing
+ * kernel state or doing I/O. Keeps the executable, cancellation token and
+ * mt_ipt_t identity (rulesets/remap borrow it). NULL-safe, allocation-free.
+ * Only a full rebuild may use this: ordinary Commit() must retain desired
+ * state. The caller must hold the same external lock used for commits. */
+void mt_ipt_reset_staged(mt_ipt_t *ipt);
+
 mt_ipt_proto_t mt_ipt_proto(const mt_ipt_t *ipt);
 
 /* Attaches a cancellation token (borrowed, nullable to detach), making

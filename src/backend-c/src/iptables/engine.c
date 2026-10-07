@@ -47,10 +47,18 @@ static void table_reg_destroy(table_reg_t *t) {
     free(t->table_name);
 }
 
-void mt_ipt_free(mt_ipt_t *ipt) {
+void mt_ipt_reset_staged(mt_ipt_t *ipt) {
     if (!ipt) { return; }
     for (size_t i = 0; i < ipt->n_tables; i++) { table_reg_destroy(&ipt->tables[i]); }
     free(ipt->tables);
+    ipt->tables = NULL;
+    ipt->n_tables = 0;
+    ipt->cap_tables = 0;
+}
+
+void mt_ipt_free(mt_ipt_t *ipt) {
+    if (!ipt) { return; }
+    mt_ipt_reset_staged(ipt);
     mt_ipt_executable_free(ipt->exe);
     free(ipt);
 }
@@ -364,11 +372,14 @@ mt_err_t mt_ipt_get_current_rules(mt_ipt_t *ipt, mt_ipt_rules_snapshot_t **out) 
     for (size_t i = 0; i <= data_len && err == MT_OK; i++) {
         if (i < data_len && data[i] != '\n') { continue; }
 
-        const uint8_t *line = data + line_start;
         size_t line_len = i - line_start;
+        if (line_len == 0) {
+            line_start = i + 1;
+            continue;
+        }
+        /* An empty snapshot may own no buffer; never do NULL + 0. */
+        const uint8_t *line = data + line_start;
         line_start = i + 1;
-
-        if (line_len == 0) { continue; }
 
         switch (line[0]) {
         case '*': {

@@ -1195,8 +1195,22 @@ static mt_err_t rebuild_netfilter_locked(mt_app_t *app, mt_cancel_t *cancel) {
      * the firmware replaced them, is not something worth reasoning about
      * -- starting from "none of it is there" makes the result depend only
      * on the current group set. */
+    if (mt_cancel_raised(cancel)) { return MT_ERR_CANCELED; }
+
+    /* Cleanup must compile ONLY removals discovered in the current kernel
+     * snapshot. Retained desired jumps/overrides from a previous attempt can
+     * otherwise recreate a jump while its target is being deleted (MT_DNSOR),
+     * poisoning every subsequent retry. Reset both families under nf_mu. */
+    mt_ipt_reset_staged(app->ipt4);
+    mt_ipt_reset_staged(app->ipt6);
     mt_err_t err = mt_netfilter_clean_iptables(app->ipt4, app->ipt6,
                                                app->chain_prefix);
+
+    /* Delete registrations are temporary too, including after failed or
+     * canceled cleanup. Keep the engines/transports/cancel token themselves:
+     * groups and the DNS remap still borrow those exact objects. */
+    mt_ipt_reset_staged(app->ipt4);
+    mt_ipt_reset_staged(app->ipt6);
     if (err != MT_OK) { return err; }
     if (mt_cancel_raised(cancel)) { return MT_ERR_CANCELED; }
 
