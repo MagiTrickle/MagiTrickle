@@ -1,0 +1,46 @@
+name: Routing profiles validation
+
+on:
+  push:
+    branches: [feature/routing-profiles]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: src/backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: |
+          (cd src/backend && go mod vendor)
+          (cd src/frontend && npm install --ignore-scripts)
+      - name: Prepare reproducible development snapshot
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > BASE_COMMIT.txt
+          tar --exclude='./.git' -czf "$RUNNER_TEMP/magitrickle-development.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magitrickle-development
+          path: ${{ runner.temp }}/magitrickle-development.tar.gz
+          retention-days: 3
+      - name: Backend tests
+        working-directory: src/backend
+        run: go test -race ./...
+      - name: Frontend check and build
+        working-directory: src/frontend
+        run: |
+          npm run check
+          npm run build
