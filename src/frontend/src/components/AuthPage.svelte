@@ -1,10 +1,10 @@
 <script lang="ts">
   import { token } from "../data/auth.svelte";
   import { t } from "../data/locale.svelte";
+  import AuthLogo from "./AuthLogo.svelte";
   import InfoDialog from "./InfoDialog.svelte";
   import Button from "./ui/Button.svelte";
 
-  import logoUrl from "../assets/logo.svg";
   import { toast } from "../utils/events";
   import { fetcher } from "../utils/fetcher";
   import { Info, Password, User } from "./ui/icons";
@@ -44,11 +44,7 @@
 
 <div class="auth-page">
   <div class="left-panel">
-    <div class="logo-wrapper">
-      <div class="logo-sticker">
-        <img src={logoUrl} alt="" class="logo-background" draggable="false" />
-      </div>
-    </div>
+    <AuthLogo />
     <div class="card">
       <form
         onsubmit={(e) => {
@@ -183,30 +179,6 @@
   .info-btn:focus-visible {
     outline: none;
     box-shadow: 0 0 10px 2px var(--bg-dark-extra);
-  }
-
-  .logo-wrapper {
-    width: 128px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 0 auto 1.25rem;
-  }
-
-  .logo-sticker {
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-  }
-
-  .logo-background {
-    width: 100%;
-    height: auto;
-    display: block;
-    opacity: 1;
-    filter: none;
-    user-select: none;
-    -webkit-user-drag: none;
   }
 
   .card {

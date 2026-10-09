@@ -65,4 +65,37 @@ test.describe("Authentication", () => {
     // Note: Toast might not be visible if Toast component is not in AuthPage, checking button class.
     await expect(authPage.signInButton).toHaveClass(/fail/);
   });
+  test("shows ambient branding without interrupting form focus or reduced motion", async ({ page }) => {
+    await authPage.goto();
+
+    const logo = page.getByTestId("auth-logo");
+    const floatingLogo = logo.locator(".logo-float");
+    await expect(logo).toBeVisible();
+    await expect(logo.locator("img")).toBeVisible();
+    await expect
+      .poll(() =>
+        logo.locator("img").evaluate((element) =>
+          element instanceof HTMLImageElement ? element.naturalWidth : 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+
+
+    await authPage.loginInput.focus();
+    await expect
+      .poll(() =>
+        floatingLogo.evaluate((element) => getComputedStyle(element).animationPlayState),
+      )
+      .toBe("paused");
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect
+      .poll(() => floatingLogo.evaluate((element) => getComputedStyle(element).animationName))
+      .toBe("none");
+
+    await authPage.loginInput.fill("admin");
+    await authPage.passwordInput.fill("secret");
+    await expect(authPage.signInButton).toBeEnabled();
+  });
+
 });
