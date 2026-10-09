@@ -166,8 +166,8 @@
 <canvas bind:this={canvas} class:ready aria-hidden="true" data-mode="fallback"></canvas>
 
 <style>
-  /* Same light field at t=12, 1600×1000, with the logo composed separately.
-     Anchor the baked focal point to the live logo on short and narrow screens. */
+  /* Lightweight fallback for browsers without WebGL. The full moving light
+     field remains shader-driven, so no baked full-screen bitmap is shipped. */
   .still {
     position: absolute;
     width: max(100%, 1000px);
@@ -175,10 +175,54 @@
     left: 50%;
     top: var(--aurora-anchor-y, 30vh);
     transform: translate(-50%, -31.58%);
-    background: url("../assets/aurora-still.webp") center / 100% 100% no-repeat;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 54% 25% at 31% 44%, rgba(22, 105, 157, 0.16), transparent 82%),
+      radial-gradient(ellipse 38% 32% at 73% 29%, rgba(55, 58, 151, 0.11), transparent 82%);
     -webkit-mask-image: linear-gradient(transparent, #000 10%, #000 85%, transparent);
     mask-image: linear-gradient(transparent, #000 10%, #000 85%, transparent);
-    pointer-events: none;
+  }
+
+  .still::before {
+    content: "";
+    position: absolute;
+    inset: 4% 0 10%;
+    background:
+      radial-gradient(ellipse 60% 17% at 46% 40%, rgba(26, 134, 188, 0.2), transparent 88%),
+      linear-gradient(
+        162deg,
+        transparent 29%,
+        rgba(18, 71, 146, 0.11) 36%,
+        rgba(30, 135, 212, 0.22) 45%,
+        transparent 58%
+      ),
+      linear-gradient(
+        173deg,
+        transparent 26%,
+        rgba(21, 93, 156, 0.12) 39%,
+        rgba(51, 164, 192, 0.17) 45%,
+        transparent 60%
+      );
+    filter: blur(24px);
+    transform: rotate(-6deg);
+  }
+
+  .still::after {
+    content: "";
+    position: absolute;
+    inset: 7%;
+    background:
+      radial-gradient(circle at 8% 21%, #aac9ec 0 0.8px, transparent 1.7px),
+      radial-gradient(circle at 15% 69%, #a0c6ed 0 0.6px, transparent 1.4px),
+      radial-gradient(circle at 26% 17%, #b2d5f1 0 0.6px, transparent 1.5px),
+      radial-gradient(circle at 35% 55%, #95c9ec 0 0.7px, transparent 1.6px),
+      radial-gradient(circle at 43% 33%, #a9cdf8 0 0.6px, transparent 1.4px),
+      radial-gradient(circle at 57% 14%, #d5ecfb 0 0.8px, transparent 2px),
+      radial-gradient(circle at 65% 67%, #82b1e0 0 0.6px, transparent 1.5px),
+      radial-gradient(circle at 74% 21%, #9eb9dc 0 0.7px, transparent 1.6px),
+      radial-gradient(circle at 86% 46%, #bdd9f2 0 0.7px, transparent 1.6px),
+      radial-gradient(circle at 93% 79%, #91c4eb 0 0.8px, transparent 1.7px);
+    opacity: 0.52;
   }
 
   canvas {

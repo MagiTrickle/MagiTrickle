@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 import { AuthPage } from "./pages/AuthPage";
 
 test.describe("Authentication", () => {
+  // Keep the GPU-heavy scenes sequential so concurrent auth pages do not evict contexts.
+  test.describe.configure({ mode: "default" });
   let authPage: AuthPage;
 
   test.beforeEach(async ({ page }) => {
@@ -116,6 +118,7 @@ test.describe("Authentication", () => {
     );
     await authPage.goto();
     await expect(page.locator("canvas")).toHaveAttribute("data-mode", "fallback");
+    await expect(page.locator(".still")).toHaveCSS("background-image", /radial-gradient/);
     await expect(page.getByTestId("auth-logo").locator("img")).toHaveCSS("opacity", "1");
     await authPage.loginInput.fill("admin");
     await authPage.passwordInput.fill("secret");
@@ -129,15 +132,21 @@ test.describe("Authentication", () => {
     await expect(atmosphere).toHaveAttribute("data-mode", "animated");
     await authPage.loginInput.fill("admin");
     await authPage.passwordInput.fill("secret");
-    await atmosphere.evaluate((canvas: HTMLCanvasElement) => {
-      canvas.getContext("webgl")?.getExtension("WEBGL_lose_context")?.loseContext();
+    const contextLoss = await atmosphere.evaluateHandle((canvas: HTMLCanvasElement) => {
+      const extension = canvas.getContext("webgl")?.getExtension("WEBGL_lose_context");
+      if (!extension) throw new Error("WEBGL_lose_context is unavailable");
+      return extension;
     });
-    await expect(atmosphere).toHaveAttribute("data-mode", "fallback");
-    await expect(page.getByTestId("auth-logo").locator("img")).toHaveCSS("opacity", "1");
-    await atmosphere.evaluate((canvas: HTMLCanvasElement) => {
-      canvas.getContext("webgl")?.getExtension("WEBGL_lose_context")?.restoreContext();
-    });
-    await expect(atmosphere).toHaveAttribute("data-mode", "paused");
+    try {
+      await contextLoss.evaluate((extension) => extension.loseContext());
+      await expect(atmosphere).toHaveAttribute("data-mode", "fallback");
+      await expect(page.getByTestId("auth-logo").locator("img")).toHaveCSS("opacity", "1");
+      // A lost context cannot provide extensions; retain the handle acquired before loss.
+      await contextLoss.evaluate((extension) => extension.restoreContext());
+      await expect(atmosphere).toHaveAttribute("data-mode", "paused");
+    } finally {
+      await contextLoss.dispose();
+    }
     await expect(authPage.loginInput).toHaveValue("admin");
     await expect(authPage.passwordInput).toHaveValue("secret");
     await expect(authPage.signInButton).toBeEnabled();

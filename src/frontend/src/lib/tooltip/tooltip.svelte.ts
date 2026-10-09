@@ -8,12 +8,17 @@ export const tooltip = $state({
   opacity: 0,
 });
 
+let activeAnchor: HTMLElement | undefined;
+
 export async function show(anchor: HTMLElement, text: string) {
+  activeAnchor = anchor;
   tooltip.text = text;
   tooltip.visible = true;
   tooltip.opacity = 0;
 
   await tick();
+
+  if (activeAnchor !== anchor || !anchor.isConnected) return;
 
   const tRect = anchor.getBoundingClientRect();
   const tooltipEl = document.getElementById("global-tooltip");
@@ -33,7 +38,12 @@ export async function show(anchor: HTMLElement, text: string) {
   tooltip.opacity = 1;
 }
 
+export function hideFor(anchor: HTMLElement) {
+  if (activeAnchor === anchor) hide();
+}
+
 export function hide() {
+  activeAnchor = undefined;
   tooltip.visible = false;
 }
 
