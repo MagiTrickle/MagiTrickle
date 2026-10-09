@@ -1,6 +1,7 @@
 <script lang="ts">
   import { token } from "../data/auth.svelte";
   import { t } from "../data/locale.svelte";
+  import AuroraScene from "./AuroraScene.svelte";
   import AuthLogo from "./AuthLogo.svelte";
   import InfoDialog from "./InfoDialog.svelte";
   import Button from "./ui/Button.svelte";
@@ -8,6 +9,10 @@
   import { toast } from "../utils/events";
   import { fetcher } from "../utils/fetcher";
   import { Info, Password, User } from "./ui/icons";
+
+  let scene: HTMLDivElement | undefined = $state();
+  let logoAnchor: HTMLDivElement | undefined = $state();
+  let sceneReady = $state(false);
 
   let login = $state("");
   let password = $state("");
@@ -42,9 +47,10 @@
   }
 </script>
 
-<div class="auth-page">
+<div class="auth-page" bind:this={scene}>
+  <AuroraScene root={scene} anchor={logoAnchor} bind:ready={sceneReady} />
   <div class="left-panel">
-    <AuthLogo />
+    <AuthLogo bind:anchor={logoAnchor} illuminated={sceneReady} />
     <div class="card">
       <form
         onsubmit={(e) => {
@@ -56,14 +62,26 @@
           <label for="login">{t("Login")}</label>
           <div class="input-wrapper">
             <span class="icon"><User size={18} /></span>
-            <input id="login" type="text" bind:value={login} placeholder="..." />
+            <input
+              id="login"
+              type="text"
+              autocomplete="username"
+              bind:value={login}
+              placeholder="..."
+            />
           </div>
         </div>
         <div class="field">
           <label for="password">{t("Password")}</label>
           <div class="input-wrapper">
             <span class="icon"><Password size={18} /></span>
-            <input id="password" type="password" bind:value={password} placeholder="..." />
+            <input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              bind:value={password}
+              placeholder="..."
+            />
           </div>
         </div>
         <div class="actions">
@@ -86,7 +104,12 @@
     </div>
   </div>
 
-  <button class="info-btn" title="Info" aria-label="Info" onclick={() => (infoIsOpen = true)}>
+  <button
+    class="info-btn"
+    title={t("About")}
+    aria-label={t("About")}
+    onclick={() => (infoIsOpen = true)}
+  >
     <Info size={24} />
   </button>
 </div>
@@ -96,47 +119,18 @@
 <style>
   .auth-page {
     position: relative;
+    isolation: isolate;
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    width: 100vw;
+    min-height: 100svh;
+    width: 100%;
     box-sizing: border-box;
     overflow: hidden;
-    background: linear-gradient(155deg, #10131d 0%, #111827 52%, #0f1420 100%);
-  }
-
-  .auth-page::before {
-    content: "";
-    position: absolute;
-    inset: -22%;
-    pointer-events: none;
-    z-index: 0;
     background:
-      radial-gradient(
-        78rem 52rem at 8% 20%,
-        rgba(66, 189, 249, 0.08) 0%,
-        rgba(66, 189, 249, 0.03) 38%,
-        transparent 74%
-      ),
-      radial-gradient(
-        72rem 56rem at 92% 82%,
-        rgba(85, 158, 255, 0.07) 0%,
-        rgba(85, 158, 255, 0.025) 40%,
-        transparent 76%
-      ),
-      radial-gradient(54rem 40rem at 52% 58%, rgba(11, 17, 30, 0.42) 0%, transparent 72%);
-    filter: blur(16px);
-    opacity: 0.72;
-  }
-
-  .auth-page::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    background: radial-gradient(110% 95% at 50% 50%, transparent 58%, rgba(6, 9, 16, 0.28) 100%);
+      radial-gradient(ellipse at 50% 30%, #0b2544 0%, transparent 48%),
+      radial-gradient(ellipse at 75% 65%, #07324555, transparent 45%), #030914;
   }
 
   .left-panel {
@@ -146,7 +140,8 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    padding: 2rem 1rem;
+    padding: 3.5rem 1.5rem 4.5rem;
+    box-sizing: border-box;
     position: relative;
     z-index: 2;
   }
@@ -155,9 +150,9 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: var(--bg-light);
-    border: 1px solid var(--bg-light-extra);
-    color: var(--text-2);
+    background: #12203580;
+    border: 1px solid #b5d7f521;
+    color: #b5c6db;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -175,23 +170,27 @@
     background: var(--bg-light-extra);
   }
 
-  .info-btn:focus,
   .info-btn:focus-visible {
-    outline: none;
-    box-shadow: 0 0 10px 2px var(--bg-dark-extra);
+    outline: 2px solid #80dfff;
+    outline-offset: 4px;
   }
 
   .card {
     position: relative;
     z-index: 1;
-    background-color: var(--bg-light);
-    backdrop-filter: blur(8px);
-    padding: 1.8rem 2rem 2rem;
-    border-radius: 1rem;
-    border: 1px solid var(--bg-light-extra);
+    background: linear-gradient(125deg, #a4cafa0d, #547ba905 48%, #82c7eb09), #0a142775;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 2rem;
+    box-sizing: border-box;
+    border-radius: 1.3rem;
+    border: 1px solid #b5d7f521;
     width: 100%;
-    max-width: 420px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+    max-width: 480px;
+    box-shadow:
+      0 28px 70px #00000040,
+      inset 0 1px 0 #dcf5ff0d,
+      0 -12px 70px #167fff0a;
     display: flex;
     flex-direction: column;
     margin: 0.5rem;
@@ -205,7 +204,7 @@
   }
 
   label {
-    color: var(--text-2);
+    color: #b5c6db;
     font-size: 0.9rem;
   }
 
@@ -218,15 +217,15 @@
   .icon {
     position: absolute;
     left: 0.75rem;
-    color: var(--text-2);
+    color: #b5c6db;
     display: flex;
     align-items: center;
     pointer-events: none;
   }
 
   input {
-    background-color: var(--bg-dark-extra);
-    border: 1px solid var(--bg-light-extra);
+    background-color: #030a168a;
+    border: 1px solid #b5d7f521;
     color: var(--text);
     padding: 0.75rem;
     padding-left: 2.5rem;
@@ -234,19 +233,23 @@
     font-size: 1rem;
     font-family: var(--font);
     outline: none;
-    transition: border-color 0.2s;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s,
+      background-color 0.2s;
     width: 100%;
     box-sizing: border-box;
   }
 
   input::placeholder {
     font-family: var(--font);
-    color: var(--text-2);
+    color: #b5c6db;
     opacity: 0.5;
   }
 
   input:focus {
-    border-color: var(--accent);
+    border-color: #72d9ff;
+    box-shadow: 0 0 0 3px #42bdf91a;
   }
 
   .actions {
@@ -259,7 +262,7 @@
 
   .helper-text {
     flex: 1;
-    color: var(--text-2);
+    color: #b5c6db;
     font-size: 0.8rem;
     font-style: italic;
     display: flex;
@@ -281,6 +284,30 @@
     width: 33.333%;
   }
 
+  .button-container :global(button:not(:disabled):not(.fail)) {
+    background: linear-gradient(120deg, #136897, #224c88);
+    border-color: #81dfff60;
+    color: #effbff;
+    box-shadow:
+      inset 0 1px 0 #b0f5ff20,
+      0 4px 20px #008cff18;
+  }
+
+  .button-container :global(button:focus-visible) {
+    outline: 2px solid #80dfff;
+    outline-offset: 4px;
+  }
+
+  .button-container :global(button:hover:not(:disabled):not(.fail)) {
+    background: linear-gradient(120deg, #197eaf, #2a5b9b);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    input {
+      transition: none;
+    }
+  }
+
   @media (max-width: 700px) {
     .auth-page {
       align-items: center;
@@ -288,7 +315,7 @@
     }
 
     .left-panel {
-      padding: 1rem;
+      padding: 4.5rem 1.25rem 3rem;
       z-index: 2;
       width: 100%;
     }
@@ -302,7 +329,7 @@
 
     .card {
       padding: 1.4rem 1.2rem 1.4rem;
-      border-radius: 0.8rem;
+      border-radius: 1.1rem;
     }
 
     .actions {
