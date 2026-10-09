@@ -104,14 +104,11 @@
     </div>
   </div>
 
-  <button
-    class="info-btn"
-    title={t("About")}
-    aria-label={t("About")}
-    onclick={() => (infoIsOpen = true)}
-  >
-    <Info size={24} />
-  </button>
+  <div class="info-btn">
+    <Button small title={t("About")} aria-label={t("About")} onclick={() => (infoIsOpen = true)}>
+      <Info size={24} />
+    </Button>
+  </div>
 </div>
 
 <InfoDialog bind:open={infoIsOpen} />
@@ -150,29 +147,7 @@
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: #12203580;
-    border: 1px solid #b5d7f521;
-    color: #b5c6db;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 15px;
-    cursor: pointer;
     z-index: 3;
-    pointer-events: auto;
-    box-shadow: 0 0 10px 2px var(--bg-dark-extra);
-    outline: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .info-btn:hover {
-    background: var(--bg-light-extra);
-  }
-
-  .info-btn:focus-visible {
-    outline: 2px solid #80dfff;
-    outline-offset: 4px;
   }
 
   .card {
@@ -224,8 +199,8 @@
   }
 
   input {
-    background-color: #030a168a;
-    border: 1px solid #b5d7f521;
+    background-color: var(--bg-dark-extra);
+    border: 1px solid var(--bg-light-extra);
     color: var(--text);
     padding: 0.75rem;
     padding-left: 2.5rem;
@@ -233,23 +208,19 @@
     font-size: 1rem;
     font-family: var(--font);
     outline: none;
-    transition:
-      border-color 0.2s,
-      box-shadow 0.2s,
-      background-color 0.2s;
+    transition: border-color 0.2s;
     width: 100%;
     box-sizing: border-box;
   }
 
   input::placeholder {
     font-family: var(--font);
-    color: #b5c6db;
+    color: var(--text-2);
     opacity: 0.5;
   }
 
   input:focus {
-    border-color: #72d9ff;
-    box-shadow: 0 0 0 3px #42bdf91a;
+    border-color: var(--accent);
   }
 
   .actions {
@@ -282,24 +253,6 @@
 
   .button-container {
     width: 33.333%;
-  }
-
-  .button-container :global(button:not(:disabled):not(.fail)) {
-    background: linear-gradient(120deg, #136897, #224c88);
-    border-color: #81dfff60;
-    color: #effbff;
-    box-shadow:
-      inset 0 1px 0 #b0f5ff20,
-      0 4px 20px #008cff18;
-  }
-
-  .button-container :global(button:focus-visible) {
-    outline: 2px solid #80dfff;
-    outline-offset: 4px;
-  }
-
-  .button-container :global(button:hover:not(:disabled):not(.fail)) {
-    background: linear-gradient(120deg, #197eaf, #2a5b9b);
   }
 
   @media (prefers-reduced-motion: reduce) {
