@@ -1,19 +1,21 @@
 <script lang="ts">
   import { Tabs } from "bits-ui";
+  import { untrack } from "svelte";
 
   import { t } from "../../data/locale.svelte";
+  import { fetchProfiles, profilesDirty } from "../../data/profiles.svelte";
   import GroupsView from "../../modules/groups/GroupsView.svelte";
+  // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
+  import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
   import SubscriptionsView from "../../modules/subscriptions/SubscriptionsView.svelte";
   import { persistedState } from "../../utils/persisted-state.svelte";
-  // import LogsPanel from "../../modules/logs/LogsPanel.svelte";
-  // import SettingsPanel from "../../modules/settings/SettingsPanel.svelte";
   import Overlay from "../feedback/Overlay.svelte";
   import ScrollToTop from "../feedback/ScrollToTop.svelte";
   import SnowField from "../feedback/SnowField.svelte";
   import Toast from "../feedback/Toast.svelte";
   import HeaderSettings from "./HeaderSettings.svelte";
 
-  import { LayoutList, Menu, RSS } from "../ui/icons";
+  import { LayoutList, Menu, RSS, Settings } from "../ui/icons";
 
   const lastActiveTab = persistedState("active_tab", "groups");
   let active_tab = $state(lastActiveTab.current);
@@ -24,6 +26,11 @@
 
   $effect(() => {
     lastActiveTab.current = active_tab;
+    // Tab content stays mounted. onMount alone cannot refresh usage after
+    // Groups/Subscriptions have saved a different profile assignment.
+    if (active_tab === "settings") {
+      untrack(() => void fetchProfiles({ fresh: true }));
+    }
   });
 
   const toggleMenu = () => (isMenuOpen = !isMenuOpen);
@@ -53,7 +60,15 @@
   }
 </script>
 
-<svelte:window onkeydown={handleSearchShortcut} />
+<svelte:window
+  onkeydown={handleSearchShortcut}
+  onbeforeunload={(event) => {
+    if (profilesDirty()) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  }}
+/>
 
 <Toast />
 <Overlay />
@@ -63,7 +78,7 @@
 {/if}
 
 <main>
-  <Tabs.Root bind:value={active_tab}>
+  <Tabs.Root bind:value={active_tab} class="app-tabs">
     <nav>
       <div class="nav-left">
         <button
@@ -91,10 +106,10 @@
               {t("Subscriptions")}
             </Tabs.Trigger>
 
-            <!--
-            <Tabs.Trigger value="settings" onclick={closeMenu}>Settings</Tabs.Trigger>
-            <Tabs.Trigger value="logs" onclick={closeMenu}>Logs</Tabs.Trigger>
-            -->
+            <Tabs.Trigger value="settings" onclick={closeMenu}>
+              <span class="tab-icon"><Settings size={24} /></span>
+              {t("Settings")}
+            </Tabs.Trigger>
           </Tabs.List>
         </div>
       </div>
@@ -105,13 +120,13 @@
     </nav>
 
     <article>
-      <Tabs.Content value="groups">
+      <Tabs.Content value="groups" class="app-tab-content">
         <GroupsView onRenderComplete={() => (isRenderCompleteGroups = true)} />
       </Tabs.Content>
-      <Tabs.Content value="subscriptions">
+      <Tabs.Content value="subscriptions" class="app-tab-content">
         <SubscriptionsView onRenderComplete={() => (isRenderCompleteSubscriptions = true)} />
       </Tabs.Content>
-      <!-- <Tabs.Content value="settings">...</Tabs.Content> -->
+      <Tabs.Content value="settings" class="app-tab-content"><SettingsPanel /></Tabs.Content>
     </article>
   </Tabs.Root>
 </main>
@@ -125,7 +140,7 @@
     padding: 0.3rem;
   }
 
-  :global([data-tabs-root]) {
+  :global(.app-tabs) {
     width: 100%;
     max-width: 1000px;
     display: flex;
@@ -159,14 +174,14 @@
     z-index: 10;
   }
 
-  :global([data-tabs-list]) {
+  .tabs-panel :global([data-tabs-list]) {
     display: flex;
     flex-direction: row;
     gap: 1rem;
     background: transparent;
   }
 
-  :global([data-tabs-trigger]) {
+  .tabs-panel :global([data-tabs-trigger]) {
     padding: 0.5rem 0.5rem;
     border: none;
     border-bottom: 2px solid transparent;
@@ -188,16 +203,16 @@
     display: flex;
   }
 
-  :global([data-tabs-trigger][data-state="active"]) {
+  .tabs-panel :global([data-tabs-trigger][data-state="active"]) {
     color: var(--blue-light-extra);
     border-color: var(--blue-light-extra);
   }
 
-  :global([data-tabs-trigger]:hover) {
+  .tabs-panel :global([data-tabs-trigger]:hover) {
     color: var(--text);
   }
 
-  :global([data-tabs-content]) {
+  :global(.app-tab-content) {
     padding-top: 1rem;
     outline: none;
   }
@@ -252,13 +267,13 @@
       }
     }
 
-    :global([data-tabs-list]) {
+    .tabs-panel :global([data-tabs-list]) {
       flex-direction: column;
       gap: 1.2rem;
       align-items: flex-start;
     }
 
-    :global([data-tabs-trigger]) {
+    .tabs-panel :global([data-tabs-trigger]) {
       font-size: 1.5rem;
       font-weight: 500;
       border-bottom: none;

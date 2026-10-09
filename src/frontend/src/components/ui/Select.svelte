@@ -4,7 +4,7 @@
 
   import { Check, SelectOpen } from "./icons";
 
-  type Option = { value: string; label: string; description?: string };
+  type Option = { value: string; label: string; description?: string; group?: string };
   type Props = {
     options?: Option[];
     selected?: string;
@@ -13,6 +13,8 @@
     trigger?: Snippet;
     triggerClass?: string;
     disabled?: boolean;
+    compact?: boolean;
+    missingLabel?: string;
     [key: string]: any;
   };
 
@@ -24,13 +26,27 @@
     trigger,
     triggerClass,
     disabled = false,
+    compact = false,
+    missingLabel,
     ...rest
   }: Props = $props();
 
   const selected_option = $derived(options.find((o) => o.value === selected));
-  const selected_label = $derived(selected_option?.label ?? selected ?? "");
+  const selected_label = $derived(selected_option?.label ?? missingLabel ?? selected ?? "");
   const selected_description = $derived(selected_option?.description ?? "");
-  const hasDescriptions = $derived(options.some((option) => Boolean(option.description)));
+  const hasDescriptions = $derived(
+    !compact && options.some((option) => Boolean(option.description)),
+  );
+  const optionGroups = $derived.by(() => {
+    const result: { label: string; items: Option[] }[] = [];
+    for (const option of options) {
+      const label = option.group ?? "";
+      if (!result.length || result[result.length - 1].label !== label)
+        result.push({ label, items: [] });
+      result[result.length - 1].items.push(option);
+    }
+    return result;
+  });
   const missing_selection = $derived(
     Boolean(selected) && !options.some((o) => o.value === selected),
   );
@@ -45,7 +61,7 @@
         <div class="selected" class:has-descriptions={hasDescriptions}>
           <div class="selected-text">
             <div class="selected-value">{selected_label}</div>
-            {#if selected_description}
+            {#if selected_description && !compact}
               <div class="selected-description">{selected_description}</div>
             {/if}
           </div>
@@ -57,28 +73,41 @@
     </Select.Trigger>
 
     <Select.Content align="start" sideOffset={4} aria-label={ariaLabel}>
-      {#each options as option}
-        <Select.Item value={option.value} label={option.label}>
-          {#snippet children({ selected })}
-            <div class="option">
-              <div class="option-text">
-                <span class="option-label">{option.label}</span>
-                {#if option.description}
-                  <span class="option-description">{option.description}</span>
-                {/if}
-              </div>
-              <div class="option-check">
-                {#if selected}<Check size={16} />{/if}
-              </div>
-            </div>
-          {/snippet}
-        </Select.Item>
+      {#each optionGroups as group}
+        <Select.Group>
+          {#if group.label}<Select.GroupHeading class="option-group-heading"
+              >{group.label}</Select.GroupHeading
+            >{/if}
+          {#each group.items as option}
+            <Select.Item value={option.value} label={option.label}>
+              {#snippet children({ selected })}
+                <div class="option">
+                  <div class="option-text">
+                    <span class="option-label">{option.label}</span>
+                    {#if option.description}
+                      <span class="option-description">{option.description}</span>
+                    {/if}
+                  </div>
+                  <div class="option-check">
+                    {#if selected}<Check size={16} />{/if}
+                  </div>
+                </div>
+              {/snippet}
+            </Select.Item>
+          {/each}
+        </Select.Group>
       {/each}
     </Select.Content>
   </Select.Root>
 </div>
 
 <style>
+  :global(.option-group-heading) {
+    padding: 0.3rem 0.4rem 0.2rem;
+    color: var(--text-2);
+    font-size: 0.75rem;
+  }
+
   .select-wrap {
     display: inline-block;
     width: max-content;

@@ -47,6 +47,7 @@ export const GroupSchema = object({
   name: fallback(string(), ""),
   color: fallback(optional(string()), "#ffffff"),
   interface: string(),
+  profile: optional(string()),
   enable: fallback(boolean(), true),
   rules: array(RuleSchema),
 });
@@ -64,6 +65,7 @@ export const SubscriptionSchema = object({
   id: fallback(pipe(string(), length(8), regex(/^[0-9a-f]{8}/)), randomId()),
   name: fallback(string(), ""),
   interface: string(),
+  profile: optional(string()),
   enable: fallback(boolean(), true),
   rules: array(SubscriptionRuleSchema),
   url: string(),
@@ -72,8 +74,18 @@ export const SubscriptionSchema = object({
 });
 export type Subscription = InferOutput<typeof SubscriptionSchema>;
 
+export const ProfileSchema = object({
+  id: string(),
+  name: string(),
+  interfaces: array(string()),
+  on_unavailable: optional(string(), "blackhole"),
+  usage: optional(object({ groups: number(), subscriptions: number() })),
+});
+export type Profile = InferOutput<typeof ProfileSchema>;
+
 export const ConfigSchema = object({
   groups: array(GroupSchema),
+  profiles: optional(array(ProfileSchema)),
 });
 export type Config = InferOutput<typeof ConfigSchema>;
 

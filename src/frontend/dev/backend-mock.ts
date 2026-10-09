@@ -4,8 +4,9 @@ import { serveStatic } from "hono/deno";
 import { logger } from "hono/logger";
 import { streamSSE } from "hono/streaming";
 
+import { cleanProfiles, profileError } from "../src/modules/settings/profiles-data.ts";
 import type { RuleChange } from "../src/modules/subscriptions/subscription-payload.ts";
-import type { Group, Interfaces, Subscription } from "../src/types.ts";
+import type { Group, Interfaces, Profile, Subscription } from "../src/types.ts";
 
 const API_BASE = "/api/v1";
 
@@ -19,7 +20,7 @@ const INTERFACES: Interfaces = {
 };
 
 const DATA = JSON.parse(Deno.readTextFileSync("./dev/groups.json"));
-const SUBSCRIPTIONS = [
+const SUBSCRIPTIONS: Subscription[] = [
   {
     id: "a1b2c3d4",
     name: "Bad Bad Services",
@@ -97,6 +98,44 @@ app.post(`${API_BASE}/auth`, async (c) => {
   return c.json({ error: "Invalid credentials" }, 403);
 });
 
+let PROFILES: Profile[] = [];
+function profileResponse() {
+  return {
+    profiles: PROFILES.map((profile) => ({
+      ...profile,
+      usage: {
+        groups: DATA.groups.filter((g: Group) => g.profile === profile.id).length,
+        subscriptions: SUBSCRIPTIONS.filter((s) => s.profile === profile.id).length,
+      },
+    })),
+  };
+}
+function applyProfile<T extends { interface: string; profile?: string }>(item: T): T {
+  const profile = PROFILES.find((p) => p.id === item.profile);
+  return profile ? { ...item, interface: profile.interfaces[0] } : item;
+}
+app.get(`${API_BASE}/profiles`, (c) => c.json(profileResponse()));
+app.put(`${API_BASE}/profiles`, async (c) => {
+  const body = await c.req.json();
+  if (!Array.isArray(body.profiles)) return c.json({ error: "profiles must be an array" }, 400);
+  let next: Profile[];
+  try {
+    next = cleanProfiles(body.profiles);
+  } catch {
+    return c.json({ error: "Invalid profiles" }, 400);
+  }
+  const error = profileError(next);
+  if (error) return c.json({ error }, 400);
+  const ids = new Set(next.map((p) => p.id));
+  if ([...DATA.groups, ...SUBSCRIPTIONS].some((item) => item.profile && !ids.has(item.profile))) {
+    return c.json({ error: "Reassign groups and subscriptions before deleting this profile" }, 409);
+  }
+  PROFILES = next;
+  DATA.groups = DATA.groups.map(applyProfile);
+  for (let i = 0; i < SUBSCRIPTIONS.length; i++) SUBSCRIPTIONS[i] = applyProfile(SUBSCRIPTIONS[i]);
+  return c.json(profileResponse());
+});
+
 app.get(`${API_BASE}/groups`, (c) => c.json(DATA));
 app.put(`${API_BASE}/groups`, async (c) => {
   const body = await c.req.json();
@@ -128,7 +167,10 @@ app.put(`${API_BASE}/groups`, async (c) => {
       });
     }
     const { ruleChanges: _, ...metadata } = incoming;
-    replacement.push({ ...previous, ...metadata, rules });
+    if (metadata.profile && !PROFILES.some((p) => p.id === metadata.profile)) {
+      return c.json({ error: "Missing routing profile" }, 400);
+    }
+    replacement.push(applyProfile({ ...previous, ...metadata, profile: metadata.profile, rules }));
   }
   DATA.groups = replacement;
   return c.json({ groups: DATA.groups });
@@ -170,14 +212,19 @@ app.put(`${API_BASE}/subscriptions`, async (c) => {
       rule.enable = change.enable;
     }
     const { ruleChanges: _, ...metadata } = incoming;
-    replacement.push({ ...previous, ...metadata, rules });
+    if (metadata.profile && !PROFILES.some((p) => p.id === metadata.profile)) {
+      return c.json({ error: "Missing routing profile" }, 400);
+    }
+    replacement.push(applyProfile({ ...previous, ...metadata, profile: metadata.profile, rules }));
   }
   SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...replacement);
   return c.json({ status: "ok" });
 });
 
 app.post(`${API_BASE}/subscriptions`, async (c) => {
-  const body = await c.req.json();
+  const body = applyProfile(await c.req.json());
+  if (body.profile && !PROFILES.some((p) => p.id === body.profile))
+    return c.json({ error: "Missing routing profile" }, 400);
   if (c.req.query("fetch") === "true") {
     const subscription = {
       ...body,

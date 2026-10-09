@@ -54,3 +54,6 @@ export { default as CloudSync } from "@lucide/svelte/icons/cloud-sync";
 export { default as RSS } from "@lucide/svelte/icons/rss";
 export { default as Globe } from "@lucide/svelte/icons/globe";
 export { default as Scan } from "@lucide/svelte/icons/scan";
+
+export { default as Settings } from "@lucide/svelte/icons/settings";
+export { default as Lock } from "@lucide/svelte/icons/lock";

@@ -7,9 +7,10 @@
   import { Add, Export, Import, Save } from "../ui/icons";
 
   type Props = {
-    search: Snippet;
+    search?: Snippet;
     addLabel: string;
     canSave: boolean;
+    canAdd?: boolean;
     controlsClass?: string;
     actionsClass?: string;
     onAdd: () => void;
@@ -28,6 +29,7 @@
     addLabel,
     actionsClass = "",
     canSave,
+    canAdd = true,
     controlsClass = "",
     exportLabel,
     importAccept = ".mtrickle",
@@ -45,14 +47,26 @@
   let actionsReserve = $derived(`${actionsCount * 48 + Math.max(0, actionsCount - 1) * 8 + 4}px`);
 </script>
 
-<div class={`page-controls ${controlsClass}`} style:--actions-reserve-size={actionsReserve}>
-  <div class="page-controls-search">
-    {@render search()}
-  </div>
+<div
+  class={`page-controls ${controlsClass}${search ? "" : " no-search"}`}
+  style:--actions-reserve-size={actionsReserve}
+>
+  {#if search}
+    <div class="page-controls-search">
+      {@render search()}
+    </div>
+  {/if}
 
   <div class={`page-controls-actions ${actionsClass}`}>
     <Tooltip value={saveLabel}>
-      <Button onclick={onSave} id={saveButtonId} aria-label={saveLabel} class="accent" inactive={!canSave}>
+      <Button
+        onclick={onSave}
+        id={saveButtonId}
+        aria-label={saveLabel}
+        class="accent"
+        inactive={!canSave}
+        disabled={!canSave}
+      >
         <Save size={22} />
       </Button>
     </Tooltip>
@@ -81,16 +95,18 @@
     {/if}
 
     <Tooltip value={addLabel}>
-      <Button onclick={onAdd} aria-label={addLabel}><Add size={22} /></Button>
+      <Button onclick={onAdd} aria-label={addLabel} disabled={!canAdd}><Add size={22} /></Button>
     </Tooltip>
   </div>
 </div>
 
 <style>
   .page-controls {
+    --row-h: 48px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: var(--row-h);
     flex-wrap: nowrap;
     gap: 0.75rem;
     padding: 0.3rem 0rem;
@@ -99,6 +115,10 @@
     top: 0;
     z-index: 5;
     background: color-mix(in oklab, var(--bg-dark) 92%, var(--bg-dark-extra) 8%);
+  }
+
+  .page-controls.no-search {
+    justify-content: flex-end;
   }
 
   .page-controls-search {
@@ -117,10 +137,13 @@
       padding: 0.3rem 0;
       padding-bottom: 0;
       transition: padding-bottom 220ms cubic-bezier(0.2, 0, 0.2, 1);
-      --row-h: 48px;
       --gap: 10px;
       --actions-top: 0px;
       --actions-reserve: var(--actions-reserve-size);
+    }
+
+    .page-controls.no-search {
+      min-height: var(--row-h);
     }
 
     .page-controls-search {

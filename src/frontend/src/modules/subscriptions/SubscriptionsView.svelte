@@ -27,6 +27,7 @@
     url: string;
     name: string;
     interface: string;
+    profile?: string;
     interval: number;
   };
 
@@ -42,7 +43,7 @@
       ? selectedIds.filter((value) => value !== id)
       : [...selectedIds, id];
   }
-  function applyToSelected(update: { interface: string } | { enable: boolean }) {
+  function applyToSelected(update: { interface: string; profile?: string } | { enable: boolean }) {
     for (const item of selectedItems) Object.assign(item, update);
     store.markDataRevision();
   }
@@ -172,11 +173,18 @@
   <BulkActions
     count={selectedItems.length}
     totalCount={store.data.length}
-    currentInterface={selectedItems.every((item) => item.interface === selectedItems[0]?.interface)
+    currentInterface={selectedItems.every(
+      (item) =>
+        item.interface === selectedItems[0]?.interface &&
+        item.profile === selectedItems[0]?.profile,
+    )
       ? selectedItems[0]?.interface
       : undefined}
     onclear={() => (selectedIds = [])}
-    onapply={(value) => applyToSelected({ interface: value })}
+    onapply={(value) => applyToSelected(value)}
+    currentProfile={selectedItems.every((item) => item.profile === selectedItems[0]?.profile)
+      ? selectedItems[0]?.profile
+      : undefined}
     currentEnabled={selectedItems.every((item) => item.enable === selectedItems[0]?.enable)
       ? selectedItems[0]?.enable
       : undefined}
