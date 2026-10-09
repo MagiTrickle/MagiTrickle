@@ -168,8 +168,8 @@ static const char *reordered = "{\"profiles\":[{\"id\":\"vpn\",\"name\":\"Rename
 TEST profiles_api_and_compatibility_shadows(void) {
     harness_t *h = harness_start(true); ASSERT(h != NULL);
     ASSERT_EQ(200, do_request("PUT", "/api/v1/profiles", definition, NULL));
-    ASSERT_EQ(200, do_request("POST", "/api/v1/groups", "{\"id\":\"aabbccdd\",\"name\":\"G\",\"interface\":\"stale\",\"profile\":\"vpn\"}", NULL));
-    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", "{\"subscriptions\":[{\"id\":\"11223344\",\"name\":\"S\",\"url\":\"https://example.test\",\"profile\":\"vpn\",\"rules\":[]}]}", NULL));
+    ASSERT_EQ(200, do_request("POST", "/api/v1/groups", "{\"id\":\"aabbccdd\",\"name\":\"G\",\"interface\":\"stale\",\"profile\":\"vpn\",\"priority\":731}", NULL));
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", "{\"subscriptions\":[{\"id\":\"11223344\",\"name\":\"S\",\"url\":\"https://example.test\",\"profile\":\"vpn\",\"priority\":219,\"rules\":[]}]}", NULL));
     cJSON *out = NULL;
     ASSERT_EQ(200, do_request("GET", "/api/v1/profiles", NULL, &out));
     cJSON *p = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "profiles"), 0);
@@ -177,17 +177,41 @@ TEST profiles_api_and_compatibility_shadows(void) {
     ASSERT_EQ(1, cJSON_GetObjectItemCaseSensitive(usage, "groups")->valueint);
     ASSERT_EQ(1, cJSON_GetObjectItemCaseSensitive(usage, "subscriptions")->valueint);
     cJSON_Delete(out);
+    ASSERT_EQ(731, mt_ruleset_group(mt_app_user_group_at(h->app, 0))->priority);
+    ASSERT_EQ(219, mt_ruleset_group(mt_app_subscription_ruleset_at(h->app, 0))->priority);
+    /* A priority-only bulk edit must preserve the profile and bypass reuse
+     * of an otherwise identical group with the same collection position. */
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups", "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"G\",\"profile\":\"vpn\",\"priority\":842,\"ruleChanges\":[]}]}", &out));
+    p = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
+    ASSERT_EQ(842, cJSON_GetObjectItemCaseSensitive(p, "priority")->valueint);
+    ASSERT_STR_EQ("vpn", cJSON_GetObjectItemCaseSensitive(p, "profile")->valuestring);
+    ASSERT_STR_EQ("tun0", cJSON_GetObjectItemCaseSensitive(p, "interface")->valuestring);
+    cJSON_Delete(out);
+    /* Older payloads may omit priority while still carrying their route. */
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", "{\"subscriptions\":[{\"id\":\"11223344\",\"name\":\"S\",\"url\":\"https://example.test\",\"profile\":\"vpn\",\"ruleChanges\":[]}]}", NULL));
     ASSERT_EQ(200, do_request("PUT", "/api/v1/profiles", reordered, NULL));
     ASSERT_EQ(200, do_request("GET", "/api/v1/groups", NULL, &out));
     p = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
     ASSERT_STR_EQ("tun2", cJSON_GetObjectItemCaseSensitive(p, "interface")->valuestring);
     ASSERT_STR_EQ("vpn", cJSON_GetObjectItemCaseSensitive(p, "profile")->valuestring);
+    ASSERT_EQ(842, cJSON_GetObjectItemCaseSensitive(p, "priority")->valueint);
+    cJSON_Delete(out);
+    ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
+    p = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "subscriptions"), 0);
+    ASSERT_STR_EQ("tun2", cJSON_GetObjectItemCaseSensitive(p, "interface")->valuestring);
+    ASSERT_STR_EQ("vpn", cJSON_GetObjectItemCaseSensitive(p, "profile")->valuestring);
+    ASSERT_EQ(219, cJSON_GetObjectItemCaseSensitive(p, "priority")->valueint);
+    const mt_group_t *synth = mt_ruleset_group(mt_app_subscription_ruleset_at(h->app, 0));
+    ASSERT_STR_EQ("vpn", synth->profile); ASSERT_STR_EQ("tun2", synth->iface);
+    ASSERT_EQ(219, synth->priority);
     cJSON_Delete(out);
     mt_config_t loaded = {0}; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
     ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->config_path));
     ASSERT_STR_EQ("tun2", loaded.groups[0]->iface);
     ASSERT_STR_EQ("tun2", loaded.subscriptions[0]->iface);
     ASSERT_STR_EQ("vpn", loaded.groups[0]->profile);
+    ASSERT_EQ(842, loaded.groups[0]->priority);
+    ASSERT_EQ(219, loaded.subscriptions[0]->priority);
     mt_config_clear(&loaded); harness_stop(h); PASS();
 }
 TEST used_profile_cannot_disappear_and_direct_selection_clears_reference(void) {

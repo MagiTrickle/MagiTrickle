@@ -89,7 +89,7 @@
   }
 
   .search-container {
-    --search-icon-size: 1.5rem;
+    --search-icon-size: 22px;
     --search-collapsed-width: calc(var(--search-icon-size) + 1.2rem + 2px);
     background-color: var(--bg-light);
     padding: 0.6rem;
@@ -190,8 +190,6 @@
     }
 
     .search-container {
-      --search-icon-size: 22px;
-      --search-collapsed-width: calc(var(--search-icon-size) + 1.2rem + 2px);
       width: var(--search-collapsed-width);
       height: var(--search-collapsed-width);
       min-height: var(--search-collapsed-width);

@@ -20,6 +20,7 @@ const makeRule = (id: string, name = id, pattern = `${id}.example.com`): Rule =>
 });
 
 const makeGroup = (id: string, rules: Rule[] = []): Group => ({
+  priority: 300,
   id,
   name: `group-${id}`,
   color: "#ffffff",

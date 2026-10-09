@@ -1,4 +1,8 @@
 {
+  "Group priority": "Приоритет группы",
+  "Subscription priority": "Приоритет подписки",
+  "Decrease priority": "Уменьшить приоритет",
+  "Increase priority": "Увеличить приоритет",
   "Save Changes": "Сохранить изменения",
   "Export Config": "Экспортировать конфиг",
   "Empty config exported": "Экспортирован пустой конфиг",

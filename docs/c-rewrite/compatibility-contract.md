@@ -22,6 +22,7 @@ Source: `config/config.go`, `config/app.go`, `config.go`
 | Duration parsing | yaml v2 accepts Go duration strings (`5s`, `1h0m0s`) and bare integers = **nanoseconds**; legacy normalization: dnsProxy.timeout < 1 ms ⇒ treat as ms; additionalTTL < 1 s ⇒ treat as s (empirically verified) | Gap | DIFF |
 | Duration serialization | saved as Go duration strings (`5s`, `1h0m0s`) | Gap | DIFF |
 | `enable` default | **absent `enable` on group/rule/subscription unmarshals to `false`** (plain Go bool; empirically verified). NOTE: contradicts CLAUDE.md claim of default-true; API create paths default group Enable to true instead | Gap | DIFF |
+| Routing priority (D-73) | Additive `priority` on groups/subscriptions: integer 1–1000, defaults 300/100 when absent. Save always includes it; invalid explicit priority rejects before applying config changes | Priority config/API tests | UT+CT |
 | Field names | camelCase app keys (`httpWeb`, `dnsProxy`, `disableRemap53`, …); group/rule keys lowercase; subscription uses `last_update` (snake) | Gap | DIFF |
 | Save shape | full app tree always written; key order = Go struct order (`configVersion`, `app`, `groups`, `subscriptions`); `groups`/`subscriptions` always present (may be `[]`) | Gap | DIFF |
 | Group color | invalid `#rrggbb` → `#ffffff`; valid → lowercased (regexp2 IgnoreCase) | Gap | DIFF |
@@ -78,6 +79,10 @@ Details to freeze exactly (from code):
   `{"error":"..."}`; Content-Type `application/json; charset=utf-8`.
 - Group create defaults: missing `id` → random; missing `enable` → `true`;
   invalid color → `#ffffff`.
+- D-73 adds numeric `priority` to group/subscription resources and writes.
+  Creation defaults to 300/100 respectively; updates that omit it retain the
+  existing value. Explicit invalid, null, noninteger or out-of-range values
+  return HTTP 400 before mutation, including compact bulk updates.
 - `PUT /groups/{id}` with changed `enable` transitions the live rule set
   (disable → update → enable+sync).
 - `save=true` query triggers async SaveConfig after the response.
@@ -218,6 +223,11 @@ transcripts + IT in netns.
 - `iptables` batching: desired state compiled against `iptables-save`
   output; committed via `iptables-restore --noflush`; external flushes are
   healed on the next Commit (netfilterd hook → ForceCommitIPTables).
+- D-73 explicitly defines overlapping-set precedence: the highest group or
+  subscription `priority` wins, with higher ID breaking ties. Managed mangle
+  PREROUTING jumps are reconciled in ascending priority/ID order because MARK
+  and CONNMARK saving do not terminate traversal. All matching DNS sets remain
+  populated, and unrelated firewall rules retain their relative order.
 
 ## 8. Subscriptions
 

@@ -28,6 +28,13 @@
 #define MT_RULE_SUBNET    "subnet"
 #define MT_RULE_SUBNET6   "subnet6"
 
+/* Routing precedence shared by user groups and subscriptions. Larger values
+ * win; an omitted field in a legacy config or create request uses its default. */
+#define MT_PRIORITY_MIN 1
+#define MT_PRIORITY_MAX 1000
+#define MT_GROUP_DEFAULT_PRIORITY 300
+#define MT_SUBSCRIPTION_DEFAULT_PRIORITY 100
+
 typedef struct mt_rule {
     mt_id_t id;
     char *name;
@@ -43,6 +50,7 @@ typedef struct mt_group {
     char *iface; /* yaml key: interface; configured primary, never runtime active */
     char *profile; /* optional stable profile ID; authoritative when nonempty */
     bool enable;
+    uint16_t priority;
     mt_rule_t **rules;
     size_t n_rules;
 } mt_group_t;
@@ -60,6 +68,7 @@ typedef struct mt_subscription {
     char *iface;
     char *profile;
     bool enable;
+    uint16_t priority;
     char *url;
     uint32_t interval;
     uint32_t last_update;

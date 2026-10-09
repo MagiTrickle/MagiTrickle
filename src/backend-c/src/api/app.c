@@ -306,8 +306,9 @@ static mt_err_t validate_group_rule_ids(const mt_group_t *group) {
 static bool same_text(const char *a, const char *b) { return strcmp(a ? a : "", b ? b : "") == 0; }
 
 static bool same_group(const mt_group_t *a, const mt_group_t *b) {
-    if (!mt_id_equal(a->id, b->id) || a->enable != b->enable || a->n_rules != b->n_rules ||
-        !same_text(a->profile, b->profile) || !same_text(a->name, b->name) || !same_text(a->iface, b->iface) || !same_text(a->color, b->color)) { return false; }
+    if (!mt_id_equal(a->id, b->id) || a->enable != b->enable || a->priority != b->priority ||
+        a->n_rules != b->n_rules || !same_text(a->profile, b->profile) ||
+        !same_text(a->name, b->name) || !same_text(a->iface, b->iface) || !same_text(a->color, b->color)) { return false; }
     for (size_t i = 0; i < a->n_rules; i++) {
         const mt_rule_t *x = a->rules[i], *y = b->rules[i];
         if (!mt_id_equal(x->id, y->id) || x->enable != y->enable || !same_text(x->name, y->name) ||
@@ -1162,6 +1163,7 @@ static mt_err_t clone_reload_group(mt_config_t *dst, const mt_group_t *source)
     mt_group_t *g = mt_group_new();
     if (!g) { return MT_ERR_NOMEM; }
     g->id = source->id; g->enable = source->enable;
+    g->priority = source->priority;
     mt_err_t err = mt_strset(&g->name, source->name);
     if (err == MT_OK) { err = mt_strset(&g->color, source->color); }
     if (err == MT_OK) { err = mt_strset(&g->iface, source->iface); }

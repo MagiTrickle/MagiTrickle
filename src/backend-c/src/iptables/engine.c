@@ -175,6 +175,19 @@ mt_err_t mt_ipt_append(mt_ipt_t *ipt, const char *table, const char *chain,
                        const char *const *args, size_t n_args) {
     return dispatch_rule_op(ipt, table, chain, args, n_args, 0, 0);
 }
+mt_err_t mt_ipt_append_ordered(mt_ipt_t *ipt, const char *table, const char *chain,
+                               int priority, const char *const *args, size_t n_args) {
+    table_reg_t *t = find_table(ipt, table);
+    chain_reg_t *c = t ? find_chain_reg(t, chain) : NULL;
+    if (!c) { return MT_ERR_STATE; }
+    if (!c->chain->ops->append_ordered) { return MT_ERR_INVAL; }
+
+    mt_ipt_rule_t *rule = mt_ipt_rule_new(args, n_args);
+    if (!rule) { return MT_ERR_NOMEM; }
+    mt_err_t err = c->chain->ops->append_ordered(c->chain, rule, priority);
+    mt_ipt_rule_free(rule);
+    return err;
+}
 mt_err_t mt_ipt_insert(mt_ipt_t *ipt, const char *table, const char *chain, int rule_num,
                        const char *const *args, size_t n_args) {
     return dispatch_rule_op(ipt, table, chain, args, n_args, rule_num, 1);

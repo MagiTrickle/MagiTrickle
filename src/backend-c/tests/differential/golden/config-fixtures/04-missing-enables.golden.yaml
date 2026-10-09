@@ -40,6 +40,7 @@ groups:
   color: '#ffffff'
   interface: ""
   enable: false
+  priority: 300
   rules:
   - id: "01020304"
     name: ""
@@ -51,6 +52,7 @@ subscriptions:
   name: ""
   interface: ""
   enable: false
+  priority: 100
   url: https://example.com/x.txt
   interval: 0
   last_update: 0

@@ -8,6 +8,7 @@ import { appliedGroups } from "../../utils/applied-save";
 import { defaultGroup, defaultRule } from "../../utils/defaults";
 import { overlay, toast } from "../../utils/events";
 import { fetcher } from "../../utils/fetcher";
+import { DEFAULT_GROUP_PRIORITY, isValidPriority, withPriorityDefault } from "../../utils/priority";
 import { type SortDirection, type SortField } from "../../utils/rule-sorter";
 import { buildGroupUpdate, snapshotGroupRules } from "./group-payload";
 import {
@@ -108,7 +109,10 @@ export class GroupsStore {
   data = $derived.by(() => this.tracker.data);
   dataRevision = $state(0);
   valid_rules = $state(true);
-  canSave = $derived(this.hasUnsavedChanges && this.valid_rules && !this.saving);
+  valid_priorities = $derived(this.data.every((group) => isValidPriority(group.priority)));
+  canSave = $derived(
+    this.hasUnsavedChanges && this.valid_rules && this.valid_priorities && !this.saving,
+  );
 
   open_state = $state<Record<string, boolean>>({});
 
@@ -293,8 +297,9 @@ export class GroupsStore {
     this.finishedGroupsCount = 0;
     this.fetchError = false;
     try {
-      const fetched =
-        (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? [];
+      const fetched = (
+        (await fetcher.get<{ groups: Group[] }>("/groups?with_rules=true"))?.groups ?? []
+      ).map((group) => withPriorityDefault(group, DEFAULT_GROUP_PRIORITY));
       this.#savedRules = snapshotGroupRules(fetched);
       this.tracker = new ChangeTracker(fetched);
       this.dataRevision = 0;
@@ -622,7 +627,7 @@ export class GroupsStore {
   }
 
   async saveChanges() {
-    if (!this.hasUnsavedChanges || this.saving) return;
+    if (!this.canSave) return;
     this.saving = true;
     overlay.show(t("saving changes..."));
     try {
@@ -633,8 +638,11 @@ export class GroupsStore {
       const saved = await fetcher.put<{ groups: Group[] }>("/groups?save=true", { groups });
       // The server assigns IDs to new/moved rules. Never keep client-only IDs
       // as the next edit's baseline; that used to regenerate IDs on every save.
-      this.#savedRules = snapshotGroupRules(saved.groups);
-      this.tracker.reset(saved.groups);
+      const savedGroups = saved.groups.map((group) =>
+        withPriorityDefault(group, DEFAULT_GROUP_PRIORITY),
+      );
+      this.#savedRules = snapshotGroupRules(savedGroups);
+      this.tracker.reset(savedGroups);
       this.persistencePending = false;
       this.markDataRevision();
       toast.success(t("Saved"));

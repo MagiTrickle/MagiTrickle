@@ -294,6 +294,11 @@ $(BUILDDIR)/tests/test_route_recovery: tests/unit/test_route_recovery.c $(MAIN_S
 	    -Wl,--wrap=mt_app_reconcile_routes -Wl,--wrap=mnl_socket_open -Wl,--wrap=mnl_socket_recvfrom \
 	    -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
+# Exercise production link staging with in-memory netfilter transports.
+$(BUILDDIR)/tests/test_rule_priority: tests/unit/test_rule_priority.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(filter-out $(BUILDDIR)/src/netfilter/ipset_to_link.o,$(LIB_OBJS)) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
 test: $(TEST_BINS)
 	@set -e; for t in $(TEST_BINS); do echo "== $$t"; $$t; done
 

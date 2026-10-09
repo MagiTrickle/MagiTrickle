@@ -51,9 +51,8 @@ static void *loop_thread(void *ud) {
 
 static void h_stub_list(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     (void)req;
-    (void)ud;
-    static const char body[] = "one.example\ntwo.example";
-    mt_http_res_write(res, 200, "text/plain", (const uint8_t *)body, sizeof(body) - 1);
+    const char *body = ud ? ud : "one.example\ntwo.example";
+    mt_http_res_write(res, 200, "text/plain", (const uint8_t *)body, strlen(body));
 }
 
 static void h_stub_404(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
@@ -110,6 +109,7 @@ static harness_t *harness_start_mode(int persistence) {
     if (mt_httpd_create(h->stub_loop, &h->stub) != MT_OK) { return NULL; }
     mt_httpd_route(h->stub, "GET", "/list", h_stub_list, NULL);
     mt_httpd_route(h->stub, "GET", "/list2", h_stub_list, NULL);
+    mt_httpd_route(h->stub, "GET", "/list-updated", h_stub_list, "one.example\ntwo.example\nthree.example");
     mt_httpd_route(h->stub, "GET", "/404", h_stub_404, NULL);
     mt_httpd_route(h->stub, "GET", "/large", h_stub_large, h);
     if (mt_httpd_listen_tcp(h->stub, "127.0.0.1", STUB_PORT) != MT_OK) { return NULL; }
@@ -266,6 +266,13 @@ TEST create_subscription_defaults_and_appears_in_list(void) {
     ASSERT_STR_EQ("s1", jstr(s, "name"));
     ASSERT_STR_EQ("https://example.com/list.txt", jstr(s, "url"));
     ASSERT(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(s, "enable"))); /* *bool absent -> default true */
+    cJSON *priority = cJSON_GetObjectItemCaseSensitive(s, "priority");
+    ASSERT(cJSON_IsNumber(priority));
+    ASSERT_EQ(MT_SUBSCRIPTION_DEFAULT_PRIORITY, priority->valueint);
+    mt_id_t id; ASSERT_EQ(MT_OK, mt_id_parse(jstr(s, "id"), &id));
+    mt_ruleset_t *synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
+    ASSERT(synth);
+    ASSERT_EQ(MT_SUBSCRIPTION_DEFAULT_PRIORITY, mt_ruleset_group(synth)->priority);
     cJSON *rules = cJSON_GetObjectItemCaseSensitive(s, "rules");
     ASSERT(cJSON_IsArray(rules));
     ASSERT_EQ(0, cJSON_GetArraySize(rules));
@@ -593,12 +600,97 @@ TEST persistence_failure_returns_applied_baseline_for_retry(void) {
     mt_config_clear(&loaded); harness_stop(h); PASS();
 }
 
+TEST subscription_priority_survives_fetch_sync_compact_save_and_reload(void) {
+    harness_t *h = harness_start_mode(1); ASSERT(h);
+    char body[512];
+    snprintf(body, sizeof(body),
+        "{\"id\":\"aabbccdd\",\"name\":\"priority-sub\",\"url\":\"%s\",\"priority\":1000}",
+        stub_url("/list"));
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions?fetch=true", body, &out));
+    cJSON *sub = cJSON_GetObjectItemCaseSensitive(out, "subscription");
+    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
+    ASSERT_EQ(2, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(sub, "rules")));
+    cJSON_Delete(out);
+    mt_id_t id; ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &id));
+    mt_ruleset_t *synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
+    ASSERT(synth);
+    ASSERT_EQ(1000, mt_ruleset_group(synth)->priority);
+    /* The new source adds a rule, forcing sync to rebuild the synthetic
+     * ruleset rather than just touching the last-check timestamp. */
+    snprintf(body, sizeof(body), "{\"url\":\"%s\"}", stub_url("/list-updated"));
+    ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions/aabbccdd/sync", body, NULL));
+    synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
+    ASSERT(synth);
+    ASSERT_EQ(1000, mt_ruleset_group(synth)->priority);
+    ASSERT_EQ(3, mt_ruleset_group(synth)->n_rules);
+    snprintf(body, sizeof(body), "{\"subscriptions\":[{\"id\":\"aabbccdd\","
+        "\"name\":\"renamed\",\"url\":\"%s\",\"ruleChanges\":[]}]}", stub_url("/list-updated"));
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", body, NULL));
+    synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
+    ASSERT(synth);
+    ASSERT_EQ(1000, mt_ruleset_group(synth)->priority);
+    ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
+    sub = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "subscriptions"), 0);
+    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
+    ASSERT_EQ(3, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(sub, "rules")));
+    cJSON_Delete(out);
+    snprintf(body, sizeof(body), "{\"subscriptions\":[{\"id\":\"aabbccdd\","
+        "\"name\":\"renamed\",\"url\":\"%s\",\"priority\":1,\"ruleChanges\":[]}]}", stub_url("/list-updated"));
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", body, NULL));
+    synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
+    ASSERT(synth);
+    ASSERT_EQ(1, mt_ruleset_group(synth)->priority);
+    mt_config_t loaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    ASSERT_EQ(1, loaded.n_subscriptions);
+    ASSERT_EQ(1, loaded.subscriptions[0]->priority);
+    ASSERT_EQ(3, loaded.subscriptions[0]->n_rules);
+    mt_config_clear(&loaded); harness_stop(h); PASS();
+}
+
+TEST invalid_subscription_priorities_do_not_change_live_or_persisted_state(void) {
+    harness_t *h = harness_start_mode(1); ASSERT(h);
+    ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions",
+        "{\"id\":\"aabbccdd\",\"name\":\"original\",\"url\":\"https://example.com/list\",\"priority\":222}", NULL));
+    const char *invalid[] = {
+        "0", "-1", "1001", "1.5", "1e309", "null", "true", "\"100\"", "{}", "[]"
+    };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        char body[512];
+        snprintf(body, sizeof(body), "{\"name\":\"invalid\",\"url\":\"https://example.com/list\",\"priority\":%s}", invalid[i]);
+        ASSERT_EQ(400, do_request("POST", "/api/v1/subscriptions", body, NULL));
+        /* Invalid settings must be rejected before any fetch is submitted. */
+        ASSERT_EQ(400, do_request("POST", "/api/v1/subscriptions?fetch=true", body, NULL));
+        snprintf(body, sizeof(body), "{\"subscriptions\":["
+            "{\"id\":\"aabbccdd\",\"name\":\"would-change\",\"url\":\"https://example.com/list\",\"priority\":1},"
+            "{\"id\":\"bbbb0001\",\"url\":\"https://example.com/list\",\"priority\":%s}]}", invalid[i]);
+        ASSERT_EQ(400, do_request("PUT", "/api/v1/subscriptions", body, NULL));
+        cJSON *out = NULL;
+        ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
+        cJSON *subs = cJSON_GetObjectItemCaseSensitive(out, "subscriptions");
+        ASSERT_EQ(1, cJSON_GetArraySize(subs));
+        cJSON *sub = cJSON_GetArrayItem(subs, 0);
+        ASSERT_STR_EQ("original", jstr(sub, "name"));
+        ASSERT_EQ(222, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
+        cJSON_Delete(out);
+    }
+    mt_config_t loaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    ASSERT_EQ(1, loaded.n_subscriptions);
+    ASSERT_EQ(222, loaded.subscriptions[0]->priority);
+    ASSERT_STR_EQ("original", loaded.subscriptions[0]->name);
+    mt_config_clear(&loaded); harness_stop(h); PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     mt_sub_fetch_global_init();
     GREATEST_MAIN_BEGIN();
     RUN_TEST(persistence_failure_returns_applied_baseline_for_retry);
+    RUN_TEST(subscription_priority_survives_fetch_sync_compact_save_and_reload);
+    RUN_TEST(invalid_subscription_priorities_do_not_change_live_or_persisted_state);
     RUN_TEST(large_summary_creation_sparse_save_and_reload);
     RUN_TEST(url_creation_failure_does_not_leave_an_empty_subscription);
     RUN_TEST(disk_failure_is_http_error_and_url_creation_rolls_back);

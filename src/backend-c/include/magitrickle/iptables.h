@@ -129,6 +129,9 @@ typedef struct mt_ipt_chain_ops {
     mt_err_t (*insert)(mt_ipt_chain_t *self, int rule_num, const mt_ipt_rule_t *rule);
     mt_err_t (*remove)(mt_ipt_chain_t *self, const mt_ipt_rule_t *rule); /* "Delete" in Go */
     void (*destroy)(mt_ipt_chain_t *self);
+    /* Optional: patch chains can order an explicitly managed subset of
+     * rules without replacing the rest of the chain. */
+    mt_err_t (*append_ordered)(mt_ipt_chain_t *self, const mt_ipt_rule_t *rule, int priority);
 } mt_ipt_chain_ops_t;
 
 struct mt_ipt_chain {
@@ -175,6 +178,16 @@ mt_err_t mt_ipt_register_chain_override(mt_ipt_t *ipt, const char *table, const 
  * never registered via one of the RegisterChain* calls above. */
 mt_err_t mt_ipt_append(mt_ipt_t *ipt, const char *table, const char *chain,
                        const char *const *args, size_t n_args);
+/* Patch-chain only. These rules are kept in ascending priority order;
+ * equal priorities use lexicographic argv order for a stable tie-break.
+ * Unlike Append/InsertUnique, this also reorders already-present rules.
+ * Only exact registered rules are moved/deduplicated; unrelated rules
+ * retain their contents and relative order. Existing managed positions
+ * are reused, with additional rules inserted at the last such position
+ * (or appended if none exists). Ordinary patch operations follow this
+ * reconciliation. Delete() removes an ordered rule in the usual way. */
+mt_err_t mt_ipt_append_ordered(mt_ipt_t *ipt, const char *table, const char *chain,
+                               int priority, const char *const *args, size_t n_args);
 mt_err_t mt_ipt_insert(mt_ipt_t *ipt, const char *table, const char *chain,
                        int rule_num, const char *const *args, size_t n_args);
 mt_err_t mt_ipt_delete(mt_ipt_t *ipt, const char *table, const char *chain,

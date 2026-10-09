@@ -195,6 +195,8 @@ static void emit_group(emitter_ctx_t *ctx, const mt_config_t *cfg, const mt_grou
     }
     emit_plain(ctx, "enable");
     emit_bool(ctx, g->enable);
+    emit_plain(ctx, "priority");
+    emit_u64(ctx, g->priority);
     emit_plain(ctx, "rules");
     seq_start(ctx, g->n_rules == 0);
     for (size_t i = 0; i < g->n_rules; i++) {
@@ -235,6 +237,8 @@ static void emit_subscription(emitter_ctx_t *ctx, const mt_config_t *cfg, const 
     }
     emit_plain(ctx, "enable");
     emit_bool(ctx, s->enable);
+    emit_plain(ctx, "priority");
+    emit_u64(ctx, s->priority);
     emit_plain(ctx, "url");
     emit_string(ctx, s->url != NULL ? s->url : "");
     emit_plain(ctx, "interval");

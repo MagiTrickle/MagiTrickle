@@ -12,6 +12,7 @@ const large = (): Subscription => ({
   url: "https://example.com/list",
   interface: "eth0",
   enable: true,
+  priority: 100,
   interval: 86400,
   lastUpdate: 1700000000,
   rules: Array.from({ length: 50000 }, (_, i) => ({
@@ -59,3 +60,25 @@ Deno.test("missing baseline, changed text and duplicate IDs fail closed", () => 
   sub.rules[1] = { ...sub.rules[0] };
   assert.throws(() => buildSubscriptionUpdate(sub, baseline), /reload/);
 });
+
+Deno.test(
+  "subscription priority updates preserve profiles and allow switching to a direct route",
+  () => {
+    const sub = large();
+    const baseline = snapshotRules(sub.rules);
+    sub.priority = 600;
+    sub.profile = "shared";
+    const payload = buildSubscriptionUpdate(sub, baseline);
+    assert.equal(payload.priority, 600);
+    assert.equal(payload.profile, "shared");
+    assert.equal(payload.ruleChanges.length, 0);
+    assert(!("rules" in payload));
+    sub.profile = undefined;
+    sub.interface = "eth1";
+    const direct = buildSubscriptionUpdate(sub, baseline);
+    assert.equal(direct.priority, 600);
+    assert.equal(direct.interface, "eth1");
+    assert(!("profile" in direct));
+    assert.deepEqual(direct.ruleChanges, []);
+  },
+);

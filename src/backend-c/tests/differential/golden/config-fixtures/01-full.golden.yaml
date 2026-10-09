@@ -41,6 +41,7 @@ groups:
   color: '#aabbcc'
   interface: nwg0
   enable: true
+  priority: 300
   rules:
   - id: 6f34ee91
     name: Wildcard Example
@@ -77,6 +78,7 @@ subscriptions:
   name: My Sub
   interface: nwg1
   enable: true
+  priority: 100
   url: https://example.com/list.txt
   interval: 86400
   last_update: 1700000000

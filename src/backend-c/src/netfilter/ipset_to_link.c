@@ -2,6 +2,7 @@
 #include "magitrickle/ipset_to_link.h"
 #include "magitrickle/log.h"
 #include "magitrickle/failover.h"
+#include "magitrickle/models.h"
 
 #include <stdio.h>
 #include <linux/rtnetlink.h>
@@ -30,6 +31,7 @@ struct mt_ipset_to_link {
     mt_ipt_t *ipt6;    /* borrowed, nullable */
     mt_rtnl_t *rtnl;   /* borrowed */
     uint32_t start_idx;
+    uint16_t priority;
 
     bool enabled;
     uint32_t mark;
@@ -56,6 +58,7 @@ mt_ipset_to_link_t *mt_ipset_to_link_new(const char *chain_name, const char *ifa
     l->rtnl = rtnl;
     l->start_idx = start_idx;
     l->v4.selected = l->v6.selected = SIZE_MAX;
+    l->priority = MT_GROUP_DEFAULT_PRIORITY;
     return l;
 }
 
@@ -66,6 +69,10 @@ void mt_ipset_to_link_free(mt_ipset_to_link_t *l) {
     for (size_t i = 0; i < l->n_interfaces; i++) { free(l->interfaces[i]); }
     free(l->interfaces);
     free(l);
+}
+
+void mt_ipset_to_link_set_priority(mt_ipset_to_link_t *l, uint16_t priority) {
+    l->priority = priority;
 }
 
 /* ---- iptables chain rules ------------------------------------------------ */
@@ -109,7 +116,10 @@ static mt_err_t build_iptables_rules(mt_ipset_to_link_t *l, mt_ipt_t *ipt, const
     err = mt_ipt_append(ipt, "mangle", l->chain_name, mangle3, 8);
     if (err != MT_OK) { return err; }
     const char *pre_args[] = {"-j", l->chain_name};
-    err = mt_ipt_append(ipt, "mangle", "PREROUTING", pre_args, 2);
+    /* MARK is non-terminating: the last matching jump supplies both the
+     * packet and connection mark. Order all groups and subscriptions
+     * together so the highest configured priority runs last. */
+    err = mt_ipt_append_ordered(ipt, "mangle", "PREROUTING", l->priority, pre_args, 2);
     if (err != MT_OK) { return err; }
 
     err = mt_ipt_register_chain_override(ipt, "nat", l->chain_name);
