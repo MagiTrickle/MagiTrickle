@@ -69,6 +69,8 @@ struct daemon {
     mt_ipt_t *ipt6;
     mt_rtnl_t *rtnl;
     mt_nl_watcher_t *watcher;
+    int route_reconcile_timer;
+    unsigned route_retry_ms;
     mt_port_remap_t *port_remap;
     mt_app_t *app;
     mt_sub_fetcher_t *fetcher;
@@ -109,6 +111,10 @@ static void daemon_teardown(struct daemon *d)
     mt_httpd_destroy(d->http_unix);
     d->http_unix = NULL;
 
+    if (d->route_reconcile_timer) {
+        (void)mt_loop_del_timer(d->loop, d->route_reconcile_timer);
+        d->route_reconcile_timer = 0;
+    }
     mt_app_destroy(d->app);
     d->app = NULL;
 
@@ -255,70 +261,71 @@ static void on_response(const mt_dns_msg_t *msg, const char *client_addr,
     mt_dns_pipeline_handle_message(d->pipeline, msg, now_unix());
 }
 
+/* Netlink events are coalesced. Only a real event, receive loss or failed
+ * reconciliation schedules work; there is no periodic profile poll. */
+static void on_route_reconcile_timer(mt_loop_t *loop, void *ud)
+{
+    struct daemon *d = ud;
+    d->route_reconcile_timer = 0;
+    mt_err_t err = mt_app_reconcile_routes(d->app, NULL);
+    if (err == MT_OK) {
+        d->route_retry_ms = 0;
+        return;
+    }
+    unsigned delay = d->route_retry_ms ? d->route_retry_ms : 100u;
+    if (delay > 30000u) { delay = 30000u; }
+    /* A busy netfilter rebuild is an expected contention event, not a
+     * failed route. Keep retrying but promote it to WARN only if it has
+     * lasted long enough to warrant attention. Other failures stay WARN. */
+    if (err == MT_ERR_AGAIN && delay < 3200u) {
+        MT_DEBUG("netlink reconciliation delayed: %s; retry in %u ms",
+                 mt_err_str(err), delay);
+    } else {
+        MT_WARN("netlink reconciliation pending: %s; retry in %u ms",
+                mt_err_str(err), delay);
+    }
+    d->route_retry_ms = delay >= 15000u ? 30000u : delay * 2u;
+    if (mt_loop_add_timer(loop, delay, 0, on_route_reconcile_timer, d,
+                          &d->route_reconcile_timer) != MT_OK) {
+        MT_ERROR("cannot schedule netlink reconciliation; stopping daemon");
+        mt_loop_stop(loop);
+    }
+}
+
+static void schedule_route_reconcile(struct daemon *d)
+{
+    if (d->route_reconcile_timer) { return; }
+    if (mt_loop_add_timer(d->loop, 20, 0, on_route_reconcile_timer, d,
+                          &d->route_reconcile_timer) != MT_OK) {
+        MT_ERROR("cannot schedule netlink reconciliation; stopping daemon");
+        mt_loop_stop(d->loop);
+    }
+}
+
 static void on_link_up(const char *iface_name, bool up, void *ud)
 {
-    (void)up; /* the watcher only calls this when the link is up (see
-               * netlink_watcher.h), matching Go's net.FlagUp filter */
     struct daemon *d = ud;
-    MT_DEBUG("interface up: %s", iface_name);
-    for (size_t i = 0; i < mt_app_user_group_count(d->app); i++) {
-        mt_ruleset_t *rs = mt_app_user_group_at(d->app, i);
-        const mt_group_t *g = mt_ruleset_group(rs);
-        if (g->iface == NULL || strcmp(g->iface, iface_name) != 0) {
-            continue;
-        }
-        mt_err_t err = mt_ruleset_on_link_up(rs);
-        if (err != MT_OK) {
-            MT_ERROR("error while handling interface up: group=%s err=%s",
-                     g->name, mt_err_str(err));
-        }
-    }
-    for (size_t i = 0; i < mt_app_subscription_ruleset_count(d->app); i++) {
-        mt_ruleset_t *rs = mt_app_subscription_ruleset_at(d->app, i);
-        const mt_group_t *g = mt_ruleset_group(rs);
-        if (g->iface == NULL || strcmp(g->iface, iface_name) != 0) {
-            continue;
-        }
-        mt_err_t err = mt_ruleset_on_link_up(rs);
-        if (err != MT_OK) {
-            MT_ERROR("error while handling interface up: group=%s err=%s",
-                     g->name, mt_err_str(err));
-        }
-    }
+    MT_DEBUG("interface changed: %s up=%d", iface_name, (int)up);
+    schedule_route_reconcile(d);
 }
 
 static void on_addr_change(const char *iface_name, void *ud)
 {
     struct daemon *d = ud;
     MT_DEBUG("interface address changed: %s", iface_name);
-    for (size_t i = 0; i < mt_app_user_group_count(d->app); i++) {
-        mt_ruleset_t *rs = mt_app_user_group_at(d->app, i);
-        const mt_group_t *g = mt_ruleset_group(rs);
-        if (g->iface == NULL || strcmp(g->iface, iface_name) != 0) {
-            continue;
-        }
-        mt_err_t err = mt_ruleset_on_addr_change(rs);
-        if (err != MT_OK) {
-            MT_ERROR(
-                "error while handling interface addr change: group=%s "
-                "err=%s",
-                g->name, mt_err_str(err));
-        }
-    }
-    for (size_t i = 0; i < mt_app_subscription_ruleset_count(d->app); i++) {
-        mt_ruleset_t *rs = mt_app_subscription_ruleset_at(d->app, i);
-        const mt_group_t *g = mt_ruleset_group(rs);
-        if (g->iface == NULL || strcmp(g->iface, iface_name) != 0) {
-            continue;
-        }
-        mt_err_t err = mt_ruleset_on_addr_change(rs);
-        if (err != MT_OK) {
-            MT_ERROR(
-                "error while handling interface addr change: group=%s "
-                "err=%s",
-                g->name, mt_err_str(err));
-        }
-    }
+    schedule_route_reconcile(d);
+}
+
+static void on_route_change(void *ud)
+{
+    schedule_route_reconcile(ud);
+}
+
+static void on_netlink_resync(void *ud)
+{
+    struct daemon *d = ud;
+    MT_WARN("netlink notification lost or watcher reconnected; resynchronizing routes");
+    schedule_route_reconcile(d);
 }
 
 /* Collects the local addresses of the configured `link` interfaces for the
@@ -560,9 +567,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (mt_nl_watcher_create(d.loop, on_link_up, &d, on_addr_change, &d,
-                             &d.watcher) != MT_OK) {
-        MT_ERROR("failed to subscribe to link/addr updates");
+    if (mt_nl_watcher_create_with_routes(d.loop, on_link_up, &d,
+                                          on_addr_change, &d, on_route_change, &d,
+                                          on_netlink_resync, &d, &d.watcher) != MT_OK) {
+        MT_ERROR("failed to subscribe to link/address/route updates");
         daemon_teardown(&d);
         mt_config_clear(&cfg);
         return 1;

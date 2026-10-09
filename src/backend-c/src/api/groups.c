@@ -136,7 +136,7 @@ static mt_err_t apply_group_rule_changes(const cJSON *changes, mt_group_t *group
  * mutates `existing` in place; callers here get an independent object back
  * and must transplant it onto the live one themselves -- see
  * group_move_into, used by handle_put_group). */
-static mt_err_t group_from_req(const cJSON *req, const mt_group_t *existing, mt_group_t **out,
+static mt_err_t group_from_req(mt_app_t *app, const cJSON *req, const mt_group_t *existing, mt_group_t **out,
                                const char **err_msg) {
     mt_id_t req_id;
     bool has_req_id;
@@ -156,6 +156,11 @@ static mt_err_t group_from_req(const cJSON *req, const mt_group_t *existing, mt_
     mt_err_t err = mt_strset(&group->name, get_string(req, "name"));
     if (err == MT_OK) { err = mt_strset(&group->color, get_string(req, "color")); }
     if (err == MT_OK) { err = mt_strset(&group->iface, get_string(req, "interface")); }
+    const cJSON *profile = cJSON_GetObjectItemCaseSensitive(req, "profile");
+    if (profile && !cJSON_IsNull(profile) && !cJSON_IsString(profile)) { err = MT_ERR_INVAL; }
+    if (err == MT_OK) { err = mt_strset(&group->profile, get_string(req, "profile")); }
+    if (err == MT_OK) { err = mt_app_normalize_route(app, group->profile, &group->iface); }
+    if (err != MT_OK) { *err_msg = "invalid or missing routing profile"; }
     if (err == MT_OK) { err = mt_group_normalize_color(group); }
     if (err != MT_OK) {
         mt_group_free(group);
@@ -231,6 +236,8 @@ static void group_move_into(mt_group_t *into, mt_group_t *from) {
     into->color = from->color;
     free(into->iface);
     into->iface = from->iface;
+    free(into->profile);
+    into->profile = from->profile;
     into->enable = from->enable;
     for (size_t i = 0; i < into->n_rules; i++) { mt_rule_free(into->rules[i]); }
     free(into->rules);
@@ -275,6 +282,7 @@ static cJSON *group_to_json(const mt_group_t *g, bool with_rules) {
     cJSON_AddStringToObject(obj, "name", g->name ? g->name : "");
     cJSON_AddStringToObject(obj, "color", g->color ? g->color : "");
     cJSON_AddStringToObject(obj, "interface", g->iface ? g->iface : "");
+    if (g->profile && *g->profile) { cJSON_AddStringToObject(obj, "profile", g->profile); }
     cJSON_AddBoolToObject(obj, "enable", g->enable);
     /* "rules" key omitted unless with_rules, matching GroupRes.RulesRes's
      * `omitempty` (a nil slice pointer when withRules is false). */
@@ -403,7 +411,7 @@ static void handle_put_groups(mt_http_req_t *req, mt_http_res_t *res, void *ud) 
             if (rs) { existing = mt_ruleset_group(rs); }
         }
         const char *err_msg = "invalid group";
-        mt_err_t err = group_from_req(group_req, existing, &new_groups[i], &err_msg);
+        mt_err_t err = group_from_req(ctx->app, group_req, existing, &new_groups[i], &err_msg);
         if (err != MT_OK) {
             cJSON_Delete(json);
             for (int j = 0; j < i; j++) { mt_group_free(new_groups[j]); }
@@ -443,7 +451,7 @@ static void handle_create_group(mt_http_req_t *req, mt_http_res_t *res, void *ud
     }
     mt_group_t *group = NULL;
     const char *err_msg = "invalid group";
-    mt_err_t err = group_from_req(json, NULL, &group, &err_msg);
+    mt_err_t err = group_from_req(ctx->app, json, NULL, &group, &err_msg);
     cJSON_Delete(json);
     if (err != MT_OK) {
         mt_http_res_write_error(res, 400, err_msg);
@@ -483,7 +491,7 @@ static void handle_put_group(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     mt_group_t *live = mt_ruleset_group_mut(rs);
     mt_group_t *built = NULL;
     const char *err_msg = "invalid group";
-    mt_err_t err = group_from_req(json, live, &built, &err_msg);
+    mt_err_t err = group_from_req(ctx->app, json, live, &built, &err_msg);
     cJSON_Delete(json);
     if (err != MT_OK) {
         mt_http_res_write_error(res, err == MT_ERR_STATE ? 409 : 400, err_msg);

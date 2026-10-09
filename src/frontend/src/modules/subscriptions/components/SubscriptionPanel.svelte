@@ -27,10 +27,10 @@
   import Pagination from "../../../components/Pagination.svelte";
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
+  import RouteSelect from "../../../components/ui/RouteSelect.svelte";
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
-  import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
   import { SUBSCRIPTIONS_STORE_CONTEXT, type SubscriptionsStore } from "../subscriptions.svelte";
   import SubscriptionRuleRow from "./SubscriptionRuleRow.svelte";
@@ -274,13 +274,9 @@
 
         <div class="subscription-actions">
           <div class="action interface">
-            <Select
-              options={interfaces.list.map((item) => ({
-                value: item.id,
-                label: item.id,
-                description: item.name,
-              }))}
-              bind:selected={subscription.interface}
+            <RouteSelect
+              bind:interface={subscription.interface}
+              bind:profile={subscription.profile}
               class="subscription-interface"
             />
           </div>
@@ -502,6 +498,8 @@
   }
 
   .subscription-name {
+    box-sizing: border-box;
+    min-width: 0;
     border: none;
     background-color: transparent;
     font-size: 1.3rem;
@@ -510,7 +508,10 @@
     color: var(--text);
     border-bottom: 1px solid transparent;
     margin-left: 0.4rem;
-    width: 100%;
+    width: calc(100% - 0.4rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 
     &:focus-visible {
       outline: none;

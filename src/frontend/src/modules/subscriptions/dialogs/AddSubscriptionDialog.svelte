@@ -3,6 +3,7 @@
 
   import Button from "../../../components/ui/Button.svelte";
   import GenericDialog from "../../../components/ui/GenericDialog.svelte";
+  import RouteSelect from "../../../components/ui/RouteSelect.svelte";
   import Select from "../../../components/ui/Select.svelte";
   import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
@@ -25,6 +26,7 @@
   let url = $state("");
   let name = $state("");
   let selectedInterface = $state("");
+  let selectedProfile = $state<string | undefined>();
   let selectedInterval = $state(86400);
   let summary = $state<{ count: number; types: Record<string, number> }>({ count: 0, types: {} });
   let isLoading = $state(false);
@@ -43,6 +45,7 @@
     url = "";
     name = "";
     selectedInterface = interfaces.list[0]?.id || "";
+    selectedProfile = undefined;
     selectedInterval = 86400;
     summary = { count: 0, types: {} };
     isLoading = false;
@@ -104,6 +107,7 @@
       url: normalizedUrl,
       name,
       interface: selectedInterface,
+      profile: selectedProfile,
       interval: selectedInterval,
     });
     handleClose();
@@ -198,17 +202,13 @@
           </div>
 
           <div class="field">
-            <label for="sub-interface">{t("Interface")}</label>
+            <label for="sub-interface">{t("Route")}</label>
             <div class="subscription-input-wrapper">
               <span class="icon"><Network size={18} /></span>
-              <Select
+              <RouteSelect
                 id="sub-interface"
-                options={interfaces.list.map((item) => ({
-                  value: item.id,
-                  label: item.id,
-                  description: item.name,
-                }))}
-                bind:selected={selectedInterface}
+                bind:interface={selectedInterface}
+                bind:profile={selectedProfile}
                 class="interface-select"
               />
             </div>

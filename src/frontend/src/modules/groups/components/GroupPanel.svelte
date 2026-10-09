@@ -6,10 +6,9 @@
   import Pagination from "../../../components/Pagination.svelte";
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
-  import Select from "../../../components/ui/Select.svelte";
+  import RouteSelect from "../../../components/ui/RouteSelect.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
-  import { interfaces } from "../../../data/interfaces.svelte";
   import { t } from "../../../data/locale.svelte";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
   import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
@@ -387,14 +386,7 @@
         </div>
 
         <div class="group-actions">
-          <Select
-            options={interfaces.list.map((item) => ({
-              value: item.id,
-              label: item.id,
-              description: item.name,
-            }))}
-            bind:selected={group.interface}
-          />
+          <RouteSelect bind:interface={group.interface} bind:profile={group.profile} />
 
           <Tooltip value={t(group.enable ? "Disable Group" : "Enable Group")}>
             <Switch class="enable-group" bind:checked={group.enable} />

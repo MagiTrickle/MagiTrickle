@@ -1,8 +1,10 @@
 /* See ipset_to_link.h. Port of utils/netfilterTools/ipset-to-link.go. */
 #include "magitrickle/ipset_to_link.h"
 #include "magitrickle/log.h"
+#include "magitrickle/failover.h"
 
 #include <stdio.h>
+#include <linux/rtnetlink.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -14,11 +16,15 @@ typedef struct family_state {
     bool iface_has_gw;
     uint8_t gw[16];
     uint8_t gw_len;
+    int ifindex;
+    size_t selected; /* SIZE_MAX means blackhole */
 } family_state_t;
 
 struct mt_ipset_to_link {
     char *chain_name;
-    char *iface_name;
+    char *iface_name; /* direct-interface compatibility path */
+    char **interfaces; /* copied profile candidates, when present */
+    size_t n_interfaces;
     mt_ipset_t *ipset; /* borrowed */
     mt_ipt_t *ipt4;    /* borrowed, nullable */
     mt_ipt_t *ipt6;    /* borrowed, nullable */
@@ -49,6 +55,7 @@ mt_ipset_to_link_t *mt_ipset_to_link_new(const char *chain_name, const char *ifa
     l->ipt6 = ipt6;
     l->rtnl = rtnl;
     l->start_idx = start_idx;
+    l->v4.selected = l->v6.selected = SIZE_MAX;
     return l;
 }
 
@@ -56,6 +63,8 @@ void mt_ipset_to_link_free(mt_ipset_to_link_t *l) {
     if (!l) { return; }
     free(l->chain_name);
     free(l->iface_name);
+    for (size_t i = 0; i < l->n_interfaces; i++) { free(l->interfaces[i]); }
+    free(l->interfaces);
     free(l);
 }
 
@@ -69,8 +78,11 @@ static mt_err_t build_iptables_rules(mt_ipset_to_link_t *l, mt_ipt_t *ipt, const
     mt_err_t err = mt_ipt_register_chain_override(ipt, "filter", l->chain_name);
     if (err != MT_OK) { return err; }
 
-    if (strcmp(l->iface_name, MT_IPSET_TO_LINK_BLACKHOLE) != 0) {
-        const char *args[] = {"-o", l->iface_name, "-m", "set", "--match-set",
+    size_t count = l->n_interfaces ? l->n_interfaces : 1;
+    for (size_t i = 0; i < count; i++) {
+        const char *name = l->n_interfaces ? l->interfaces[i] : l->iface_name;
+        if (strcmp(name, MT_IPSET_TO_LINK_BLACKHOLE) == 0) { continue; }
+        const char *args[] = {"-o", name, "-m", "set", "--match-set",
                               ipset_name,          "dst", "-j", "ACCEPT"};
         err = mt_ipt_append(ipt, "filter", l->chain_name, args, 9);
         if (err != MT_OK) { return err; }
@@ -197,112 +209,135 @@ static mt_err_t delete_ip_rule(mt_ipset_to_link_t *l) {
 
 /* ---- ip route ----------------------------------------------------------- */
 
-static mt_err_t update_iface_route(mt_ipset_to_link_t *l, int family, int ifindex,
-                                   bool point_to_point, family_state_t *fs) {
-    bool has_gw = false;
-    uint8_t gw[16] = {0};
-    uint8_t gw_len = 0;
+static family_state_t *family_state(mt_ipset_to_link_t *l, int family)
+{
+    return family == AF_INET ? &l->v4 : &l->v6;
+}
 
-    if (!point_to_point) {
-        bool found;
-        mt_err_t err = mt_rtnl_gateway_for_iface(l->rtnl, family, ifindex, &found, gw, &gw_len);
-        if (err != MT_OK) {
-            MT_WARN("gateway lookup failed for %s: %s", l->iface_name, mt_err_str(err));
-        } else if (found) {
-            has_gw = true;
-        }
+static mt_err_t probe_candidate(void *ctx, const char *name, int family,
+                                mt_route_candidate_t *candidate, bool *available)
+{
+    mt_ipset_to_link_t *l = ctx;
+    *available = false;
+    if (!*name || strcmp(name, MT_IPSET_TO_LINK_BLACKHOLE) == 0) { return MT_OK; }
+    mt_link_info_t li;
+    bool found;
+    mt_err_t err = mt_rtnl_link_by_name(l->rtnl, name, &li, &found);
+    if (err != MT_OK || !found || !li.up) { return err; }
+    if (l->n_interfaces) {
+        if (!li.operational) { return MT_OK; }
+        err = mt_rtnl_iface_has_address(l->rtnl, family, li.ifindex, &found);
+        if (err != MT_OK || !found) { return err; }
     }
-
-    if (fs->iface_route_present) {
-        bool same_gw = has_gw == fs->iface_has_gw &&
-                       (!has_gw || (gw_len == fs->gw_len && memcmp(gw, fs->gw, gw_len) == 0));
-        if (same_gw) { return MT_OK; }
-        if (has_gw) {
-            mt_err_t err = mt_rtnl_route_del_iface(l->rtnl, family, l->table, 10, ifindex,
-                                                   fs->iface_has_gw ? fs->gw : NULL, fs->gw_len);
-            if (err != MT_OK) { return err; }
-            fs->iface_route_present = false;
-        }
+    candidate->ifindex = li.ifindex;
+    if (!li.point_to_point) {
+        err = (l->n_interfaces ? mt_rtnl_gateway_for_profile : mt_rtnl_gateway_for_iface)(l->rtnl, family, li.ifindex, &found,
+                                         candidate->gateway, &candidate->gateway_len);
+        if (l->n_interfaces && (err != MT_OK || !found)) { return err; }
+        if (err != MT_OK || !found) { candidate->gateway_len = 0; }
     }
-
-    bool enodev = false;
-    mt_err_t err = mt_rtnl_route_add_iface(l->rtnl, family, l->table, 10, ifindex,
-                                          has_gw ? gw : NULL, gw_len, &enodev);
-    if (err != MT_OK) { return err; }
-    if (enodev) {
-        MT_WARN("interface %s not ready for this IP family, skipping route", l->iface_name);
-        fs->iface_route_present = false;
-        return MT_OK;
-    }
-
-    fs->iface_route_present = true;
-    fs->iface_has_gw = has_gw;
-    fs->gw_len = gw_len;
-    memcpy(fs->gw, gw, sizeof(fs->gw));
+    *available = true;
     return MT_OK;
 }
 
-static mt_err_t insert_ip_route(mt_ipset_to_link_t *l) {
-    if (l->ipt4) {
-        mt_err_t err = mt_rtnl_route_add_blackhole(l->rtnl, AF_INET, l->table, 20);
-        if (err != MT_OK) { return err; }
-        l->v4.blackhole_added = true;
-    }
-    if (l->ipt6) {
-        mt_err_t err = mt_rtnl_route_add_blackhole(l->rtnl, AF_INET6, l->table, 20);
-        if (err != MT_OK) { return err; }
-        l->v6.blackhole_added = true;
-    }
-
-    if (strcmp(l->iface_name, MT_IPSET_TO_LINK_BLACKHOLE) == 0) { return MT_OK; }
-
-    mt_link_info_t li;
-    bool found;
-    mt_err_t err = mt_rtnl_link_by_name(l->rtnl, l->iface_name, &li, &found);
+static mt_err_t replace_candidate(void *ctx, int family, const mt_route_candidate_t *candidate,
+                                  bool *unavailable)
+{
+    mt_ipset_to_link_t *l = ctx;
+    family_state_t *fs = family_state(l, family);
+    mt_rtnl_default_route_t actual;
+    *unavailable = false;
+    mt_err_t err = mt_rtnl_get_default_route(l->rtnl, family, l->table, 10, &actual);
     if (err != MT_OK) { return err; }
-    if (!found) {
-        MT_WARN("interface %s not found, it can be caught later", l->iface_name);
-        return MT_OK;
-    }
-    if (!li.up) {
-        MT_WARN("interface %s is down", l->iface_name);
-        return MT_OK;
-    }
 
-    if (l->ipt4) {
-        err = update_iface_route(l, AF_INET, li.ifindex, li.point_to_point, &l->v4);
-        if (err != MT_OK) { return err; }
+    bool same = actual.found && !actual.multipath && actual.type == RTN_UNICAST &&
+                actual.ifindex == candidate->ifindex &&
+                actual.gateway_len == candidate->gateway_len &&
+                (!actual.gateway_len ||
+                 memcmp(actual.gateway, candidate->gateway, actual.gateway_len) == 0);
+    if (!same) {
+        err = mt_rtnl_route_replace_iface(l->rtnl, family, l->table, 10,
+                                          candidate->ifindex,
+                                          candidate->gateway_len ? candidate->gateway : NULL,
+                                          candidate->gateway_len, unavailable);
+        if (err != MT_OK || *unavailable) { return err; }
     }
-    if (l->ipt6) {
-        err = update_iface_route(l, AF_INET6, li.ifindex, li.point_to_point, &l->v6);
-        if (err != MT_OK) { return err; }
-    }
+    fs->iface_route_present = true;
+    fs->ifindex = candidate->ifindex;
+    fs->iface_has_gw = candidate->gateway_len != 0;
+    fs->gw_len = candidate->gateway_len;
+    memcpy(fs->gw, candidate->gateway, sizeof(fs->gw));
     return MT_OK;
+}
+
+static mt_err_t block_family(void *ctx, int family)
+{
+    mt_ipset_to_link_t *l = ctx;
+    family_state_t *fs = family_state(l, family);
+    mt_rtnl_default_route_t actual;
+    mt_err_t err = mt_rtnl_get_default_route(l->rtnl, family, l->table, 10, &actual);
+    if (err != MT_OK) { return err; }
+    if (actual.found) {
+        if (actual.type != RTN_UNICAST || actual.multipath || actual.ifindex <= 0) {
+            return MT_ERR_STATE;
+        }
+        err = mt_rtnl_route_del_iface(l->rtnl, family, l->table, 10, actual.ifindex,
+                                      actual.gateway_len ? actual.gateway : NULL,
+                                      actual.gateway_len);
+        if (err != MT_OK) { return err; }
+    }
+    fs->iface_route_present = false;
+    fs->selected = SIZE_MAX;
+    return MT_OK;
+}
+
+static mt_err_t reconcile_family(mt_ipset_to_link_t *l, int family)
+{
+    const mt_failover_ops_t ops = {probe_candidate, replace_candidate, block_family};
+    family_state_t *fs = family_state(l, family);
+    size_t selected = SIZE_MAX, previous = fs->selected;
+    const char *direct[] = {l->iface_name};
+    const char *const *names = l->n_interfaces ? (const char *const *)l->interfaces : direct;
+    size_t count = l->n_interfaces ? l->n_interfaces : 1;
+    mt_err_t err = mt_failover_reconcile(names, count, family, &ops, l, &selected);
+    if (err == MT_OK) {
+        fs->selected = selected;
+        if (l->n_interfaces && previous != selected) {
+            MT_INFO("route profile switched: chain=%s family=%d interface=%s", l->chain_name,
+                    family, selected == SIZE_MAX ? MT_IPSET_TO_LINK_BLACKHOLE : names[selected]);
+        }
+    }
+    return err;
+}
+
+static mt_err_t insert_family_routes(mt_ipset_to_link_t *l, int family)
+{
+    mt_rtnl_default_route_t actual;
+    mt_err_t err = mt_rtnl_get_default_route(l->rtnl, family, l->table, 20, &actual);
+    if (err != MT_OK) { return err; }
+    if (actual.found && actual.type != RTN_BLACKHOLE) { return MT_ERR_STATE; }
+    if (!actual.found) { err = mt_rtnl_route_add_blackhole(l->rtnl, family, l->table, 20); }
+    if (err != MT_OK) { return err; }
+    family_state(l, family)->blackhole_added = true;
+    return reconcile_family(l, family);
+}
+
+static mt_err_t insert_ip_route(mt_ipset_to_link_t *l) {
+    /* Isolate the WHOLE operation, including terminal-route preparation.
+     * A v6 snapshot/blackhole error must not prevent v4 failover (or vice
+     * versa). Still report failure so the event owner schedules recovery. */
+    mt_err_t e4 = l->ipt4 ? insert_family_routes(l, AF_INET) : MT_OK;
+    mt_err_t e6 = l->ipt6 ? insert_family_routes(l, AF_INET6) : MT_OK;
+    return e4 != MT_OK ? e4 : e6;
 }
 
 static mt_err_t delete_ip_route(mt_ipset_to_link_t *l) {
     mt_err_t first_err = MT_OK;
 
-    if (l->v4.iface_route_present) {
-        mt_link_info_t li;
-        bool found;
-        mt_rtnl_link_by_name(l->rtnl, l->iface_name, &li, &found);
-        int ifindex = found ? li.ifindex : 0;
-        mt_err_t err = mt_rtnl_route_del_iface(l->rtnl, AF_INET, l->table, 10, ifindex,
-                                              l->v4.iface_has_gw ? l->v4.gw : NULL, l->v4.gw_len);
-        if (err != MT_OK && first_err == MT_OK) { first_err = err; }
-        l->v4.iface_route_present = false;
-    }
-    if (l->v6.iface_route_present) {
-        mt_link_info_t li;
-        bool found;
-        mt_rtnl_link_by_name(l->rtnl, l->iface_name, &li, &found);
-        int ifindex = found ? li.ifindex : 0;
-        mt_err_t err = mt_rtnl_route_del_iface(l->rtnl, AF_INET6, l->table, 10, ifindex,
-                                              l->v6.iface_has_gw ? l->v6.gw : NULL, l->v6.gw_len);
-        if (err != MT_OK && first_err == MT_OK) { first_err = err; }
-        l->v6.iface_route_present = false;
-    }
+    mt_err_t e4 = block_family(l, AF_INET);
+    mt_err_t e6 = block_family(l, AF_INET6);
+    if (e4 != MT_OK) { first_err = e4; }
+    if (e6 != MT_OK && first_err == MT_OK) { first_err = e6; }
     if (l->v4.blackhole_added) {
         mt_err_t err = mt_rtnl_route_del_blackhole(l->rtnl, AF_INET, l->table, 20);
         if (err != MT_OK && first_err == MT_OK) { first_err = err; }
@@ -323,6 +358,7 @@ static mt_err_t teardown(mt_ipset_to_link_t *l) {
     mt_err_t e2 = delete_ip_rule(l);
     mt_err_t e3 = delete_iptables_rules(l, l->ipt4);
     mt_err_t e4 = delete_iptables_rules(l, l->ipt6);
+    if (e1 == MT_OK && e2 == MT_OK) { mt_rtnl_release_table(l->rtnl, l->table); }
     if (e1 != MT_OK) { return e1; }
     if (e2 != MT_OK) { return e2; }
     if (e3 != MT_OK) { return e3; }
@@ -338,6 +374,8 @@ mt_err_t mt_ipset_to_link_enable(mt_ipset_to_link_t *l) {
     l->mark = idx;
     l->table = idx;
 
+    err = mt_rtnl_reserve_table(l->rtnl, idx);
+    if (err != MT_OK) { return err; }
     err = insert_ip_rule(l);
     if (err == MT_OK) { err = insert_ip_route(l); }
     if (err == MT_OK) {
@@ -374,21 +412,61 @@ mt_err_t mt_ipset_to_link_on_link_up(mt_ipset_to_link_t *l) {
 }
 
 mt_err_t mt_ipset_to_link_on_addr_change(mt_ipset_to_link_t *l) {
-    if (!l->enabled || strcmp(l->iface_name, MT_IPSET_TO_LINK_BLACKHOLE) == 0) { return MT_OK; }
+    if (!l->enabled) { return MT_OK; }
+    return insert_ip_route(l);
+}
 
-    mt_link_info_t li;
-    bool found;
-    mt_err_t err = mt_rtnl_link_by_name(l->rtnl, l->iface_name, &li, &found);
-    if (err != MT_OK) { return err; }
-    if (!found) { return MT_OK; }
+bool mt_ipset_to_link_uses_interface(const mt_ipset_to_link_t *l, const char *name)
+{
+    if (!l || !name) { return false; }
+    if (!l->n_interfaces) { return strcmp(l->iface_name, name) == 0; }
+    for (size_t i = 0; i < l->n_interfaces; i++) {
+        if (strcmp(l->interfaces[i], name) == 0) { return true; }
+    }
+    return false;
+}
 
-    if (l->ipt4) {
-        err = update_iface_route(l, AF_INET, li.ifindex, li.point_to_point, &l->v4);
-        if (err != MT_OK) { return err; }
+static void free_interfaces(char **names, size_t count)
+{
+    for (size_t i = 0; i < count; i++) { free(names[i]); }
+    free(names);
+}
+
+mt_err_t mt_ipset_to_link_set_interfaces(mt_ipset_to_link_t *l,
+                                       const char *const *names, size_t count)
+{
+    if (!l || !names || !count) { return MT_ERR_INVAL; }
+    bool same = count == l->n_interfaces;
+    for (size_t i = 0; same && i < count; i++) { same = strcmp(names[i], l->interfaces[i]) == 0; }
+    if (same) { return MT_OK; }
+    char **next = calloc(count, sizeof(*next));
+    if (!next) { return MT_ERR_NOMEM; }
+    for (size_t i = 0; i < count; i++) {
+        next[i] = strdup(names[i]);
+        if (!next[i]) { free_interfaces(next, count); return MT_ERR_NOMEM; }
     }
-    if (l->ipt6) {
-        err = update_iface_route(l, AF_INET6, li.ifindex, li.point_to_point, &l->v6);
-        if (err != MT_OK) { return err; }
+    char **old = l->interfaces;
+    size_t old_count = l->n_interfaces;
+    l->interfaces = next; l->n_interfaces = count;
+    mt_err_t err = MT_OK;
+    if (l->enabled) {
+        /* Authorise the new possible outputs before changing the route.
+         * The permanent blackhole protects any unsuccessful transition. */
+        err = insert_iptables_rules(l, l->ipt4, mt_ipset_name4(l->ipset));
+        if (err == MT_OK) { err = insert_iptables_rules(l, l->ipt6, mt_ipset_name6(l->ipset)); }
+        if (err == MT_OK) { err = insert_ip_route(l); }
     }
+    if (err != MT_OK) {
+        l->interfaces = old; l->n_interfaces = old_count;
+        mt_err_t e4 = insert_iptables_rules(l, l->ipt4, mt_ipset_name4(l->ipset));
+        mt_err_t e6 = insert_iptables_rules(l, l->ipt6, mt_ipset_name6(l->ipset));
+        mt_err_t er = insert_ip_route(l);
+        if (e4 != MT_OK || e6 != MT_OK || er != MT_OK) {
+            MT_ERROR("failed to restore profile route: %s", l->chain_name);
+        }
+        free_interfaces(next, count);
+        return err;
+    }
+    free_interfaces(old, old_count);
     return MT_OK;
 }

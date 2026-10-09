@@ -544,52 +544,43 @@ jobs:
           mkdir -p "$log_dir"
           echo "log_dir=$log_dir" >> "$GITHUB_OUTPUT"
 
-          # A release only publishes the targets it still supports, so a
-          # 404 here means "this OpenWrt version has no SDK for the
-          # target/subtarget this package arch maps to", not a broken
-          # build. Report it and skip, the same way an unmapped arch is
-          # skipped above. Anything else (5xx, DNS, timeouts) is a real
-          # failure -- --retry covers the transient ones, and a 404 is
-          # deliberately not retried.
-          http_code=$(
-            curl --retry 5 --retry-delay 5 --connect-timeout 30 -sSL \
+          # Preserve the explicit known-absence policy. Other acquisition
+          # failures may use the same target from the pinned source release.
+          http_code=000
+          if ! http_code=$(
+            curl --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 120 -sSL \
               -o "$sdk_root/sha256sums" -w '%{http_code}' \
-              "${base_url}/sha256sums" 2>>"$log_dir/download.log" || echo 000
-          )
+              "${base_url}/sha256sums" 2>>"$log_dir/download.log"
+          ); then
+            http_code=000
+          fi
           echo "GET ${base_url}/sha256sums -> $http_code" >> "$log_dir/download.log"
-          if [ "$http_code" = 404 ]; then
-            if [ "$expected_absent" != true ]; then
-              echo "OpenWrt ${version} publishes no SDK for ${target}/${subtarget} (HTTP 404), so no package would be built for ${{ matrix.name }}. This arch is not one of the known per-release absences, so the mapping is wrong or the target was renamed -- see the 'Discover OpenWrt arch mappings' job summary." >&2
-              exit 1
-            fi
-            echo "::notice title=${{ matrix.name }}::OpenWrt ${version} publishes no SDK for ${target}/${subtarget}. This arch is a known absence on this release line, so no package is built for it here."
+          if [ "$http_code" = 404 ] && [ "$expected_absent" = true ]; then
+            echo "::notice title=${{ matrix.name }}::OpenWrt ${version} has no SDK for this known retired/renamed architecture."
             echo "sdk_available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$http_code" != 200 ]; then
-            echo "Failed to fetch ${base_url}/sha256sums (HTTP $http_code)" >&2
-            exit 1
+
+          # Download failures (including a bad/missing manifest) fall back
+          # only at SDK acquisition, never after a package compilation error.
+          sdk_origin=prebuilt
+          if [ "$http_code" != 200 ] || ! bash tools/ci/download-openwrt-sdk.sh \
+            "$sdk_root" "$base_url" "$log_dir"; then
+            sdk_origin=source
+            echo "::warning::Prebuilt SDK unavailable; building OpenWrt ${version} ${target}/${subtarget} from source."
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends \
+              build-essential clang flex bison g++ gawk gcc-multilib gettext \
+              git libncurses-dev libssl-dev python3 python3-setuptools rsync \
+              swig unzip zlib1g-dev file wget zstd libelf-dev
+            # Keep the SDK's environment independent of mt-c's PKG_* exports.
+            # The helper records its pinned commit and all build stages here.
+            bash tools/ci/build-openwrt-sdk.sh "$version" "$target" "$subtarget" \
+              "${{ matrix.name }}" "$sdk_root" "$log_dir" \
+              > "$log_dir/source-build.log" 2>&1
           fi
-
-          (
-            cd "$sdk_root"
-            sdk_file=$(grep -oE 'openwrt-sdk-[^ ]+\.tar\.(zst|xz)' sha256sums | head -n1)
-            if [ -z "$sdk_file" ]; then
-              echo "Could not find an SDK archive name in ${base_url}/sha256sums" | tee -a "$log_dir/download.log" >&2
-              exit 1
-            fi
-            echo "SDK archive: $sdk_file" | tee -a "$log_dir/download.log"
-            curl --retry 5 --retry-all-errors --retry-delay 5 \
-              --connect-timeout 30 -fsSL -o "$sdk_file" \
-              "${base_url}/${sdk_file}" 2>&1 | tee -a "$log_dir/download.log"
-            grep -- "$sdk_file\$" sha256sums | sha256sum -c - 2>&1 | tee -a "$log_dir/download.log"
-
-            case "$sdk_file" in
-              *.tar.zst) tar --use-compress-program=unzstd -xf "$sdk_file" ;;
-              *.tar.xz) tar -xJf "$sdk_file" ;;
-              *) echo "Unrecognized SDK archive extension: $sdk_file" >&2; exit 1 ;;
-            esac
-          )
+          echo "sdk_origin=$sdk_origin" >> "$GITHUB_OUTPUT"
+          echo "SDK origin: $sdk_origin" >> "$GITHUB_STEP_SUMMARY"
           echo "sdk_root=$sdk_root" >> "$GITHUB_OUTPUT"
 
           sdk_dir=$(find "$sdk_root" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*')
@@ -658,6 +649,17 @@ jobs:
             echo "::notice title=${{ matrix.name }}::SDK ${target}/${subtarget} builds '$sdk_arch' on OpenWrt ${version}, which is the known absence of '${{ matrix.name }}' on this release line, so no package is built for it here."
             echo "sdk_available=false" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+
+          # The source fallback must include the host packaging tool, just
+          # like official SDKs. Fail early rather than after toolchain/compile.
+          sdk_package_manager=opkg
+          if [ "${{ matrix.package_ext }}" = apk ]; then
+            sdk_package_manager=apk
+          fi
+          if [ ! -x "$sdk_dir/staging_dir/host/bin/$sdk_package_manager" ]; then
+            echo "SDK ${target}/${subtarget} ($sdk_origin) lacks the required host package manager: staging_dir/host/bin/$sdk_package_manager" >&2
+            exit 1
           fi
 
           pkg_dir="$sdk_dir/package/net/mt-c"
@@ -771,6 +773,10 @@ jobs:
               done < <(find "$log_dir" -type f -print0 | sort -z)
             else
               echo "No log directory captured (failure before SDK extraction)."
+            fi
+            if [ -f "$log_dir/source-build.log" ]; then
+              echo "==> source-build.log (last 80 lines) <=="
+              tail -n 80 "$log_dir/source-build.log"
             fi
             # feeds-install.log rarely matches the error patterns above (a
             # missing/misnamed package prints a WARNING, not an error) but is

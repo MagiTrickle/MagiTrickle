@@ -11,6 +11,7 @@
 #include "magitrickle/log.h"
 #include "magitrickle/lookup.h"
 #include "magitrickle/match.h"
+#include "magitrickle/profiles.h"
 
 struct mt_ruleset {
     const mt_group_t *group;
@@ -244,7 +245,13 @@ static mt_err_t ruleset_enable_locked(mt_ruleset_t *rs) {
         return MT_ERR_NOMEM;
     }
 
-    mt_err_t err = mt_ipset_to_link_clear_if_disabled(link);
+    mt_err_t err = MT_OK;
+    if (rs->group->profile && *rs->group->profile) {
+        const mt_profile_t *profile = mt_profile_find(rs->deps.config, rs->group->profile);
+        err = profile ? mt_ipset_to_link_set_interfaces(link,
+                              (const char *const *)profile->interfaces, profile->n_interfaces) : MT_ERR_NOENT;
+    }
+    if (err == MT_OK) { err = mt_ipset_to_link_clear_if_disabled(link); }
     if (err != MT_OK) {
         mt_ipset_to_link_free(link);
         mt_ipset_free(ipset);
@@ -550,4 +557,24 @@ mt_err_t mt_ruleset_sync(mt_ruleset_t *rs, mt_cache_t *cache, int64_t now) {
     free(new4.items);
     free(new6.items);
     return err;
+}
+
+mt_err_t mt_ruleset_reconfigure_profile(mt_ruleset_t *rs)
+{
+    if (!rs->group->profile || !*rs->group->profile) { return MT_OK; }
+    const mt_profile_t *p = mt_profile_find(rs->deps.config, rs->group->profile);
+    if (!p) { return MT_ERR_NOENT; }
+    if (!rs->enabled || !rs->ipset_to_link) { return MT_OK; }
+    return mt_ipset_to_link_set_interfaces(rs->ipset_to_link,
+                                           (const char *const *)p->interfaces, p->n_interfaces);
+}
+
+bool mt_ruleset_uses_interface(const mt_ruleset_t *rs, const char *name)
+{
+    if (!rs || !name) { return false; }
+    if (rs->ipset_to_link) { return mt_ipset_to_link_uses_interface(rs->ipset_to_link, name); }
+    if (rs->group->profile && *rs->group->profile) {
+        return mt_profile_has_interface(mt_profile_find(rs->deps.config, rs->group->profile), name);
+    }
+    return rs->group->iface && strcmp(rs->group->iface, name) == 0;
 }

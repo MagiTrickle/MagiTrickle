@@ -1,3 +1,4 @@
+#include "magitrickle/profiles.h"
 /* Config serializer: byte-identical to Go SaveConfig (yaml.v2 emitter).
  * Key order = Go struct order; scalar styles per encode.go stringv
  * (plain / double-quoted for would-be-non-strings / literal for \n) with
@@ -175,7 +176,7 @@ static void emit_rule(emitter_ctx_t *ctx, const mt_rule_t *r)
     map_end(ctx);
 }
 
-static void emit_group(emitter_ctx_t *ctx, const mt_group_t *g)
+static void emit_group(emitter_ctx_t *ctx, const mt_config_t *cfg, const mt_group_t *g)
 {
     map_start(ctx);
     emit_plain(ctx, "id");
@@ -185,7 +186,13 @@ static void emit_group(emitter_ctx_t *ctx, const mt_group_t *g)
     emit_plain(ctx, "color");
     emit_string(ctx, g->color != NULL ? g->color : "");
     emit_plain(ctx, "interface");
-    emit_string(ctx, g->iface != NULL ? g->iface : "");
+    const char *primary = g->iface ? g->iface : "";
+    (void)mt_route_primary(cfg, g->profile, g->iface, &primary); /* validated before emitting */
+    emit_string(ctx, primary);
+    if (g->profile && *g->profile) {
+        emit_plain(ctx, "profile");
+        emit_string(ctx, g->profile);
+    }
     emit_plain(ctx, "enable");
     emit_bool(ctx, g->enable);
     emit_plain(ctx, "rules");
@@ -211,7 +218,7 @@ static void emit_sub_rule(emitter_ctx_t *ctx, const mt_sub_rule_t *r)
     map_end(ctx);
 }
 
-static void emit_subscription(emitter_ctx_t *ctx, const mt_subscription_t *s)
+static void emit_subscription(emitter_ctx_t *ctx, const mt_config_t *cfg, const mt_subscription_t *s)
 {
     map_start(ctx);
     emit_plain(ctx, "id");
@@ -219,7 +226,13 @@ static void emit_subscription(emitter_ctx_t *ctx, const mt_subscription_t *s)
     emit_plain(ctx, "name");
     emit_string(ctx, s->name != NULL ? s->name : "");
     emit_plain(ctx, "interface");
-    emit_string(ctx, s->iface != NULL ? s->iface : "");
+    const char *primary = s->iface ? s->iface : "";
+    (void)mt_route_primary(cfg, s->profile, s->iface, &primary);
+    emit_string(ctx, primary);
+    if (s->profile && *s->profile) {
+        emit_plain(ctx, "profile");
+        emit_string(ctx, s->profile);
+    }
     emit_plain(ctx, "enable");
     emit_bool(ctx, s->enable);
     emit_plain(ctx, "url");
@@ -240,6 +253,8 @@ static void emit_subscription(emitter_ctx_t *ctx, const mt_subscription_t *s)
 mt_err_t mt_config_save_buffer(const mt_config_t *cfg, const char *version,
                                char **out, size_t *out_len)
 {
+    mt_err_t validation = mt_profiles_validate(cfg, NULL, 0);
+    if (validation != MT_OK) { return validation; }
     emitter_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     emit_buf_t buf = {NULL, 0, 0};
@@ -357,17 +372,34 @@ mt_err_t mt_config_save_buffer(const mt_config_t *cfg, const char *version,
     emit_string(&ctx, a->log_level);
     map_end(&ctx); /* app */
 
+    if (cfg->n_profiles) {
+        emit_plain(&ctx, "profiles");
+        seq_start(&ctx, false);
+        for (size_t i = 0; i < cfg->n_profiles; i++) {
+            const mt_profile_t *p = cfg->profiles[i];
+            map_start(&ctx);
+            emit_plain(&ctx, "id"); emit_string(&ctx, p->id);
+            emit_plain(&ctx, "name"); emit_string(&ctx, p->name);
+            emit_plain(&ctx, "interfaces"); seq_start(&ctx, false);
+            for (size_t j = 0; j < p->n_interfaces; j++) { emit_string(&ctx, p->interfaces[j]); }
+            seq_end(&ctx);
+            emit_plain(&ctx, "on_unavailable"); emit_string(&ctx, MT_PROFILE_TERMINAL);
+            map_end(&ctx);
+        }
+        seq_end(&ctx);
+    }
+
     emit_plain(&ctx, "groups");
     seq_start(&ctx, cfg->n_groups == 0);
     for (size_t i = 0; i < cfg->n_groups; i++) {
-        emit_group(&ctx, cfg->groups[i]);
+        emit_group(&ctx, cfg, cfg->groups[i]);
     }
     seq_end(&ctx);
 
     emit_plain(&ctx, "subscriptions");
     seq_start(&ctx, cfg->n_subscriptions == 0);
     for (size_t i = 0; i < cfg->n_subscriptions; i++) {
-        emit_subscription(&ctx, cfg->subscriptions[i]);
+        emit_subscription(&ctx, cfg, cfg->subscriptions[i]);
     }
     seq_end(&ctx);
 

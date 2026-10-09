@@ -46,6 +46,7 @@ export function buildSubscriptionUpdate(
     name: subscription.name,
     url: subscription.url.trim(),
     interface: subscription.interface,
+    ...(subscription.profile ? { profile: subscription.profile } : {}),
     enable: subscription.enable,
     interval: subscription.interval,
     ruleChanges,

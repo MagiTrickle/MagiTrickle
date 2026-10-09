@@ -4,11 +4,25 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Only a real jump/goto target can reference a managed chain. A string
+ * search misses iptables-save's -g/--goto form and may match comments. */
+static bool references_managed_chain(const mt_ipt_rule_t *rule, const char *prefix,
+                                     size_t prefix_len)
+{
+    for (size_t i = 0; i + 1 < rule->n_parts; i++) {
+        const char *part = rule->parts[i];
+        if ((strcmp(part, "-j") == 0 || strcmp(part, "--jump") == 0 ||
+             strcmp(part, "-g") == 0 || strcmp(part, "--goto") == 0) &&
+            strncmp(rule->parts[i + 1], prefix, prefix_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static mt_err_t clean_one(mt_ipt_t *ipt, const char *chain_prefix) {
     if (!ipt) { return MT_OK; }
 
-    char jump[128];
-    snprintf(jump, sizeof(jump), "-j %s", chain_prefix);
     size_t prefix_len = strlen(chain_prefix);
 
     mt_ipt_rules_snapshot_t *snap;
@@ -27,7 +41,7 @@ static mt_err_t clean_one(mt_ipt_t *ipt, const char *chain_prefix) {
 
             for (size_t ri = 0; ri < c->n_rules && err == MT_OK; ri++) {
                 mt_ipt_rule_t *r = c->rules[ri];
-                if (!mt_ipt_rule_contains(r, jump)) { continue; }
+                if (!references_managed_chain(r, chain_prefix, prefix_len)) { continue; }
 
                 err = mt_ipt_delete(ipt, t->table_name, c->chain_name,
                                     (const char *const *)r->parts, r->n_parts);

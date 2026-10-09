@@ -6,6 +6,7 @@
   import PageControls from "../../components/layout/PageControls.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import { t } from "../../data/locale.svelte";
+  import { fetchProfiles, profiles, profilesDirty, saveProfiles } from "../../data/profiles.svelte";
   import GroupPanel from "./components/GroupPanel.svelte";
   import Search from "./components/Search.svelte";
   import ImportConfigDialog from "./dialogs/ImportConfigDialog.svelte";
@@ -18,9 +19,15 @@
   } from "./groups.svelte";
 
   import { droppable } from "../../lib/dnd";
-  import { parseConfig, type Group, type Rule } from "../../types";
+  import { parseConfig, type Group, type Profile, type Rule } from "../../types";
   import { copyRulePatternsToClipboard } from "../../utils/copy-rule-patterns";
   import { toast } from "../../utils/events";
+  import {
+    cleanProfiles,
+    exportWithProfiles,
+    newProfileId,
+    prepareProfileImport,
+  } from "../settings/profiles-data";
 
   type Props = {
     onRenderComplete?: () => void;
@@ -38,7 +45,7 @@
       ? selectedIds.filter((value) => value !== id)
       : [...selectedIds, id];
   }
-  function applyToSelected(update: { interface: string } | { enable: boolean }) {
+  function applyToSelected(update: { interface: string; profile?: string } | { enable: boolean }) {
     for (const item of selectedItems) Object.assign(item, update);
     store.markDataRevision();
   }
@@ -63,6 +70,7 @@
   });
 
   let importedGroups = $state<Group[]>([]);
+  let importedProfiles = $state<Profile[]>([]);
   let isImportingConfig = $state(false);
   let isImportingRules = $state(false);
   let pendingToast = $state<string | null>(null);
@@ -70,6 +78,7 @@
   function resetImportConfigModal() {
     importConfigModal = { open: false, fileName: "" };
     importedGroups = [];
+    importedProfiles = [];
   }
 
   function openImportRulesModal(groupIndex: number) {
@@ -81,7 +90,13 @@
   }
 
   function exportConfig() {
-    const payload = store.toConfigPayload();
+    let payload;
+    try {
+      payload = exportWithProfiles(store.toConfigPayload().groups, profiles.list);
+    } catch (error) {
+      toast.error(t(error instanceof Error ? error.message : "Failed to export profiles"));
+      return;
+    }
     if (!payload.groups.length) {
       toast.warning(t("Empty config exported"));
     }
@@ -92,6 +107,7 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
   }
 
   function importConfig(event: Event) {
@@ -105,13 +121,14 @@
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const { groups } = parseConfig(event.target?.result as string);
+        const { groups, profiles: definitions } = parseConfig(event.target?.result as string);
         if (!groups?.length) {
           toast.error(t("Invalid config file"));
           return;
         }
 
         importedGroups = groups;
+        importedProfiles = definitions ?? [];
         importConfigModal = {
           open: true,
           fileName: file.name,
@@ -153,7 +170,21 @@
     isImportingConfig = true;
     await tick();
     try {
-      const cloned = await store.cloneGroupsWithNewIds(payload.groups);
+      let groups = payload.groups;
+      if (importedProfiles.length || groups.some((group) => group.profile)) {
+        if (profilesDirty()) throw new Error("Save or cancel profile edits before importing");
+        await fetchProfiles();
+        if (profiles.failed) throw new Error("Failed to load profiles");
+        const mapped = prepareProfileImport(groups, importedProfiles, profiles.list, newProfileId);
+        if (
+          JSON.stringify(cleanProfiles(mapped.profiles)) !==
+          JSON.stringify(cleanProfiles(profiles.list))
+        ) {
+          await saveProfiles(mapped.profiles);
+        }
+        groups = mapped.groups;
+      }
+      const cloned = await store.cloneGroupsWithNewIds(groups);
       if (payload.replace) {
         await store.overwriteGroups(cloned);
       } else {
@@ -162,7 +193,7 @@
       pendingToast = `${t("Config imported")}: ${cloned.length}`;
     } catch (error) {
       console.error("Failed to import config:", error);
-      toast.error(t("Failed to import config"));
+      toast.error(t(error instanceof Error ? error.message : "Failed to import config"));
     } finally {
       isImportingConfig = false;
       resetImportConfigModal();
@@ -316,11 +347,18 @@
   <BulkActions
     count={selectedItems.length}
     totalCount={store.data.length}
-    currentInterface={selectedItems.every((item) => item.interface === selectedItems[0]?.interface)
+    currentInterface={selectedItems.every(
+      (item) =>
+        item.interface === selectedItems[0]?.interface &&
+        item.profile === selectedItems[0]?.profile,
+    )
       ? selectedItems[0]?.interface
       : undefined}
     onclear={() => (selectedIds = [])}
-    onapply={(value) => applyToSelected({ interface: value })}
+    onapply={(value) => applyToSelected(value)}
+    currentProfile={selectedItems.every((item) => item.profile === selectedItems[0]?.profile)
+      ? selectedItems[0]?.profile
+      : undefined}
     currentEnabled={selectedItems.every((item) => item.enable === selectedItems[0]?.enable)
       ? selectedItems[0]?.enable
       : undefined}
@@ -391,8 +429,7 @@
       linear-gradient(black, black) center / 100% 1rem no-repeat;
   }
 
-  .group-wrapper:not(:has(~ .group-wrapper:not(.is-hidden)))
-    .group-drop-slot--bottom::before {
+  .group-wrapper:not(:has(~ .group-wrapper:not(.is-hidden))) .group-drop-slot--bottom::before {
     mask:
       radial-gradient(circle at 100% 0, transparent 0.5rem, black calc(0.5rem + 0.5px)) top left /
         0.5rem 0.5rem no-repeat,

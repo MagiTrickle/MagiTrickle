@@ -22,9 +22,14 @@
  * behavioural difference: within one priority bucket a given chain's own
  * compiled commands always stay contiguous (see engine.c), and the
  * relative order between *different* chains/tables in the restore
- * transcript is inherently insignificant to iptables-restore (distinct
- * named chains/tables are independent; only within-chain command order
- * matters, and that is preserved). See decisions.md D-19.
+ * transcript is normally insignificant, except for chain deletion:
+ * foreign references must be removed, then all owned chains flushed,
+ * before any -X is emitted. Existing patched/deleted chains must NOT
+ * be re-declared under --noflush: a :CHAIN declaration flushes contents.
+ * Changed overrides own all rules and ARE declared before -F: a firmware
+ * rewrite may delete them between Save() and Restore(). Unchanged
+ * overrides remain no-ops. See decisions.md D-19/D-72 and the snapshot
+ * race regression in tests/unit/test_iptables_restore_race.c.
  */
 #ifndef MAGITRICKLE_IPTABLES_H
 #define MAGITRICKLE_IPTABLES_H

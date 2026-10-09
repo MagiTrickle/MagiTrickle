@@ -14,6 +14,7 @@
 typedef struct chain_reg {
     char *chain_name;
     mt_ipt_chain_t *chain;
+    bool owns_contents; /* override registrations own the complete rule list */
 } chain_reg_t;
 
 typedef struct table_reg {
@@ -101,7 +102,7 @@ static chain_reg_t *find_chain_reg(table_reg_t *t, const char *name) {
 }
 
 static mt_err_t register_chain(mt_ipt_t *ipt, const char *table, const char *chain,
-                               mt_ipt_chain_t *(*ctor)(void)) {
+                               mt_ipt_chain_t *(*ctor)(void), bool owns_contents) {
     table_reg_t *t = find_or_create_table(ipt, table);
     if (!t) { return MT_ERR_NOMEM; }
 
@@ -112,6 +113,7 @@ static mt_err_t register_chain(mt_ipt_t *ipt, const char *table, const char *cha
     if (c) {
         c->chain->ops->destroy(c->chain);
         c->chain = newchain;
+        c->owns_contents = owns_contents;
         return MT_OK;
     }
 
@@ -132,18 +134,19 @@ static mt_err_t register_chain(mt_ipt_t *ipt, const char *table, const char *cha
         return MT_ERR_NOMEM;
     }
     nc->chain = newchain;
+    nc->owns_contents = owns_contents;
     t->n_chains++;
     return MT_OK;
 }
 
 mt_err_t mt_ipt_register_chain_delete(mt_ipt_t *ipt, const char *table, const char *chain) {
-    return register_chain(ipt, table, chain, mt_ipt_chain_delete_new);
+    return register_chain(ipt, table, chain, mt_ipt_chain_delete_new, false);
 }
 mt_err_t mt_ipt_register_chain_patch(mt_ipt_t *ipt, const char *table, const char *chain) {
-    return register_chain(ipt, table, chain, mt_ipt_chain_patch_new);
+    return register_chain(ipt, table, chain, mt_ipt_chain_patch_new, false);
 }
 mt_err_t mt_ipt_register_chain_override(mt_ipt_t *ipt, const char *table, const char *chain) {
-    return register_chain(ipt, table, chain, mt_ipt_chain_override_new);
+    return register_chain(ipt, table, chain, mt_ipt_chain_override_new, true);
 }
 
 /* ---- Append/Insert/Delete dispatch -------------------------------------- */
@@ -766,12 +769,21 @@ mt_err_t mt_ipt_commit(mt_ipt_t *ipt) {
                 }
                 table_written = true;
             }
-            err = mt_bytebuf_append_byte(&buf, ':');
-            if (err == MT_OK) { err = mt_bytebuf_append_str(&buf, c->chain_name); }
-            if (err == MT_OK) { err = mt_bytebuf_append_str(&buf, " - [0:0]\n"); }
-            if (err != MT_OK) {
-                mt_ipt_command_list_free(cmds, n_cmds);
-                break;
+            /* Re-declaring a user chain under --noflush flushes it. That
+             * is unsafe for a patch of somebody else's rules, but safe
+             * for an override which supplies the complete replacement.
+             * Always declare changed overrides: the firmware may delete
+             * an owned chain between Save() and Restore(), otherwise -F
+             * fails at startup (MT_DNSOR). Do not infer ownership from a
+             * name prefix or from the command ordering priority. */
+            if (cur_chain == NULL || c->owns_contents) {
+                err = mt_bytebuf_append_byte(&buf, ':');
+                if (err == MT_OK) { err = mt_bytebuf_append_str(&buf, c->chain_name); }
+                if (err == MT_OK) { err = mt_bytebuf_append_str(&buf, " - [0:0]\n"); }
+                if (err != MT_OK) {
+                    mt_ipt_command_list_free(cmds, n_cmds);
+                    break;
+                }
             }
 
             prio_bucket_t *bucket = bucket_find_or_create(&buckets, &n_buckets, &cap_buckets, priority);
@@ -786,9 +798,19 @@ mt_err_t mt_ipt_commit(mt_ipt_t *ipt) {
 
         if (err == MT_OK && table_written) {
             qsort(buckets, n_buckets, sizeof(*buckets), bucket_cmp);
-            for (size_t bi = 0; bi < n_buckets && err == MT_OK; bi++) {
-                for (size_t ci = 0; ci < buckets[bi].n && err == MT_OK; ci++) {
-                    err = write_command(&buf, &buckets[bi].cmds[ci]);
+            /* A managed chain may jump to another managed chain.
+             * Flush EVERY doomed chain before deleting ANY of them:
+             * interleaved -F A/-X A/-F B/-X B can fail when B -> A.
+             * Keep the existing priority order for all other commands. */
+            for (unsigned phase = 0; phase < 2 && err == MT_OK; phase++) {
+                for (size_t bi = 0; bi < n_buckets && err == MT_OK; bi++) {
+                    for (size_t ci = 0; ci < buckets[bi].n && err == MT_OK; ci++) {
+                        const mt_ipt_command_t *cmd = &buckets[bi].cmds[ci];
+                        if ((cmd->option == MT_IPT_OP_DELETE_CHAIN) != (phase == 1u)) {
+                            continue;
+                        }
+                        err = write_command(&buf, cmd);
+                    }
                 }
             }
             if (err == MT_OK) { err = mt_bytebuf_append_str(&buf, "COMMIT\n"); }

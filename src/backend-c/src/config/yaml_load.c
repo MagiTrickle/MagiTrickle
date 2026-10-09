@@ -1,3 +1,4 @@
+#include "magitrickle/profiles.h"
 #include "magitrickle/lookup.h"
 /* Config loader: libyaml document API + yaml.v2 typing semantics +
  * Go LoadConfig overlay behaviour (config.go). */
@@ -433,6 +434,7 @@ static mt_err_t load_group(yaml_document_t *doc, node_t *n, mt_group_t *g)
     GET_OR_FAIL(get_string(map_get(doc, n, "name"), &g->name, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "color"), &g->color, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "interface"), &g->iface, &err));
+    GET_OR_FAIL(get_string(map_get(doc, n, "profile"), &g->profile, &err));
     GET_OR_FAIL(get_bool(map_get(doc, n, "enable"), &g->enable, &err));
     if (g->name == NULL && (err = mt_strset(&g->name, "")) != MT_OK) {
         return err;
@@ -499,6 +501,7 @@ static mt_err_t load_subscription(yaml_document_t *doc, node_t *n,
     GET_OR_FAIL(get_id(map_get(doc, n, "id"), &s->id, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "name"), &s->name, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "interface"), &s->iface, &err));
+    GET_OR_FAIL(get_string(map_get(doc, n, "profile"), &s->profile, &err));
     GET_OR_FAIL(get_bool(map_get(doc, n, "enable"), &s->enable, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "url"), &s->url, &err));
     uint64_t v;
@@ -553,6 +556,31 @@ static mt_err_t load_subscription(yaml_document_t *doc, node_t *n,
         }
     }
     return MT_OK;
+}
+
+static mt_err_t load_profile(yaml_document_t *doc, node_t *n, mt_profile_t *p)
+{
+    mt_err_t err = MT_OK;
+    if (!n || n->type != YAML_MAPPING_NODE) { return MT_ERR_INVAL; }
+    GET_OR_FAIL(get_string(map_get(doc, n, "id"), &p->id, &err));
+    GET_OR_FAIL(get_string(map_get(doc, n, "name"), &p->name, &err));
+    /* get_string_list allocates an exact-size array. Copy through the model
+     * append helper to retain its geometric-capacity ownership contract. */
+    char **interfaces = NULL;
+    size_t count = 0;
+    getter_res_t r = get_string_list(doc, map_get(doc, n, "interfaces"), &interfaces, &count, &err);
+    if (r == GET_ERR) { return err; }
+    for (size_t i = 0; i < count; i++) {
+        if (err == MT_OK) { err = mt_profile_add_interface(p, interfaces[i]); }
+        free(interfaces[i]);
+    }
+    free(interfaces);
+    if (err != MT_OK) { return err; }
+    char *terminal = NULL;
+    r = get_string(map_get(doc, n, "on_unavailable"), &terminal, &err);
+    if (r == GET_OK && strcmp(terminal, MT_PROFILE_TERMINAL) != 0) { err = MT_ERR_INVAL; }
+    free(terminal);
+    return err;
 }
 
 static mt_err_t group_ids_check(mt_config_t *cfg, mt_group_t *g) {
@@ -615,6 +643,23 @@ mt_err_t mt_config_load_buffer(mt_config_t *cfg, const char *buf, size_t len)
         err = load_app(&doc, app, &cfg->app);
         if (err != MT_OK) {
             goto out;
+        }
+    }
+
+    node_t *profiles = root != NULL ? map_get(&doc, root, "profiles") : NULL;
+    if (profiles) {
+        cfg->profiles_present = true;
+        mt_config_clear_profiles(cfg);
+        if (!node_is_null(profiles)) {
+            if (profiles->type != YAML_SEQUENCE_NODE) { err = MT_ERR_INVAL; goto out; }
+            for (yaml_node_item_t *it = profiles->data.sequence.items.start;
+                 it < profiles->data.sequence.items.top; it++) {
+                mt_profile_t *p = mt_profile_new();
+                if (!p) { err = MT_ERR_NOMEM; goto out; }
+                err = load_profile(&doc, node_of(&doc, *it), p);
+                if (err == MT_OK) { err = mt_config_add_profile(cfg, p); }
+                if (err != MT_OK) { mt_profile_free(p); goto out; }
+            }
         }
     }
 
@@ -693,6 +738,7 @@ mt_err_t mt_config_load_buffer(mt_config_t *cfg, const char *buf, size_t len)
         }
     }
 
+    err = mt_profiles_normalize(cfg);
 out:
     free(version_owned);
     yaml_document_delete(&doc);

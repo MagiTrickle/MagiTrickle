@@ -78,6 +78,20 @@ typedef struct mt_app_deps {
 mt_err_t mt_app_republish_dns_snapshot(mt_app_t *app);
 
 mt_app_t *mt_app_create(const mt_app_deps_t *deps);
+
+/* Profile registry. The replacement borrows incoming until successful, then
+ * moves its profiles into the app. Other incoming config sections are ignored.
+ * Definitions/references validated before any network changes. */
+size_t mt_app_profile_count(const mt_app_t *app);
+const mt_profile_t *mt_app_profile_at(const mt_app_t *app, size_t index);
+mt_err_t mt_app_replace_profiles(mt_app_t *app, mt_config_t *incoming,
+                                char *message, size_t message_size);
+mt_err_t mt_app_normalize_route(const mt_app_t *app, const char *profile, char **iface);
+/* Event-driven reconciliation. NULL checks all direct and profile routes,
+ * including external replacements/removals; a name limits the scan.
+ * Returns MT_ERR_AGAIN if a committer rebuild is in progress, so the caller
+ * must retry rather than silently dropping the event. */
+mt_err_t mt_app_reconcile_routes(mt_app_t *app, const char *interface_name);
 /* Disables and frees every group's mt_ruleset_t (mirrors main.c's
  * previous inline teardown); does NOT touch cfg (borrowed). */
 void mt_app_destroy(mt_app_t *app);

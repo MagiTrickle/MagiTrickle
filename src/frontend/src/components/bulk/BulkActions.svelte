@@ -4,24 +4,19 @@
 
   import { interfaces } from "../../data/interfaces.svelte";
   import { t } from "../../data/locale.svelte";
+  import { profiles } from "../../data/profiles.svelte";
   import Button from "../ui/Button.svelte";
+  import RouteSelect from "../ui/RouteSelect.svelte";
   import Select from "../ui/Select.svelte";
 
-  import {
-    Check,
-    Copy,
-    Delete,
-    Network,
-    SelectOpen,
-    ToggleLeft,
-    ToggleRight,
-    X,
-  } from "../ui/icons";
+  import type { RouteChoice } from "../../modules/settings/profiles-data";
+  import { Check, Copy, Delete, SelectOpen, ToggleLeft, ToggleRight, X } from "../ui/icons";
 
   let {
     count,
     totalCount,
     currentInterface,
+    currentProfile,
     currentEnabled,
     onclear,
     onapply,
@@ -33,9 +28,10 @@
     count: number;
     totalCount: number;
     currentInterface?: string;
+    currentProfile?: string;
     currentEnabled?: boolean;
     onclear: () => void;
-    onapply: (value: string) => void;
+    onapply: (value: RouteChoice) => void;
     ondelete: () => void | Promise<void>;
     oncopy?: () => void | Promise<void>;
     onenable: (enabled: boolean) => void;
@@ -100,22 +96,15 @@
     <Button class="bulk-button" onclick={onclear}><X size={18} />{t("Clear selection")}</Button>
   </fieldset>
   <fieldset class="item-actions" disabled={busy} aria-label={t("Actions for selected items")}>
-    <Select
+    <RouteSelect
       ariaLabel={t("Interface")}
+      placeholder={t("Interface")}
       triggerClass="bulk-button"
-      selected={currentInterface ?? ""}
-      disabled={busy || !interfaces.list.length}
-      options={interfaces.list.map((item) => ({
-        value: item.id,
-        label: item.id,
-        description: item.name,
-      }))}
-      onValueChange={onapply}
-    >
-      {#snippet trigger()}
-        <Network size={18} />{currentInterface || t("Interface")}<SelectOpen size={16} />
-      {/snippet}
-    </Select>
+      interface={currentInterface ?? ""}
+      profile={currentProfile}
+      disabled={busy || (!interfaces.list.length && !profiles.list.length)}
+      onChange={onapply}
+    />
     <Select
       ariaLabel={t("State")}
       triggerClass="bulk-button"

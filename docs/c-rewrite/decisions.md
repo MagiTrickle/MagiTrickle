@@ -3271,3 +3271,86 @@ retention across removal without a backup or automatically remove dependencies.
 synthetic payloads, APK staging/arguments/hooks, and evaluates both SDK package
 identity declarations. This is not a real cross-build or an on-router migration
 test. The supported target matrix is unchanged.
+
+## D-70 — Reusable routing profiles and ordered local failover (2026-10-07)
+
+User-approved new behavior: Settings manages an unbounded collection of named
+profiles; Groups and Subscriptions select a saved profile or a direct interface
+with one ordinary select. Root YAML `profiles` owns ordered interface lists;
+optional group/subscription `profile` references stable IDs. Existing `interface`
+is deliberately retained as a compatibility shadow of the first configured
+candidate, never the runtime-active backup. Profile references are authoritative;
+missing references are errors, not permission to silently use the shadow. Old
+configs remain a valid subset and existing no-profile golden YAML stays unchanged.
+Older binaries may drop unknown fields on save; no downgrade preservation layer.
+
+Each profile uses first-available ordering with automatic return and a fixed final
+blackhole. Availability is LOCAL link/address/gateway readiness, per IPv4/IPv6,
+not a claim about remote peer/Internet health. No probes, strategy/failback field,
+nested profiles or implicit global chain are introduced. Link-down/deletion, address and route events reconcile all candidates.
+The original five-second retry was replaced with event-driven reconciliation,
+kernel-state comparisons and bounded retries only after observed failures.
+Routes replace atomically at the same table/metric; blackhole is kept installed.
+Own policy tables are excluded from upstream gateway discovery to avoid retaining
+stale gateways through the daemon's copied routes. Profile edits preserve the
+existing mark/table/ipset, and synchronize compatibility shadows only after apply.
+
+Profile CRUD is additive GET/PUT `/api/v1/profiles`, protected like existing routes.
+Referenced deletions are rejected. Validation precedes mutation; profile apply and
+config reload retain the old model registry for rollback. Kernel rollback errors
+are logged and surfaced through failed apply, not claimed to be fully transactional.
+Persistence-after-apply failures use D-68's explicit acknowledgement/retry pattern.
+Group export/import carries profile dependencies and remaps ID collisions once for
+all consumers. UI drafts survive navigation and selects remain single-purpose.
+
+See `docs/routing-profiles.md` for schema, semantics and limitations. Tests cover
+YAML/shadow compatibility, validation/scaling, API/ref integrity, deterministic
+reload failure, failover selection, real kernel route transitions in an isolated
+namespace, and browser create/select/edit/retry flows. This is not an on-router
+Keenetic/OpenWrt test or a remote-health-monitoring implementation.
+
+## D-71 — Diagnose iptables restore errors and remove goto references (2026-10-08)
+
+Status: **accepted**. Keenetic reported repeated `iptables-restore: line N failed`
+while netfilter.d committer retries held the netfilter mutex. The old generic
+error message did not include the command corresponding to N, so the on-device
+root cause cannot be established from historical logs alone. Failed restore
+now logs only bounded, escaped context around the reported line and the active
+table (no file persistence or full ruleset dump); errors and retries are not
+suppressed. Routing reconciliation treats short `MT_ERR_AGAIN` lock contention
+as DEBUG, reporting prolonged contention or other errors as WARN, retaining
+bounded retries. Cleanup must remove references to managed chains through
+both jump (`-j` / `--jump`) and goto (`-g` / `--goto`). Previously it used
+a substring search for `-j <prefix>`, which could miss goto references and
+produce a permanent `-X` failure on older iptables backends. This intentional
+hardening preserves the contract of removing all owned chains without touching
+unrelated chains or rules. Regression tests cover goto cleanup with the checked
+fake and real kernel netfilter backends, plus bounded failure diagnostics.
+
+## D-72 — Preserve existing user chains under iptables-restore --noflush (2026-10-08)
+
+Status: **accepted**. Kernel logs on Keenetic reported repeat failures at the
+`mangle` table's `COMMIT`, including batches deleting owned chains. The
+generation layer also had a concrete destructive bug: `mt_ipt_commit()`
+emitted `:CHAIN - [0:0]` for EVERY chain with pending operations. With
+`iptables-restore --noflush`, declarations of **already existing**
+user-defined chains still flush their contents. This could erase unrelated
+firmware rules while trying to delete one jump into an `MT_` chain, or make
+a later `-D` fail because its target rule had already been flushed.
+Only chains absent from `iptables-save` now receive declarations; existing
+chain overrides and removals use their already explicit `-F` or `-D`.
+
+In addition, a stale managed chain may be referenced by another stale
+managed chain. Interleaving `-F A; -X A; -F B; -X B` can fail if B
+references A; `mt_ipt_commit()` now writes all `-X` commands only after
+the full set of removes/flushes (preserving the original order among all
+other commands). These changes do not affect user rules unrelated to
+mt-c, restore package artifacts or alter the profile selection algorithm.
+Regression tests cover foreign user-chain preservation, managed-chain
+dependencies and repeat recovery with both in-memory and real kernel
+legacy/nft backends.
+
+The exact historical `COMMIT` failure cannot be attributed exclusively to
+this cause without the failed full transcript and device-side kernel state.
+The bug is independently actionable and consistent with the observed failure
+shape.

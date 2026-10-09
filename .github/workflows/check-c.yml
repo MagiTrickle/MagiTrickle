@@ -31,6 +31,12 @@ jobs:
         working-directory: src/backend-c
         run: make test
 
+      - name: Route profile failover on real kernel
+        working-directory: src/backend-c
+        run: |
+          sudo apt-get install -y iproute2
+          sudo unshare --net env MT_TEST_PROFILE_NETNS=1 build/host/tests/test_profile_routes
+
       - name: Sanitizers (ASan+UBSan)
         working-directory: src/backend-c
         run: make sanitize

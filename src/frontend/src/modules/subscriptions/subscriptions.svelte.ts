@@ -50,6 +50,7 @@ type AddSubscriptionPayload = {
   url: string;
   name: string;
   interface: string;
+  profile?: string;
   interval: number;
 };
 
