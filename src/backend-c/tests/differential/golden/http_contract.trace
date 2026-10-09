@@ -9,15 +9,15 @@ BODY {"groups":[]}
 STEP 3 POST /api/v1/groups
 REQBODY {"color":"#ABCDEF","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"name":"r1","rule":"example.com","type":"domain"}]}
 STATUS 200
-BODY {"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+BODY {"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","priority":300,"rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
 ---
 STEP 4 GET /api/v1/groups?with_rules=true
 STATUS 200
-BODY {"groups":[{"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}]}
+BODY {"groups":[{"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","priority":300,"rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}]}
 ---
 STEP 5 GET /api/v1/groups/aabbccdd?with_rules=true
 STATUS 200
-BODY {"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+BODY {"color":"#abcdef","enable":false,"id":"aabbccdd","interface":"eth0","name":"g1","priority":300,"rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
 ---
 STEP 6 GET /api/v1/groups/nothex!
 STATUS 400
@@ -30,7 +30,7 @@ BODY {"error":"<ERR>"}
 STEP 8 PUT /api/v1/groups/aabbccdd
 REQBODY {"color":"#222222","enable":false,"interface":"eth1","name":"g1-renamed"}
 STATUS 200
-BODY {"color":"#222222","enable":false,"id":"aabbccdd","interface":"eth1","name":"g1-renamed","rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
+BODY {"color":"#222222","enable":false,"id":"aabbccdd","interface":"eth1","name":"g1-renamed","priority":300,"rules":[{"enable":true,"id":"<RULE-R1>","name":"r1","rule":"example.com","type":"domain"}]}
 ---
 STEP 9 POST /api/v1/groups/aabbccdd/rules
 REQBODY {"enable":true,"name":"r2","rule":"*.example.org","type":"wildcard"}
@@ -73,11 +73,11 @@ BODY {"groups":[]}
 STEP 18 PUT /api/v1/groups
 REQBODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","rules":[{"enable":true,"name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2"}]}
 STATUS 200
-BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","rules":[{"enable":true,"id":"<RULE-BR1>","name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","rules":[]}]}
+BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","priority":300,"rules":[{"enable":true,"id":"<RULE-BR1>","name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","priority":300,"rules":[]}]}
 ---
 STEP 19 GET /api/v1/groups?with_rules=true
 STATUS 200
-BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","rules":[{"enable":true,"id":"<RULE-BR1>","name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","rules":[]}]}
+BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","priority":300,"rules":[{"enable":true,"id":"<RULE-BR1>","name":"br1","rule":"bulk.example.com","type":"domain"}]},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","priority":300,"rules":[]}]}
 ---
 STEP 20 PUT /api/v1/groups
 REQBODY {}
@@ -118,7 +118,7 @@ BODY {"error":"<ERR>"}
 ---
 STEP 28 GET /api/v1/subscriptions
 STATUS 200
-BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"eth0","interval":0,"lastUpdate":0,"name":"s1","rules":[],"url":"https://example.com/list.txt"}]}
+BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"eth0","interval":0,"lastUpdate":0,"name":"s1","priority":100,"rules":[],"url":"https://example.com/list.txt"}]}
 ---
 STEP 29 PUT /api/v1/subscriptions
 REQBODY {"subscriptions":[{"enable":false,"id":"40404040","name":"s1-renamed","url":"https://example.com/list.txt"}]}
@@ -127,7 +127,7 @@ BODY {"status":"ok"}
 ---
 STEP 30 GET /api/v1/subscriptions
 STATUS 200
-BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"","interval":0,"lastUpdate":0,"name":"s1-renamed","rules":[],"url":"https://example.com/list.txt"}]}
+BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"","interval":0,"lastUpdate":0,"name":"s1-renamed","priority":100,"rules":[],"url":"https://example.com/list.txt"}]}
 ---
 STEP 31 PUT /api/v1/subscriptions
 REQBODY {}
@@ -157,7 +157,7 @@ BODY {"lastUpdate":"<TS>","rules":[{"enable":true,"id":"<SUBRULE-0>","rule":"one
 ---
 STEP 37 GET /api/v1/subscriptions
 STATUS 200
-BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"","interval":0,"lastUpdate":"<TS>","name":"s1-renamed","rules":[{"enable":true,"id":"<SUBRULE-0>","rule":"one.example","type":"namespace"},{"enable":true,"id":"<SUBRULE-1>","rule":"two.example","type":"namespace"}],"url":"http://127.0.0.1:18099/list.txt"}]}
+BODY {"subscriptions":[{"enable":false,"id":"40404040","interface":"","interval":0,"lastUpdate":"<TS>","name":"s1-renamed","priority":100,"rules":[{"enable":true,"id":"<SUBRULE-0>","rule":"one.example","type":"namespace"},{"enable":true,"id":"<SUBRULE-1>","rule":"two.example","type":"namespace"}],"url":"http://127.0.0.1:18099/list.txt"}]}
 ---
 STEP 38 POST /api/v1/subscriptions/40404040/sync
 STATUS 200
@@ -177,7 +177,7 @@ BODY {"subscriptions":[]}
 ---
 STEP 1 GET /api/v1/groups
 STATUS 200
-BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1"},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2"}]}
+BODY {"groups":[{"color":"#ffffff","enable":false,"id":"10101010","interface":"eth0","name":"bulk-1","priority":300},{"color":"#ffffff","enable":false,"id":"30303030","interface":"eth1","name":"bulk-2","priority":300}]}
 ---
 STEP 2 GET /api/v1/subscriptions
 STATUS 200

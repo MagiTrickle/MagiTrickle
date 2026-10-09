@@ -244,6 +244,9 @@ TEST create_group_normalizes_color_and_defaults_enable(void) {
     ASSERT_STR_EQ("#abcdef", jstr(out, "color"));
     ASSERT_STR_EQ("eth0", jstr(out, "interface"));
     ASSERT(jbool(out, "enable")); /* GroupReq.Enable absent -> defaults true */
+    cJSON *priority = cJSON_GetObjectItemCaseSensitive(out, "priority");
+    ASSERT(cJSON_IsNumber(priority));
+    ASSERT_EQ(MT_GROUP_DEFAULT_PRIORITY, priority->valueint);
     cJSON *rules = cJSON_GetObjectItemCaseSensitive(out, "rules");
     ASSERT(cJSON_IsArray(rules));
     ASSERT_EQ(0, cJSON_GetArraySize(rules));
@@ -658,6 +661,83 @@ TEST invalid_batch_preserves_existing_groups(void) {
     cJSON_Delete(out); harness_stop(h); PASS();
 }
 
+TEST group_priority_updates_persists_and_omission_preserves_it(void) {
+    harness_t *h = harness_start_saved(true); ASSERT(h);
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("POST", "/api/v1/groups?save=true",
+        "{\"id\":\"aabbccdd\",\"name\":\"priority-group\",\"priority\":1000,"
+        "\"rules\":[{\"name\":\"one\",\"rule\":\"one.example\",\"type\":\"domain\",\"enable\":true}]}", &out));
+    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    cJSON_Delete(out);
+    ASSERT_EQ(200, do_request("GET", "/api/v1/groups/aabbccdd", NULL, &out));
+    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    cJSON_Delete(out);
+
+    /* Existing clients omit the additive field: both individual edits and
+     * compact bulk saves retain the current priority instead of resetting it. */
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups/aabbccdd?save=true",
+        "{\"name\":\"renamed\"}", &out));
+    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    ASSERT_EQ(1, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(out, "rules")));
+    cJSON_Delete(out);
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups?save=true",
+        "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"renamed\",\"ruleChanges\":[]}]}", &out));
+    cJSON *group = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
+    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(group, "priority")->valueint);
+    cJSON_Delete(out);
+    /* Same group order, metadata and rules; priority alone must bypass the
+     * app's unchanged-group reuse optimization and publish the replacement. */
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups?save=true",
+        "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"renamed\",\"priority\":555,\"ruleChanges\":[]}]}", &out));
+    group = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
+    ASSERT_EQ(555, cJSON_GetObjectItemCaseSensitive(group, "priority")->valueint);
+    ASSERT_EQ(1, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(group, "rules")));
+    cJSON_Delete(out);
+    ASSERT_EQ(200, do_request("PUT", "/api/v1/groups/aabbccdd?save=true",
+        "{\"name\":\"renamed\",\"priority\":1}", &out));
+    ASSERT_EQ(1, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    cJSON_Delete(out);
+    mt_config_t loaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    ASSERT_EQ(1, loaded.n_groups);
+    ASSERT_EQ(1, loaded.groups[0]->priority);
+    ASSERT_EQ(1, loaded.groups[0]->n_rules);
+    mt_config_clear(&loaded); harness_stop(h); PASS();
+}
+
+TEST invalid_group_priorities_do_not_change_live_or_persisted_state(void) {
+    harness_t *h = harness_start_saved(true); ASSERT(h);
+    ASSERT_EQ(200, do_request("POST", "/api/v1/groups?save=true",
+        "{\"id\":\"aabbccdd\",\"name\":\"original\",\"priority\":777}", NULL));
+    const char *invalid[] = {
+        "0", "-1", "1001", "1.5", "1e309", "null", "true", "\"300\"", "{}", "[]"
+    };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        char body[512];
+        snprintf(body, sizeof(body), "{\"name\":\"invalid\",\"priority\":%s}", invalid[i]);
+        ASSERT_EQ(400, do_request("POST", "/api/v1/groups?save=true", body, NULL));
+        ASSERT_EQ(400, do_request("PUT", "/api/v1/groups/aabbccdd?save=true", body, NULL));
+        snprintf(body, sizeof(body), "{\"groups\":["
+            "{\"id\":\"aabbccdd\",\"name\":\"would-change\",\"priority\":1},"
+            "{\"id\":\"bbbb0001\",\"priority\":%s}]}", invalid[i]);
+        ASSERT_EQ(400, do_request("PUT", "/api/v1/groups?save=true", body, NULL));
+        cJSON *out = NULL;
+        ASSERT_EQ(200, do_request("GET", "/api/v1/groups", NULL, &out));
+        cJSON *groups = cJSON_GetObjectItemCaseSensitive(out, "groups");
+        ASSERT_EQ(1, cJSON_GetArraySize(groups));
+        cJSON *group = cJSON_GetArrayItem(groups, 0);
+        ASSERT_STR_EQ("original", jstr(group, "name"));
+        ASSERT_EQ(777, cJSON_GetObjectItemCaseSensitive(group, "priority")->valueint);
+        cJSON_Delete(out);
+    }
+    mt_config_t loaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
+    ASSERT_EQ(MT_OK, mt_config_load_file(&loaded, h->save_path));
+    ASSERT_EQ(1, loaded.n_groups);
+    ASSERT_EQ(777, loaded.groups[0]->priority);
+    ASSERT_STR_EQ("original", loaded.groups[0]->name);
+    mt_config_clear(&loaded); harness_stop(h); PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -665,6 +745,8 @@ int main(int argc, char **argv) {
     RUN_TEST(fifty_thousand_group_rules_full_compact_strict_and_persist);
     RUN_TEST(failed_group_save_returns_error_and_keeps_dirty_retry_possible);
     RUN_TEST(invalid_batch_preserves_existing_groups);
+    RUN_TEST(group_priority_updates_persists_and_omission_preserves_it);
+    RUN_TEST(invalid_group_priorities_do_not_change_live_or_persisted_state);
     RUN_TEST(get_groups_starts_empty);
     RUN_TEST(create_group_normalizes_color_and_defaults_enable);
     RUN_TEST(create_group_invalid_color_falls_back_to_white);

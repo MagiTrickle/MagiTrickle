@@ -39,7 +39,11 @@ void mt_rule_free(mt_rule_t *r)
 
 mt_group_t *mt_group_new(void)
 {
-    return calloc(1, sizeof(mt_group_t));
+    mt_group_t *g = calloc(1, sizeof(*g));
+    if (g != NULL) {
+        g->priority = MT_GROUP_DEFAULT_PRIORITY;
+    }
+    return g;
 }
 
 void mt_group_free(mt_group_t *g)
@@ -108,7 +112,11 @@ void mt_sub_rule_free(mt_sub_rule_t *r)
 
 mt_subscription_t *mt_subscription_new(void)
 {
-    return calloc(1, sizeof(mt_subscription_t));
+    mt_subscription_t *s = calloc(1, sizeof(*s));
+    if (s != NULL) {
+        s->priority = MT_SUBSCRIPTION_DEFAULT_PRIORITY;
+    }
+    return s;
 }
 
 void mt_subscription_free(mt_subscription_t *s)

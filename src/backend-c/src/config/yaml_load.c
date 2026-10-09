@@ -58,6 +58,83 @@ static node_t *map_get(yaml_document_t *doc, node_t *map, const char *key)
     return NULL;
 }
 
+/* Priority is a new strictly typed field, without legacy null/coercion
+ * semantics. Missing alone retains the allocator's group/subscription default. */
+static mt_err_t load_priority(yaml_document_t *doc, node_t *map, uint16_t *dst)
+{
+    if (map->type != YAML_MAPPING_NODE) {
+        return MT_ERR_INVAL;
+    }
+    node_t *priority = NULL;
+    for (yaml_node_pair_t *p = map->data.mapping.pairs.start;
+         p < map->data.mapping.pairs.top; p++) {
+        node_t *key = node_of(doc, p->key);
+        if (key == NULL || key->type != YAML_SCALAR_NODE ||
+            strcmp(scalar_text(key), "priority") != 0) {
+            continue;
+        }
+        if (priority != NULL) {
+            return MT_ERR_INVAL;
+        }
+        priority = node_of(doc, p->value);
+    }
+    if (priority == NULL) {
+        return MT_OK;
+    }
+    if (priority->type != YAML_SCALAR_NODE || !scalar_is_plain(priority)) {
+        return MT_ERR_INVAL;
+    }
+    mt_scalar_value_t value = mt_yaml_resolve_plain(scalar_text(priority));
+    if (value.kind != MT_SCALAR_INT) {
+        return MT_ERR_INVAL;
+    }
+    uint64_t parsed;
+    if (value.is_uint) {
+        parsed = value.u;
+    } else {
+        if (value.i < MT_PRIORITY_MIN) {
+            return MT_ERR_INVAL;
+        }
+        parsed = (uint64_t)value.i;
+    }
+    if (parsed < MT_PRIORITY_MIN || parsed > MT_PRIORITY_MAX) {
+        return MT_ERR_INVAL;
+    }
+    *dst = (uint16_t)parsed;
+    return MT_OK;
+}
+
+/* Validate all explicit priorities before the existing overlay loader changes
+ * app settings or frees a collection. Invalid later entries must not partially
+ * replace a caller's current config. */
+static mt_err_t validate_priorities(yaml_document_t *doc, node_t *root)
+{
+    const char *collections[] = {"groups", "subscriptions"};
+    for (size_t i = 0; i < sizeof(collections) / sizeof(collections[0]); i++) {
+        node_t *items = map_get(doc, root, collections[i]);
+        if (items == NULL || node_is_null(items)) {
+            continue;
+        }
+        if (items->type != YAML_SEQUENCE_NODE) {
+            /* Preserve the existing loader's error/overlay timing for
+             * malformed legacy collections unrelated to priority. */
+            continue;
+        }
+        for (yaml_node_item_t *it = items->data.sequence.items.start;
+             it < items->data.sequence.items.top; it++) {
+            node_t *item = node_of(doc, *it);
+            if (item == NULL || item->type != YAML_MAPPING_NODE) {
+                continue;
+            }
+            uint16_t priority = 0;
+            if (load_priority(doc, item, &priority) != MT_OK) {
+                return MT_ERR_INVAL;
+            }
+        }
+    }
+    return MT_OK;
+}
+
 /* ---- typed getters; every getter: node may be NULL/null -> "absent",
  * type mismatch -> MT_ERR_INVAL (like yaml.v2 unmarshal errors) ---- */
 
@@ -436,6 +513,10 @@ static mt_err_t load_group(yaml_document_t *doc, node_t *n, mt_group_t *g)
     GET_OR_FAIL(get_string(map_get(doc, n, "interface"), &g->iface, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "profile"), &g->profile, &err));
     GET_OR_FAIL(get_bool(map_get(doc, n, "enable"), &g->enable, &err));
+    err = load_priority(doc, n, &g->priority);
+    if (err != MT_OK) {
+        return err;
+    }
     if (g->name == NULL && (err = mt_strset(&g->name, "")) != MT_OK) {
         return err;
     }
@@ -503,6 +584,10 @@ static mt_err_t load_subscription(yaml_document_t *doc, node_t *n,
     GET_OR_FAIL(get_string(map_get(doc, n, "interface"), &s->iface, &err));
     GET_OR_FAIL(get_string(map_get(doc, n, "profile"), &s->profile, &err));
     GET_OR_FAIL(get_bool(map_get(doc, n, "enable"), &s->enable, &err));
+    err = load_priority(doc, n, &s->priority);
+    if (err != MT_OK) {
+        return err;
+    }
     GET_OR_FAIL(get_string(map_get(doc, n, "url"), &s->url, &err));
     uint64_t v;
     getter_res_t r = get_uint64(map_get(doc, n, "interval"), UINT32_MAX, &v,
@@ -635,6 +720,11 @@ mt_err_t mt_config_load_buffer(mt_config_t *cfg, const char *buf, size_t len)
     }
     if (strncmp(version, "0.", 2) != 0) {
         err = MT_ERR_STATE; /* ErrConfigUnsupportedVersion */
+        goto out;
+    }
+
+    err = validate_priorities(&doc, root);
+    if (err != MT_OK) {
         goto out;
     }
 

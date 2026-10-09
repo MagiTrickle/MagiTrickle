@@ -16,6 +16,9 @@
 #define MAGITRICKLE_JSON_H
 
 #include <cjson/cJSON.h>
+#include <stdint.h>
+
+#include "magitrickle/err.h"
 
 /* Builds {"error": "<msg>"}, matching api/types.ErrorRes. Caller owns the
  * result (cJSON_Delete). msg is copied. */
@@ -25,5 +28,10 @@ cJSON *mt_json_error(const char *msg);
  * json.Marshal formatting (no indentation). Caller frees with free().
  * Returns NULL on OOM. */
 char *mt_json_dump(const cJSON *obj);
+
+/* Read optional integer "priority" in [MT_PRIORITY_MIN, MT_PRIORITY_MAX].
+ * Omission leaves *priority unchanged; null, duplicate fields, fractions,
+ * non-numbers and values outside the range return MT_ERR_INVAL unchanged. */
+mt_err_t mt_json_parse_priority(const cJSON *obj, uint16_t *priority);
 
 #endif /* MAGITRICKLE_JSON_H */

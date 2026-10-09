@@ -40,6 +40,7 @@ groups:
   color: '#ffffff'
   interface: "y"
   enable: true
+  priority: 300
   rules:
   - id: "01020304"
     name: 'has: colon'

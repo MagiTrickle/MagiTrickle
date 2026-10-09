@@ -40,5 +40,6 @@ groups:
   color: '#ffffff'
   interface: ""
   enable: false
+  priority: 300
   rules: []
 subscriptions: []

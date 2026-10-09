@@ -9,6 +9,7 @@
 
 #include "magitrickle/id.h"
 #include "magitrickle/id_pool.h"
+#include "magitrickle/json.h"
 #include "magitrickle/log.h"
 
 /* ---- small JSON request-parsing helpers ------------------------------------ */
@@ -149,9 +150,16 @@ static mt_err_t group_from_req(mt_app_t *app, const cJSON *req, const mt_group_t
         return MT_ERR_INVAL;
     }
 
+    uint16_t priority = existing ? existing->priority : MT_GROUP_DEFAULT_PRIORITY;
+    if (mt_json_parse_priority(req, &priority) != MT_OK) {
+        *err_msg = "priority must be an integer between 1 and 1000";
+        return MT_ERR_INVAL;
+    }
+
     mt_group_t *group = mt_group_new();
     if (!group) { return MT_ERR_NOMEM; }
     group->id = existing ? existing->id : (has_req_id ? req_id : mt_id_random());
+    group->priority = priority;
 
     mt_err_t err = mt_strset(&group->name, get_string(req, "name"));
     if (err == MT_OK) { err = mt_strset(&group->color, get_string(req, "color")); }
@@ -225,7 +233,7 @@ static mt_err_t group_from_req(mt_app_t *app, const cJSON *req, const mt_group_t
     return MT_OK;
 }
 
-/* Moves name/color/iface/enable/rules from `from` into `into` in place
+/* Moves name/color/iface/enable/priority/rules from `from` into `into` in place
  * (freeing into's old contents first), preserving into's address/identity
  * and its original id. Frees the now-empty `from` shell with plain free()
  * -- NOT mt_group_free, which would double-free the pointers just moved. */
@@ -239,6 +247,7 @@ static void group_move_into(mt_group_t *into, mt_group_t *from) {
     free(into->profile);
     into->profile = from->profile;
     into->enable = from->enable;
+    into->priority = from->priority;
     for (size_t i = 0; i < into->n_rules; i++) { mt_rule_free(into->rules[i]); }
     free(into->rules);
     into->rules = from->rules;
@@ -284,6 +293,7 @@ static cJSON *group_to_json(const mt_group_t *g, bool with_rules) {
     cJSON_AddStringToObject(obj, "interface", g->iface ? g->iface : "");
     if (g->profile && *g->profile) { cJSON_AddStringToObject(obj, "profile", g->profile); }
     cJSON_AddBoolToObject(obj, "enable", g->enable);
+    cJSON_AddNumberToObject(obj, "priority", g->priority);
     /* "rules" key omitted unless with_rules, matching GroupRes.RulesRes's
      * `omitempty` (a nil slice pointer when withRules is false). */
     if (with_rules) { cJSON_AddItemToObject(obj, "rules", rules_to_json_array(g->rules, g->n_rules)); }

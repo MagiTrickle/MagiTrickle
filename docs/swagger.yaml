@@ -22,6 +22,13 @@ definitions:
       name:
         example: Routing
         type: string
+      priority:
+        description: Higher values take precedence when routing. Omission uses 300 for a new group and preserves the current value when updating an existing group.
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 300
+        example: 300
       rules:
         items:
           $ref: '#/definitions/types.RuleReq'
@@ -44,6 +51,12 @@ definitions:
       name:
         example: Routing
         type: string
+      priority:
+        description: Routing priority; higher values take precedence.
+        type: integer
+        minimum: 1
+        maximum: 1000
+        example: 300
       rules:
         items:
           $ref: '#/definitions/types.RuleRes'
@@ -130,6 +143,14 @@ definitions:
     type: object
 info:
   contact: {}
+  description: >-
+    Groups and subscriptions accept and return priority, an integer from 1 to
+    1000 inclusive. Higher values take precedence when routing. A newly created
+    group defaults to 300, and a subscription to 100. Omitting priority when
+    updating an existing object preserves its current value. Explicit null,
+    nonnumeric, fractional, duplicate or out-of-range priorities return HTTP 400
+    before applying the request. The same defaults apply when loading a legacy
+    YAML configuration without priority fields.
   title: MagiTrickle API
   version: "0.1"
 paths:

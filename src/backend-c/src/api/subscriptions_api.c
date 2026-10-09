@@ -9,6 +9,7 @@
 #include <cjson/cJSON.h>
 
 #include "magitrickle/id.h"
+#include "magitrickle/json.h"
 #include "magitrickle/lookup.h"
 #include "magitrickle/log.h"
 #include "magitrickle/sub_fetch.h"
@@ -126,8 +127,15 @@ static mt_err_t subscription_from_req(mt_app_t *app, const cJSON *req, const mt_
         return MT_ERR_INVAL;
     }
 
+    uint16_t priority = existing ? existing->priority : MT_SUBSCRIPTION_DEFAULT_PRIORITY;
+    if (mt_json_parse_priority(req, &priority) != MT_OK) {
+        *err_msg = "priority must be an integer between 1 and 1000";
+        return MT_ERR_INVAL;
+    }
+
     mt_subscription_t *sub = mt_subscription_new();
     if (!sub) { return MT_ERR_NOMEM; }
+    sub->priority = priority;
     if (existing) {
         sub->id = existing->id;
         sub->last_update = existing->last_update;
@@ -275,6 +283,7 @@ static cJSON *subscription_to_json(const mt_subscription_t *s) {
     cJSON_AddStringToObject(obj, "interface", s->iface ? s->iface : "");
     if (s->profile && *s->profile) { cJSON_AddStringToObject(obj, "profile", s->profile); }
     cJSON_AddBoolToObject(obj, "enable", s->enable);
+    cJSON_AddNumberToObject(obj, "priority", s->priority);
     cJSON_AddStringToObject(obj, "url", s->url ? s->url : "");
     cJSON_AddNumberToObject(obj, "interval", s->interval);
     cJSON_AddNumberToObject(obj, "lastUpdate", s->last_update);
