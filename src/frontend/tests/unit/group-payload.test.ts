@@ -9,6 +9,7 @@ const large = (): Group => ({
   color: "#ffffff",
   interface: "eth0",
   enable: true,
+  priority: 300,
   rules: Array.from({ length: 50000 }, (_, i) => ({
     id: (i + 1).toString(16).padStart(8, "0"),
     name: "",
@@ -39,4 +40,23 @@ Deno.test("new/imported/reordered groups preserve full desired rule order", () =
   const payload = buildGroupUpdate(group, baseline);
   assert("rules" in payload);
   assert.equal(payload.rules[0].id, baseline[49999].id);
+});
+
+Deno.test("group priority updates preserve profiles and allow switching to a direct route", () => {
+  const group = large();
+  const baseline = snapshotGroupRules([group]).get(group.id)!;
+  group.priority = 900;
+  group.profile = "shared";
+  const metadata = buildGroupUpdate(group, baseline);
+  assert.equal(metadata.priority, 900);
+  assert.equal(metadata.profile, "shared");
+  assert(!("rules" in metadata));
+  assert.equal(buildGroupUpdate(group, undefined).priority, 900);
+  group.profile = undefined;
+  group.interface = "eth1";
+  const direct = JSON.parse(JSON.stringify(buildGroupUpdate(group, baseline)));
+  assert.equal(direct.priority, 900);
+  assert.equal(direct.interface, "eth1");
+  assert(!("profile" in direct));
+  assert.deepEqual(direct.ruleChanges, []);
 });

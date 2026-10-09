@@ -25,6 +25,7 @@ const group = (p = "vpn"): Group => ({
   profile: p,
   color: "#ffffff",
   enable: true,
+  priority: 300,
   rules: [],
 });
 

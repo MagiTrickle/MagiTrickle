@@ -135,10 +135,10 @@
     .page-controls {
       display: block;
       padding: 0.3rem 0;
-      padding-bottom: 0;
       transition: padding-bottom 220ms cubic-bezier(0.2, 0, 0.2, 1);
+      --row-h: calc(22px + 1.2rem + 2px);
       --gap: 10px;
-      --actions-top: 0px;
+      --actions-top: 0.3rem;
       --actions-reserve: var(--actions-reserve-size);
     }
 
@@ -161,8 +161,8 @@
 
     .page-controls:has(:global(.search-container:focus-within)),
     .page-controls:has(:global(.search-input:not(:placeholder-shown))) {
-      padding-bottom: calc(var(--row-h) + var(--gap));
-      --actions-top: calc(var(--row-h) + var(--gap));
+      padding-bottom: calc(var(--row-h) + var(--gap) + 0.3rem);
+      --actions-top: calc(var(--row-h) + var(--gap) + 0.3rem);
       --actions-reserve: 0px;
     }
 

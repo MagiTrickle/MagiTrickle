@@ -14,6 +14,7 @@ async function editor(page: Page, kind: Kind, failures: Failure[]) {
     color: "#ffffff",
     interface: "eth0",
     enable: true,
+    priority: kind === "groups" ? 300 : 100,
     url: "https://example.com/list.txt",
     interval: 86400,
     lastUpdate: 1700000000,

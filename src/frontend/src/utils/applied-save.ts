@@ -1,5 +1,11 @@
 import type { Group, Rule, Subscription, SubscriptionRule } from "../types";
 import { HttpError } from "./http-error";
+import {
+  DEFAULT_GROUP_PRIORITY,
+  DEFAULT_SUBSCRIPTION_PRIORITY,
+  isValidPriority,
+  withPriorityDefault,
+} from "./priority";
 
 type RecordValue = Record<string, unknown>;
 const isObject = (value: unknown): value is RecordValue =>
@@ -35,6 +41,7 @@ const isGroup = (value: unknown): value is Group =>
   typeof value.color === "string" &&
   typeof value.interface === "string" &&
   typeof value.enable === "boolean" &&
+  (value.priority === undefined || isValidPriority(value.priority)) &&
   collection(value.rules, isRule);
 const isSubscription = (value: unknown): value is Subscription =>
   isObject(value) &&
@@ -42,6 +49,7 @@ const isSubscription = (value: unknown): value is Subscription =>
   typeof value.name === "string" &&
   typeof value.interface === "string" &&
   typeof value.enable === "boolean" &&
+  (value.priority === undefined || isValidPriority(value.priority)) &&
   typeof value.url === "string" &&
   typeof value.interval === "number" &&
   Number.isFinite(value.interval) &&
@@ -60,10 +68,16 @@ function appliedData(error: unknown): RecordValue | undefined {
 
 export function appliedGroups(error: unknown): Group[] | undefined {
   const groups = appliedData(error)?.groups;
-  return collection(groups, isGroup) ? groups : undefined;
+  return collection(groups, isGroup)
+    ? groups.map((group) => withPriorityDefault(group, DEFAULT_GROUP_PRIORITY))
+    : undefined;
 }
 
 export function appliedSubscriptions(error: unknown): Subscription[] | undefined {
   const subscriptions = appliedData(error)?.subscriptions;
-  return collection(subscriptions, isSubscription) ? subscriptions : undefined;
+  return collection(subscriptions, isSubscription)
+    ? subscriptions.map((subscription) =>
+        withPriorityDefault(subscription, DEFAULT_SUBSCRIPTION_PRIORITY),
+      )
+    : undefined;
 }

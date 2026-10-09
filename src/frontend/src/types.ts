@@ -14,6 +14,11 @@ import {
 } from "valibot";
 
 import { randomId } from "./utils/defaults";
+import {
+  DEFAULT_GROUP_PRIORITY,
+  DEFAULT_SUBSCRIPTION_PRIORITY,
+  PrioritySchema,
+} from "./utils/priority";
 
 declare global {
   interface WindowEventMap {
@@ -49,6 +54,7 @@ export const GroupSchema = object({
   interface: string(),
   profile: optional(string()),
   enable: fallback(boolean(), true),
+  priority: optional(PrioritySchema, DEFAULT_GROUP_PRIORITY),
   rules: array(RuleSchema),
 });
 export type Group = InferOutput<typeof GroupSchema>;
@@ -67,6 +73,7 @@ export const SubscriptionSchema = object({
   interface: string(),
   profile: optional(string()),
   enable: fallback(boolean(), true),
+  priority: optional(PrioritySchema, DEFAULT_SUBSCRIPTION_PRIORITY),
   rules: array(SubscriptionRuleSchema),
   url: string(),
   lastUpdate: fallback(optional(number()), 0),

@@ -5,6 +5,11 @@ import { type Subscription, type SubscriptionRule } from "../../types";
 import { appliedSubscriptions } from "../../utils/applied-save";
 import { overlay, toast } from "../../utils/events";
 import { fetcher } from "../../utils/fetcher";
+import {
+  DEFAULT_SUBSCRIPTION_PRIORITY,
+  isValidPriority,
+  withPriorityDefault,
+} from "../../utils/priority";
 import { buildSubscriptionUpdate, snapshotRules } from "./subscription-payload";
 
 export const SUBSCRIPTIONS_STORE_CONTEXT = Symbol("subscriptions-store");
@@ -68,6 +73,9 @@ export class SubscriptionsStore {
   data = $derived.by(() => this.tracker.data);
   dataRevision = $state(0);
   valid_rules = $state(true);
+  valid_priorities = $derived(
+    this.data.every((subscription) => isValidPriority(subscription.priority)),
+  );
   subscriptionUrlErrors = $derived.by(() => {
     const errors = new Map<string, string>();
     const idsByUrl = new Map<string, string[]>();
@@ -96,7 +104,11 @@ export class SubscriptionsStore {
   });
   valid_subscription_urls = $derived(this.subscriptionUrlErrors.size === 0);
   canSave = $derived(
-    this.hasUnsavedChanges && this.valid_rules && this.valid_subscription_urls && !this.saving,
+    this.hasUnsavedChanges &&
+      this.valid_rules &&
+      this.valid_priorities &&
+      this.valid_subscription_urls &&
+      !this.saving,
   );
 
   open_state = $state<Record<string, boolean>>({});
@@ -258,9 +270,10 @@ export class SubscriptionsStore {
     this.finishedSubscriptionsCount = 0;
     this.fetchError = false;
     try {
-      const fetched =
+      const fetched = (
         (await fetcher.get<{ subscriptions: Subscription[] }>("/subscriptions"))?.subscriptions ??
-        [];
+        []
+      ).map((subscription) => withPriorityDefault(subscription, DEFAULT_SUBSCRIPTION_PRIORITY));
       this.#savedRules = new Map(fetched.map((sub) => [sub.id, snapshotRules(sub.rules)]));
       this.tracker = new ChangeTracker(fetched);
       this.dataRevision = 0;
@@ -515,10 +528,16 @@ export class SubscriptionsStore {
     try {
       // Fetch/parse on the server; never echo the preview's thousands of
       // rules back into the request, and use canonical server-assigned IDs.
-      const { subscription: nextSubscription } = await fetcher.post<{ subscription: Subscription }>(
+      const { subscription } = await fetcher.post<{ subscription: Subscription }>(
         "/subscriptions?fetch=true",
-        { ...payload, url: normalizeSubscriptionUrl(payload.url), enable: true },
+        {
+          ...payload,
+          url: normalizeSubscriptionUrl(payload.url),
+          enable: true,
+          priority: DEFAULT_SUBSCRIPTION_PRIORITY,
+        },
       );
+      const nextSubscription = withPriorityDefault(subscription, DEFAULT_SUBSCRIPTION_PRIORITY);
       this.#savedRules.set(nextSubscription.id, snapshotRules(nextSubscription.rules));
       this.data.unshift(nextSubscription);
       this.tracker.acknowledgeNewItem(this.data, nextSubscription, "start");

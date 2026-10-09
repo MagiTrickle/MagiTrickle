@@ -12,6 +12,7 @@ test("50k subscription: summary, URL-only create, compact save, canonical IDs", 
     url: "https://example.com/large.txt",
     interface: "eth0",
     enable: true,
+    priority: 100,
     interval: 86400,
     lastUpdate: 1700000000,
     rules: Array.from({ length: 50000 }, (_, i) => ({

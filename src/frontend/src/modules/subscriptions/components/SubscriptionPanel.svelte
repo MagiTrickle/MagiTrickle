@@ -27,6 +27,7 @@
   import Pagination from "../../../components/Pagination.svelte";
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
+  import EdgeNumberInput from "../../../components/ui/EdgeNumberInput.svelte";
   import RouteSelect from "../../../components/ui/RouteSelect.svelte";
   import Select from "../../../components/ui/Select.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
@@ -337,6 +338,11 @@
             </Tooltip>
           </div>
         </div>
+        <EdgeNumberInput
+          title={t("Subscription priority")}
+          label={`${t("Subscription priority")}: ${subscription.name}`}
+          bind:value={subscription.priority}
+        />
       </div>
 
       <Collapsible.Content>
@@ -392,7 +398,7 @@
     justify-content: space-between;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem;
+    padding: 0.5rem 2rem 0.5rem 0.5rem;
     border-radius: 0.5rem;
     background-color: var(--bg-light);
     position: relative;
@@ -652,8 +658,8 @@
     }
 
     .subscription-actions .action.interface {
-      flex: 1 1 160px;
-      min-width: 140px;
+      flex: 0 1 auto;
+      min-width: 100px;
     }
 
     .subscription-actions .action.toggle {

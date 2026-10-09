@@ -48,6 +48,7 @@ export function buildSubscriptionUpdate(
     interface: subscription.interface,
     ...(subscription.profile ? { profile: subscription.profile } : {}),
     enable: subscription.enable,
+    priority: subscription.priority,
     interval: subscription.interval,
     ruleChanges,
   };

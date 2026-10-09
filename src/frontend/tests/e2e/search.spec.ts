@@ -239,9 +239,9 @@ test.describe("Groups Search", () => {
     await expect(group.locator(".rule")).toHaveCount(1);
     const nameMatchedRule = group.locator('.rule[data-uuid="r-name"]');
     await expect(nameMatchedRule.locator(".name .search-highlight-overlay mark")).toHaveCount(1);
-    await expect(nameMatchedRule.locator(".name .search-highlight-overlay mark").first()).toHaveText(
-      "Alpha",
-    );
+    await expect(
+      nameMatchedRule.locator(".name .search-highlight-overlay mark").first(),
+    ).toHaveText("Alpha");
     await expect(nameMatchedRule.locator(".pattern .search-highlight-overlay mark")).toHaveCount(0);
     await expect(groupNameOverlay.locator("mark")).toHaveCount(0);
 

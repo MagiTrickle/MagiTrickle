@@ -10,9 +10,16 @@ const group = {
   color: "#ffffff",
   interface: "all",
   enable: true,
+  priority: 300,
   rules: [rule],
 };
-const sub = { ...group, url: "https://example.com/list", interval: 86400, lastUpdate: 1700000000 };
+const sub = {
+  ...group,
+  priority: 100,
+  url: "https://example.com/list",
+  interval: 86400,
+  lastUpdate: 1700000000,
+};
 const failure = (extra: object = {}, status = 500) =>
   new HttpError(
     status,
@@ -67,4 +74,29 @@ Deno.test("malformed/duplicate rule identities are not repaired into an invented
     appliedSubscriptions(failure({ subscriptions: [{ ...sub, lastUpdate: null }] })),
     undefined,
   );
+});
+
+Deno.test("applied state preserves priorities and only defaults omitted legacy values", () => {
+  const applied = failure({
+    groups: [{ ...group, priority: 1000, profile: "shared" }],
+    subscriptions: [{ ...sub, priority: 1, profile: "shared" }],
+  });
+  assert.equal(appliedGroups(applied)?.[0].priority, 1000);
+  assert.equal(appliedSubscriptions(applied)?.[0].priority, 1);
+  assert.equal(appliedGroups(applied)?.[0].profile, "shared");
+  assert.equal(appliedSubscriptions(applied)?.[0].profile, "shared");
+  const legacy = failure({
+    groups: [{ ...group, priority: undefined }],
+    subscriptions: [{ ...sub, priority: undefined }],
+  });
+  assert.equal(appliedGroups(legacy)?.[0].priority, 300);
+  assert.equal(appliedSubscriptions(legacy)?.[0].priority, 100);
+  for (const priority of [null, 0, -1, 1001, 1.5, "300"]) {
+    const invalid = failure({
+      groups: [{ ...group, priority }],
+      subscriptions: [{ ...sub, priority }],
+    });
+    assert.equal(appliedGroups(invalid), undefined);
+    assert.equal(appliedSubscriptions(invalid), undefined);
+  }
 });

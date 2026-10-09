@@ -11,6 +11,7 @@ test("50k group: compact metadata/rule saves and server IDs survive a second edi
     color: "#ffffff",
     interface: "eth0",
     enable: true,
+    priority: 300,
     rules: Array.from({ length: 50000 }, (_, i) => ({
       id: (i + 1).toString(16).padStart(8, "0"),
       name: "",

@@ -6,6 +6,7 @@
   import Pagination from "../../../components/Pagination.svelte";
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
+  import EdgeNumberInput from "../../../components/ui/EdgeNumberInput.svelte";
   import RouteSelect from "../../../components/ui/RouteSelect.svelte";
   import Switch from "../../../components/ui/Switch.svelte";
   import Tooltip from "../../../components/ui/Tooltip.svelte";
@@ -467,6 +468,11 @@
             </Collapsible.Trigger>
           </Tooltip>
         </div>
+        <EdgeNumberInput
+          title={t("Group priority")}
+          label={`${t("Group priority")}: ${group.name}`}
+          bind:value={group.priority}
+        />
       </div>
 
       <Collapsible.Content>
@@ -557,7 +563,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 0.5rem;
+      padding: 0.5rem 2rem 0.5rem 0.5rem;
       border-radius: 0.5rem;
       background-color: var(--bg-light);
       position: relative;
@@ -814,7 +820,7 @@
       flex-direction: column;
       align-items: start;
       justify-content: center;
-      padding: 0.4rem 0.5rem;
+      padding: 0.4rem 2rem 0.4rem 0.5rem;
     }
 
     .group-left {
@@ -840,9 +846,8 @@
 
     :global(.group-actions > *:nth-child(1)) {
       margin-right: auto;
-      width: 150px;
-      min-width: 140px;
-      flex: 1 1 auto;
+      min-width: 100px;
+      flex: 0 1 auto;
     }
 
     :global(.group-actions > *:nth-child(2)) {

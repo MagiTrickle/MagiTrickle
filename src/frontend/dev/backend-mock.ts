@@ -7,6 +7,12 @@ import { streamSSE } from "hono/streaming";
 import { cleanProfiles, profileError } from "../src/modules/settings/profiles-data.ts";
 import type { RuleChange } from "../src/modules/subscriptions/subscription-payload.ts";
 import type { Group, Interfaces, Profile, Subscription } from "../src/types.ts";
+import {
+  DEFAULT_GROUP_PRIORITY,
+  DEFAULT_SUBSCRIPTION_PRIORITY,
+  isValidPriority,
+  withPriorityDefault,
+} from "../src/utils/priority.ts";
 
 const API_BASE = "/api/v1";
 
@@ -20,12 +26,14 @@ const INTERFACES: Interfaces = {
 };
 
 const DATA = JSON.parse(Deno.readTextFileSync("./dev/groups.json"));
+DATA.groups = DATA.groups.map((group: Group) => withPriorityDefault(group, DEFAULT_GROUP_PRIORITY));
 const SUBSCRIPTIONS: Subscription[] = [
   {
     id: "a1b2c3d4",
     name: "Bad Bad Services",
     interface: "blackhole",
     enable: true,
+    priority: DEFAULT_SUBSCRIPTION_PRIORITY,
     url: "https://services.should.be.blocked.com",
     lastUpdate: Math.floor(Date.now() / 1000),
     interval: 86400,
@@ -141,6 +149,8 @@ app.put(`${API_BASE}/groups`, async (c) => {
   const body = await c.req.json();
   const replacement: Group[] = [];
   for (const incoming of body.groups) {
+    if (incoming.priority !== undefined && !isValidPriority(incoming.priority))
+      return c.json({ error: "priority must be an integer from 1 to 1000" }, 400);
     const previous: Group | undefined = DATA.groups.find(
       (group: Group) => group.id === incoming.id,
     );
@@ -170,7 +180,12 @@ app.put(`${API_BASE}/groups`, async (c) => {
     if (metadata.profile && !PROFILES.some((p) => p.id === metadata.profile)) {
       return c.json({ error: "Missing routing profile" }, 400);
     }
-    replacement.push(applyProfile({ ...previous, ...metadata, profile: metadata.profile, rules }));
+    replacement.push(
+      withPriorityDefault(
+        applyProfile({ ...previous, ...metadata, profile: metadata.profile, rules }),
+        DEFAULT_GROUP_PRIORITY,
+      ),
+    );
   }
   DATA.groups = replacement;
   return c.json({ groups: DATA.groups });
@@ -191,6 +206,8 @@ app.put(`${API_BASE}/subscriptions`, async (c) => {
   const body = await c.req.json();
   const replacement: Subscription[] = [];
   for (const incoming of body.subscriptions) {
+    if (incoming.priority !== undefined && !isValidPriority(incoming.priority))
+      return c.json({ error: "priority must be an integer from 1 to 1000" }, 400);
     const previous = SUBSCRIPTIONS.find((s) => s.id === incoming.id);
     if (incoming.ruleChanges && !previous)
       return c.json({ error: "subscription changed; reload before saving" }, 409);
@@ -215,7 +232,12 @@ app.put(`${API_BASE}/subscriptions`, async (c) => {
     if (metadata.profile && !PROFILES.some((p) => p.id === metadata.profile)) {
       return c.json({ error: "Missing routing profile" }, 400);
     }
-    replacement.push(applyProfile({ ...previous, ...metadata, profile: metadata.profile, rules }));
+    replacement.push(
+      withPriorityDefault(
+        applyProfile({ ...previous, ...metadata, profile: metadata.profile, rules }),
+        DEFAULT_SUBSCRIPTION_PRIORITY,
+      ),
+    );
   }
   SUBSCRIPTIONS.splice(0, SUBSCRIPTIONS.length, ...replacement);
   return c.json({ status: "ok" });
@@ -225,6 +247,9 @@ app.post(`${API_BASE}/subscriptions`, async (c) => {
   const body = applyProfile(await c.req.json());
   if (body.profile && !PROFILES.some((p) => p.id === body.profile))
     return c.json({ error: "Missing routing profile" }, 400);
+  if (body.priority !== undefined && !isValidPriority(body.priority))
+    return c.json({ error: "priority must be an integer from 1 to 1000" }, 400);
+  body.priority ??= DEFAULT_SUBSCRIPTION_PRIORITY;
   if (c.req.query("fetch") === "true") {
     const subscription = {
       ...body,

@@ -2,10 +2,12 @@ import { interfaces } from "../data/interfaces.svelte";
 
 import type { Group, Rule } from "../types";
 import { randomDarkishColor } from "./colors";
+import { DEFAULT_GROUP_PRIORITY } from "./priority";
 
 export function defaultGroup(): Group {
   return {
     enable: true,
+    priority: DEFAULT_GROUP_PRIORITY,
     id: randomId(),
     interface: interfaces.list.at(0)?.id ?? "",
     name: "",
