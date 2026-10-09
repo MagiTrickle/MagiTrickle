@@ -12,6 +12,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -30,6 +31,7 @@ typedef struct {
     mt_cancel_t *cancel;
     const char *prefix;
     unsigned saves, restores, invalid_batches;
+    unsigned foreign_redeclarations, bad_delete_order;
     unsigned fail_save, fail_restore, cancel_after_restore;
     mt_err_t failure;
     bool real;
@@ -96,8 +98,30 @@ static mt_err_t gate_save(mt_ipt_executable_t *self, uint8_t **out, size_t *len)
     return g->inner->ops->save(g->inner, out, len);
 }
 
+/* The fake transport does not emulate --noflush's implicit chain flush.
+ * Inspect the real generated transcript to reject unsafe cleanup ordering
+ * even in a rootless unit test (the real kernel test exercises the effect). */
+static size_t find_transcript_command(const uint8_t *data, size_t len, const char *wanted)
+{
+    size_t n = strlen(wanted);
+    if (n == 0 || n > len) { return SIZE_MAX; }
+    for (size_t i = 0; i <= len - n; i++) {
+        if (memcmp(data + i, wanted, n) == 0) { return i; }
+    }
+    return SIZE_MAX;
+}
+
 static mt_err_t gate_restore(mt_ipt_executable_t *self, const uint8_t *data, size_t len) {
     gate_t *g = (gate_t *)self;
+    if (find_transcript_command(data, len, "-D USER_KEEP -j MT_CHILD\n") != SIZE_MAX &&
+        find_transcript_command(data, len, ":USER_KEEP - [0:0]\n") != SIZE_MAX) {
+        g->foreign_redeclarations++;
+    }
+    size_t flush_parent = find_transcript_command(data, len, "-F MT_PARENT\n");
+    size_t delete_child = find_transcript_command(data, len, "-X MT_CHILD\n");
+    if (flush_parent != SIZE_MAX && delete_child != SIZE_MAX && delete_child < flush_parent) {
+        g->bad_delete_order++;
+    }
     if (++g->restores == g->fail_restore) { return g->failure; }
     mt_err_t err = g->real ? g->inner->ops->restore(g->inner, data, len)
                          : checked_fake_restore(g, data, len);
@@ -335,6 +359,89 @@ TEST cancel_after_cleanup_then_retry(void) {
     return assert_recovered();
 }
 
+/* A firmware jump using -g instead of -j must be removed before the
+ * stale MT_ chain is deleted. The old substring matcher missed goto,
+ * producing an iptables-restore line-N failure and endless retries. */
+TEST cleanup_removes_goto_references(void) {
+    setup(3, "MT_");
+    for (unsigned family = 0; family < 2; family++) {
+        ASSERT_EQ(MT_OK, raw_restore(fx.g[family],
+            "*nat\n:MT_STALE - [0:0]\n-A PREROUTING -g MT_STALE\nCOMMIT\n"));
+    }
+    ASSERT_EQ(MT_OK, mt_app_rebuild_netfilter(fx.app, NULL));
+    for (unsigned family = 0; family < 2; family++) {
+        mt_ipt_rules_snapshot_t *snap = NULL;
+        ASSERT_EQ(MT_OK, mt_ipt_get_current_rules(fx.ipt[family], &snap));
+        const mt_ipt_table_rules_t *nat = mt_ipt_rules_snapshot_find_table(snap, "nat");
+        ASSERT(nat);
+        ASSERT(mt_ipt_table_rules_find_chain(nat, "MT_STALE") == NULL);
+        const mt_ipt_chain_rules_t *pre = mt_ipt_table_rules_find_chain(nat, "PREROUTING");
+        ASSERT(pre);
+        for (size_t i = 0; i < pre->n_rules; i++) {
+            const char *target = jump_target(pre->rules[i]);
+            ASSERT(!target || strcmp(target, "MT_STALE") != 0);
+        }
+        mt_ipt_rules_snapshot_free(snap);
+    }
+    return assert_recovered();
+}
+
+/* A firmware-controlled user chain may jump into a stale managed chain.
+ * --noflush MUST NOT declare/flush that user chain during patch removal.
+ * Also verify chained managed targets are all flushed before any -X.
+ * Both paths previously manifested only as a failure at mangle COMMIT. */
+TEST foreign_user_chain_survives_owned_chain_cleanup(void)
+{
+    setup(3, "MT_");
+    const char *seed =
+        "*mangle\n"
+        ":USER_KEEP - [0:0]\n"
+        ":MT_CHILD - [0:0]\n"
+        ":MT_PARENT - [0:0]\n"
+        "-A USER_KEEP -p tcp --dport 64200 -j RETURN\n"
+        "-A USER_KEEP -j MT_CHILD\n"
+        "-A MT_PARENT -j MT_CHILD\n"
+        "-A PREROUTING -j MT_PARENT\n"
+        "-A PREROUTING -j USER_KEEP\n"
+        "COMMIT\n";
+    for (unsigned i = 0; i < 2; i++) {
+        ASSERT_EQ(MT_OK, raw_restore(fx.g[i], seed));
+    }
+    ASSERT_EQ(MT_OK, mt_app_rebuild_netfilter(fx.app, NULL));
+    for (unsigned i = 0; i < 2; i++) {
+        ASSERT_EQ(0u, fx.g[i]->foreign_redeclarations);
+        ASSERT_EQ(0u, fx.g[i]->bad_delete_order);
+        mt_ipt_rules_snapshot_t *snap = NULL;
+        ASSERT_EQ(MT_OK, mt_ipt_get_current_rules(fx.ipt[i], &snap));
+        const mt_ipt_table_rules_t *mangle = mt_ipt_rules_snapshot_find_table(snap, "mangle");
+        ASSERT(mangle);
+        const mt_ipt_chain_rules_t *user = mt_ipt_table_rules_find_chain(mangle, "USER_KEEP");
+        const mt_ipt_chain_rules_t *pre = mt_ipt_table_rules_find_chain(mangle, "PREROUTING");
+        ASSERT(user && pre);
+        ASSERT_EQ(1u, user->n_rules);
+        ASSERT(has_arg(user->rules[0], "64200"));
+        ASSERT(has_arg(user->rules[0], "RETURN"));
+        ASSERT(mt_ipt_table_rules_find_chain(mangle, "MT_CHILD") == NULL);
+        ASSERT(mt_ipt_table_rules_find_chain(mangle, "MT_PARENT") == NULL);
+        size_t user_jumps = 0;
+        for (size_t ri = 0; ri < pre->n_rules; ri++) {
+            const char *target = jump_target(pre->rules[ri]);
+            if (target && strcmp(target, "USER_KEEP") == 0) { user_jumps++; }
+        }
+        ASSERT_EQ(1u, user_jumps);
+        mt_ipt_rules_snapshot_free(snap);
+    }
+    ASSERT_EQ(MT_OK, mt_app_rebuild_netfilter(fx.app, NULL));
+    for (unsigned i = 0; i < 2; i++) {
+        ASSERT_EQ(0u, fx.g[i]->foreign_redeclarations);
+        ASSERT_EQ(0u, fx.g[i]->bad_delete_order);
+        ASSERT_EQ(MT_OK, raw_restore(fx.g[i],
+            "*mangle\n-D PREROUTING -j USER_KEEP\n"
+            "-F USER_KEEP\n-X USER_KEEP\nCOMMIT\n"));
+    }
+    return assert_recovered();
+}
+
 TEST custom_prefix_recovery(void) {
     setup(3, "XY_");
     ASSERT_EQ(MT_OK, remove_jump(0, false));
@@ -402,6 +509,8 @@ int main(int argc, char **argv) {
     RUN_TESTp(retry_after_apply_failure, 1);
     RUN_TEST(retry_after_snapshot_failure);
     RUN_TEST(cancel_after_cleanup_then_retry);
+    RUN_TEST(cleanup_removes_goto_references);
+    RUN_TEST(foreign_user_chain_survives_owned_chain_cleanup);
     RUN_TEST(custom_prefix_recovery);
     RUN_TEST(event_burst_eventually_recovers);
     GREATEST_MAIN_END();

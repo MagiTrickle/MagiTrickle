@@ -29,6 +29,10 @@ mt_group_t *mt_sub_runtime_group(const mt_subscription_t *sub) {
         mt_group_free(g);
         return NULL;
     }
+    if (mt_strset(&g->profile, sub->profile) != MT_OK) {
+        mt_group_free(g);
+        return NULL;
+    }
     g->enable = sub->enable && sub->iface != NULL && sub->iface[0] != '\0';
 
     for (size_t i = 0; i < sub->n_rules; i++) {

@@ -40,7 +40,8 @@ typedef struct mt_group {
     mt_id_t id;
     char *name;
     char *color;
-    char *iface; /* yaml key: interface */
+    char *iface; /* yaml key: interface; configured primary, never runtime active */
+    char *profile; /* optional stable profile ID; authoritative when nonempty */
     bool enable;
     mt_rule_t **rules;
     size_t n_rules;
@@ -57,6 +58,7 @@ typedef struct mt_subscription {
     mt_id_t id;
     char *name;
     char *iface;
+    char *profile;
     bool enable;
     char *url;
     uint32_t interval;
@@ -67,6 +69,15 @@ typedef struct mt_subscription {
     mt_sub_rule_t **rules;
     size_t n_rules;
 } mt_subscription_t;
+
+/* A reusable ordered failover chain. The final action is always blackhole.
+ * No fixed count limit: profile/interface arrays grow as needed. */
+typedef struct mt_profile {
+    char *id;
+    char *name;
+    char **interfaces;
+    size_t n_interfaces;
+} mt_profile_t;
 
 /* AppConfig with the exact defaults from Go constant.DefaultAppConfig. */
 typedef struct mt_app_config {
@@ -120,6 +131,9 @@ typedef struct mt_config {
     mt_subscription_t **subscriptions;
     size_t n_subscriptions;
     bool subscriptions_present;
+    mt_profile_t **profiles;
+    size_t n_profiles;
+    bool profiles_present;
 } mt_config_t;
 
 mt_rule_t *mt_rule_new(void);
@@ -135,6 +149,13 @@ void mt_sub_rule_free(mt_sub_rule_t *r);
 mt_subscription_t *mt_subscription_new(void);
 void mt_subscription_free(mt_subscription_t *s);
 mt_err_t mt_subscription_add_rule(mt_subscription_t *s, mt_sub_rule_t *r);
+
+mt_profile_t *mt_profile_new(void);
+void mt_profile_free(mt_profile_t *p);
+mt_err_t mt_profile_add_interface(mt_profile_t *p, const char *name);
+mt_err_t mt_config_add_profile(mt_config_t *c, mt_profile_t *p); /* takes ownership on success */
+void mt_config_clear_profiles(mt_config_t *c);
+mt_err_t mt_config_clone_profiles(mt_config_t *dst, const mt_config_t *src);
 
 /* Initialize with DefaultAppConfig values (allocates strings). */
 mt_err_t mt_app_config_init_defaults(mt_app_config_t *c);

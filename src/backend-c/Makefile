@@ -91,6 +91,7 @@ CORE_SRCS := \
     src/iptables/chain_delete.c \
     src/iptables/engine.c \
     src/iptables/executable_real.c \
+    src/iptables/restore_diagnostic.c \
     src/crypto/md5.c \
     src/crypto/sha256.c \
     src/crypto/sha512.c \
@@ -104,7 +105,7 @@ CORE_SRCS := \
 CONFIG_SRCS := \
     src/config/duration.c \
     src/config/id.c \
-    src/config/models.c \
+    src/config/models.c src/config/profiles.c \
     src/config/yaml_scalar.c \
     src/config/yaml_load.c \
     src/config/yaml_save.c \
@@ -121,7 +122,7 @@ CONFIG_SRCS := \
 NETFILTER_SRCS := \
     src/netfilter/ipset.c \
     src/netfilter/ipset_nl_real.c \
-    src/netfilter/ipset_to_link.c \
+    src/netfilter/ipset_to_link.c src/netfilter/failover.c \
     src/netfilter/port_remap.c \
     src/netfilter/cleaner.c \
     src/netfilter/committer.c \
@@ -140,7 +141,7 @@ API_SRCS := \
     src/api/auth.c \
     src/api/app.c \
     src/api/groups.c \
-    src/api/system.c \
+    src/api/system.c src/api/profiles_api.c \
     src/api/staticfiles.c \
     src/api/subscriptions_api.c \
     src/crypto/jwt.c
@@ -271,6 +272,27 @@ $(BUILDDIR)/tests/test_large_subscriptions: tests/unit/test_large_subscriptions.
 $(BUILDDIR)/tests/test_ruleset_indexed: tests/unit/test_ruleset_indexed.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(filter-out $(BUILDDIR)/src/netfilter/ruleset.o,$(LIB_OBJS)) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
+$(BUILDDIR)/tests/test_profiles_reload: tests/unit/test_profiles_reload.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -Wl,--wrap=mt_ipset_nl_real_new -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
+# Wrappers are confined to these test executables, including sanitizer builds.
+$(BUILDDIR)/tests/test_profile_routes: tests/unit/test_profile_routes.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -Wl,--wrap=mnl_socket_sendto -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
+$(BUILDDIR)/tests/test_rtnl_responses: tests/unit/test_rtnl_responses.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -Wl,--wrap=mnl_socket_sendto -Wl,--wrap=mnl_socket_recvfrom -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
+$(BUILDDIR)/tests/test_route_recovery: tests/unit/test_route_recovery.c $(MAIN_SRC) $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) \
+	    -Wl,--wrap=mt_loop_add_timer -Wl,--wrap=mt_loop_del_timer \
+	    -Wl,--wrap=mt_loop_add_fd -Wl,--wrap=mt_loop_del_fd -Wl,--wrap=mt_loop_stop \
+	    -Wl,--wrap=mt_app_reconcile_routes -Wl,--wrap=mnl_socket_open -Wl,--wrap=mnl_socket_recvfrom \
+	    -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
 test: $(TEST_BINS)
 	@set -e; for t in $(TEST_BINS); do echo "== $$t"; $$t; done

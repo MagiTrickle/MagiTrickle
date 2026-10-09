@@ -50,10 +50,32 @@ mt_err_t mt_rtnl_route_add_iface(mt_rtnl_t *r, int family, uint32_t table, uint3
 mt_err_t mt_rtnl_route_del_iface(mt_rtnl_t *r, int family, uint32_t table, uint32_t priority,
                                  int oif, const uint8_t *gw, uint8_t gw_len);
 
+/* Snapshot the actual default route in a policy table at priority. */
+typedef struct mt_rtnl_default_route {
+    bool found;
+    uint8_t type;
+    int ifindex;
+    uint8_t gateway[16];
+    uint8_t gateway_len;
+    bool multipath;
+} mt_rtnl_default_route_t;
+mt_err_t mt_rtnl_get_default_route(mt_rtnl_t *r, int family, uint32_t table,
+                                   uint32_t priority, mt_rtnl_default_route_t *out);
+
+/* Atomic replacement (same priority/table), unlike add's EEXIST swallow.
+ * unavailable covers ENODEV/ENETDOWN/ENETUNREACH readiness races. */
+mt_err_t mt_rtnl_route_replace_iface(mt_rtnl_t *r, int family, uint32_t table,
+                                   uint32_t priority, int oif, const uint8_t *gw,
+                                   uint8_t gw_len, bool *unavailable);
+/* A usable source address for this family (not tentative or DAD-failed;
+ * IPv6 link-local alone does not make a MASQUERADE egress usable). */
+mt_err_t mt_rtnl_iface_has_address(mt_rtnl_t *r, int family, int ifindex, bool *found);
+
 typedef struct mt_link_info {
     int ifindex;
     bool up;
     bool point_to_point;
+    bool operational; /* UP or UNKNOWN; administrative UP alone is insufficient */
 } mt_link_info_t;
 
 /* *found=false + MT_OK when the interface doesn't exist yet (matches Go's
@@ -65,6 +87,13 @@ mt_err_t mt_rtnl_link_by_name(mt_rtnl_t *r, const char *name, mt_link_info_t *ou
  * *found=false + MT_OK when none exists (not an error condition there). */
 mt_err_t mt_rtnl_gateway_for_iface(mt_rtnl_t *r, int family, int ifindex, bool *found, uint8_t *gw,
                                    uint8_t *gw_len);
+
+/* Profile gateway discovery excludes tables reserved by this instance, so
+ * previously copied routes cannot keep a vanished upstream route alive. */
+mt_err_t mt_rtnl_gateway_for_profile(mt_rtnl_t *r, int family, int ifindex,
+                                    bool *found, uint8_t *gw, uint8_t *gw_len);
+mt_err_t mt_rtnl_reserve_table(mt_rtnl_t *r, uint32_t table);
+void mt_rtnl_release_table(mt_rtnl_t *r, uint32_t table);
 
 /* Scans existing rules (all families) + routes (all families) for
  * mark/table usage starting at start_idx, matching getUnusedMarkAndTable

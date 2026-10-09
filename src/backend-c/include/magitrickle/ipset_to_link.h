@@ -33,6 +33,11 @@ mt_ipset_to_link_t *mt_ipset_to_link_new(const char *chain_name, const char *ifa
                                          mt_ipset_t *ipset, mt_ipt_t *ipt4, mt_ipt_t *ipt6,
                                          mt_rtnl_t *rtnl, uint32_t start_idx);
 void mt_ipset_to_link_free(mt_ipset_to_link_t *l);
+/* Copies an ordered profile chain. May be called while enabled; keeps the
+ * ipset, mark and blackhole and rolls back the chain on an apply error. */
+mt_err_t mt_ipset_to_link_set_interfaces(mt_ipset_to_link_t *l,
+                                       const char *const *names, size_t count);
+bool mt_ipset_to_link_uses_interface(const mt_ipset_to_link_t *l, const char *name);
 
 mt_err_t mt_ipset_to_link_enable(mt_ipset_to_link_t *l);
 mt_err_t mt_ipset_to_link_disable(mt_ipset_to_link_t *l);

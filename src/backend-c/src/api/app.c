@@ -1,5 +1,6 @@
 /* See app.h. Port of the group/interface/config-save slice of app.go. */
 #include "magitrickle/app.h"
+#include "magitrickle/profiles.h"
 
 #include <errno.h>
 #include <ifaddrs.h>
@@ -96,6 +97,7 @@ static void app_nf_leave(mt_app_t *app) {
 
 static mt_ruleset_deps_t ruleset_deps(mt_app_t *app) {
     mt_ruleset_deps_t deps = {
+        .config = app->cfg,
         .ipt4 = app->ipt4,
         .ipt6 = app->ipt6,
         .rtnl = app->rtnl,
@@ -217,6 +219,7 @@ mt_app_t *mt_app_create(const mt_app_deps_t *deps) {
     mt_app_t *app = calloc(1, sizeof(*app));
     if (!app) { return NULL; }
     app->cfg = deps->cfg;
+    if (mt_profiles_normalize(app->cfg) != MT_OK) { mt_app_destroy(app); return NULL; }
     if (mt_strset(&app->ipset_prefix, deps->cfg->app.netfilter.ipset.table_prefix) != MT_OK ||
         mt_strset(&app->chain_prefix, deps->cfg->app.netfilter.iptables.chain_prefix) != MT_OK) {
         mt_app_destroy(app);
@@ -304,7 +307,7 @@ static bool same_text(const char *a, const char *b) { return strcmp(a ? a : "", 
 
 static bool same_group(const mt_group_t *a, const mt_group_t *b) {
     if (!mt_id_equal(a->id, b->id) || a->enable != b->enable || a->n_rules != b->n_rules ||
-        !same_text(a->name, b->name) || !same_text(a->iface, b->iface) || !same_text(a->color, b->color)) { return false; }
+        !same_text(a->profile, b->profile) || !same_text(a->name, b->name) || !same_text(a->iface, b->iface) || !same_text(a->color, b->color)) { return false; }
     for (size_t i = 0; i < a->n_rules; i++) {
         const mt_rule_t *x = a->rules[i], *y = b->rules[i];
         if (!mt_id_equal(x->id, y->id) || x->enable != y->enable || !same_text(x->name, y->name) ||
@@ -340,6 +343,7 @@ mt_err_t mt_app_replace_groups(mt_app_t *app, mt_group_t **groups, size_t n) {
         err = mt_lookup_put(&ids, groups[i]->id.b, sizeof(groups[i]->id.b), i, &inserted);
         if (err == MT_OK && !inserted) { err = MT_ERR_EXIST; }
         if (err == MT_OK) { err = validate_group_rule_ids(groups[i]); }
+        if (err == MT_OK) { err = mt_route_normalize(app->cfg, groups[i]->profile, &groups[i]->iface); }
         if (err != MT_OK) { goto done; }
         err = mt_config_add_group(&replacement, groups[i]);
         if (err != MT_OK) { goto done; }
@@ -419,7 +423,8 @@ static mt_err_t mt_app_add_group_unlocked(mt_app_t *app, mt_group_t *group) {
             return MT_ERR_EXIST;
         }
     }
-    mt_err_t unique_err = validate_group_rule_ids(group);
+    mt_err_t unique_err = mt_route_normalize(app->cfg, group->profile, &group->iface);
+    if (unique_err == MT_OK) { unique_err = validate_group_rule_ids(group); }
     if (unique_err != MT_OK) { mt_group_free(group); return unique_err; }
 
     mt_err_t err = mt_config_add_group(app->cfg, group);
@@ -555,6 +560,8 @@ mt_ruleset_t *mt_app_find_subscription_ruleset_by_id(const mt_app_t *app, mt_id_
 }
 
 static mt_err_t mt_app_add_subscription_unlocked(mt_app_t *app, mt_subscription_t *sub) {
+    mt_err_t route_err = mt_route_normalize(app->cfg, sub->profile, &sub->iface);
+    if (route_err != MT_OK) { mt_subscription_free(sub); return route_err; }
     for (size_t i = 0; i < app->cfg->n_subscriptions; i++) {
         if (mt_id_equal(app->cfg->subscriptions[i]->id, sub->id)) {
             mt_subscription_free(sub);
@@ -595,7 +602,8 @@ static mt_err_t mt_app_replace_subscriptions_unlocked(mt_app_t *app, mt_subscrip
      * with the geometric capacity assumed by mt_config_add_subscription. */
     mt_config_t replacement = {0};
     for (size_t i = 0; i < n; i++) {
-        mt_err_t reserve_err = mt_config_add_subscription(&replacement, subs[i]);
+        mt_err_t reserve_err = mt_route_normalize(app->cfg, subs[i]->profile, &subs[i]->iface);
+        if (reserve_err == MT_OK) { reserve_err = mt_config_add_subscription(&replacement, subs[i]); }
         if (reserve_err != MT_OK) {
             for (size_t j = i; j < n; j++) { mt_subscription_free(subs[j]); }
             free(subs);
@@ -1145,38 +1153,146 @@ mt_err_t mt_app_list_interfaces(const mt_app_t *app, mt_iface_info_t **out, size
 
 /* ---- config save / iptables commit -------------------------------------------- */
 
+/* A reload must publish definitions and their consumers together: retaining
+ * an old subscription while discarding its profile on a failed kernel update
+ * would poison the next save. Stage all models/rulesets/snapshot first, keep
+ * the previous registry alive, and restore it on any apply failure. */
+static mt_err_t clone_reload_group(mt_config_t *dst, const mt_group_t *source)
+{
+    mt_group_t *g = mt_group_new();
+    if (!g) { return MT_ERR_NOMEM; }
+    g->id = source->id; g->enable = source->enable;
+    mt_err_t err = mt_strset(&g->name, source->name);
+    if (err == MT_OK) { err = mt_strset(&g->color, source->color); }
+    if (err == MT_OK) { err = mt_strset(&g->iface, source->iface); }
+    if (err == MT_OK) { err = mt_strset(&g->profile, source->profile); }
+    for (size_t i = 0; err == MT_OK && i < source->n_rules; i++) {
+        const mt_rule_t *r = source->rules[i];
+        mt_rule_t *copy = mt_rule_new();
+        if (!copy) { err = MT_ERR_NOMEM; break; }
+        copy->id = r->id; copy->enable = r->enable;
+        err = mt_strset(&copy->name, r->name);
+        if (err == MT_OK) { err = mt_strset(&copy->type, r->type); }
+        if (err == MT_OK) { err = mt_strset(&copy->rule, r->rule); }
+        if (err == MT_OK) { err = mt_group_add_rule(g, copy); }
+        if (err != MT_OK) { mt_rule_free(copy); }
+    }
+    if (err == MT_OK) { err = mt_config_add_group(dst, g); }
+    if (err != MT_OK) { mt_group_free(g); }
+    return err;
+}
+
 mt_err_t mt_app_reload_config(mt_app_t *app, const char *path) {
-    /* Go overlays only fields present in YAML onto the current app config.
-     * Validate in scratch storage first, so malformed YAML changes nothing. */
     mt_config_t next = {0};
     mt_err_t err = mt_app_config_clone(&next.app, &app->cfg->app);
-    if (err != MT_OK) { return err; }
-    err = mt_config_load_file(&next, path);
+    if (err == MT_OK) { err = mt_config_clone_profiles(&next, app->cfg); }
+    if (err == MT_OK) { err = mt_config_load_file(&next, path); }
+    if (err != MT_OK) { mt_config_clear(&next); return err; }
+    if (!next.groups_present) {
+        for (size_t i = 0; err == MT_OK && i < app->cfg->n_groups; i++) {
+            err = clone_reload_group(&next, app->cfg->groups[i]);
+        }
+    }
+    /* Absent subscriptions still CLEAR, as before; absent profiles overlay. */
+    if (err == MT_OK) { err = mt_profiles_normalize(&next); }
     if (err != MT_OK) { mt_config_clear(&next); return err; }
 
-    mt_app_config_clear(&app->cfg->app);
-    app->cfg->app = next.app;
-    memset(&next.app, 0, sizeof(next.app));
+    size_t ng = next.n_groups, ns = next.n_subscriptions;
+    mt_ruleset_t **groups = ng ? calloc(ng, sizeof(*groups)) : NULL;
+    mt_ruleset_t **subs = ns ? calloc(ns, sizeof(*subs)) : NULL;
+    mt_group_t **synth = ns ? calloc(ns, sizeof(*synth)) : NULL;
+    bool *old_groups_enabled = app->n_rulesets ? calloc(app->n_rulesets, sizeof(bool)) : NULL;
+    bool *old_subs_enabled = app->n_sub_rulesets ? calloc(app->n_sub_rulesets, sizeof(bool)) : NULL;
+    mt_ruleset_snapshot_t *snapshot = NULL;
+    bool touched = false, swapped = false;
+    mt_config_t old = {0};
+    app_nf_enter(app);
+    if ((ng && !groups) || (ns && (!subs || !synth)) ||
+        (app->n_rulesets && !old_groups_enabled) || (app->n_sub_rulesets && !old_subs_enabled)) {
+        err = MT_ERR_NOMEM; goto done;
+    }
+    mt_ruleset_deps_t deps = ruleset_deps(app); /* stable cfg address */
+    for (size_t i = 0; i < ng; i++) {
+        groups[i] = mt_ruleset_new(next.groups[i], &deps);
+        if (!groups[i]) { err = MT_ERR_NOMEM; goto done; }
+    }
+    for (size_t i = 0; i < ns; i++) {
+        synth[i] = mt_sub_runtime_group(next.subscriptions[i]);
+        if (synth[i]) { subs[i] = mt_ruleset_new(synth[i], &deps); }
+        if (!subs[i]) { err = MT_ERR_NOMEM; goto done; }
+    }
+    if (app->pipeline) {
+        snapshot = mt_ruleset_snapshot_build(&next);
+        if (!snapshot) { err = MT_ERR_NOMEM; goto done; }
+    }
+    for (size_t i = 0; i < app->n_rulesets; i++) {
+        old_groups_enabled[i] = mt_ruleset_runtime_enabled(app->rulesets[i]);
+    }
+    for (size_t i = 0; i < app->n_sub_rulesets; i++) {
+        old_subs_enabled[i] = mt_ruleset_runtime_enabled(app->sub_rulesets[i]);
+    }
+    touched = true;
+    for (size_t i = 0; err == MT_OK && i < app->n_rulesets; i++) {
+        err = mt_ruleset_disable(app->rulesets[i]);
+    }
+    for (size_t i = 0; err == MT_OK && i < app->n_sub_rulesets; i++) {
+        err = mt_ruleset_disable(app->sub_rulesets[i]);
+    }
+    if (err != MT_OK) { goto done; }
+    old = *app->cfg; *app->cfg = next; memset(&next, 0, sizeof(next)); swapped = true;
+    for (size_t family = 0; app->running && err == MT_OK && family < 2; family++) {
+        mt_ruleset_t **sets = family ? subs : groups;
+        size_t count = family ? ns : ng;
+        for (size_t i = 0; err == MT_OK && i < count; i++) {
+            err = mt_ruleset_enable(sets[i]);
+            if (err == MT_OK) { err = mt_ruleset_sync(sets[i], app->cache, (int64_t)time(NULL)); }
+        }
+    }
+    if (err != MT_OK) { goto done; }
+    for (size_t i = 0; i < app->n_rulesets; i++) { mt_ruleset_free(app->rulesets[i]); }
+    for (size_t i = 0; i < app->n_sub_rulesets; i++) {
+        mt_ruleset_free(app->sub_rulesets[i]); mt_group_free(app->sub_synth_groups[i]);
+    }
+    free(app->rulesets); free(app->sub_rulesets); free(app->sub_synth_groups);
+    app->rulesets = groups; app->n_rulesets = ng; app->cap_rulesets = ng; groups = NULL;
+    app->sub_rulesets = subs; app->n_sub_rulesets = ns; app->cap_sub_rulesets = ns; subs = NULL;
+    app->sub_synth_groups = synth; synth = NULL;
+    for (size_t i = 0; i < ns; i++) {
+        app->cfg->subscriptions[i]->revision = ++app->next_sub_revision;
+        app->cfg->subscriptions[i]->sync_pending = false;
+    }
     if (app->pipeline) {
         uint32_t ttl = (uint32_t)(app->cfg->app.netfilter.ipset.additional_ttl / MT_DURATION_SEC);
         mt_dns_pipeline_set_additional_ttl(app->pipeline, ttl);
+        mt_dns_pipeline_set_snapshot(app->pipeline, snapshot); snapshot = NULL;
     }
-    if (next.groups_present) {
-        mt_app_clear_groups(app);
-        for (size_t i = 0; i < next.n_groups; i++) {
-            mt_group_t *group = next.groups[i];
-            next.groups[i] = NULL;
-            err = mt_app_add_group(app, group);
-            if (err != MT_OK) { mt_config_clear(&next); return err; }
+    mt_config_clear(&old);
+    swapped = false; touched = false;
+done:
+    for (size_t i = 0; groups && i < ng; i++) {
+        if (groups[i]) { mt_ruleset_disable(groups[i]); mt_ruleset_free(groups[i]); }
+    }
+    for (size_t i = 0; i < ns; i++) {
+        if (subs && subs[i]) { mt_ruleset_disable(subs[i]); mt_ruleset_free(subs[i]); }
+        if (synth) { mt_group_free(synth[i]); }
+    }
+    if (swapped) { next = *app->cfg; *app->cfg = old; }
+    if (err != MT_OK && touched) {
+        for (size_t family = 0; family < 2; family++) {
+            mt_ruleset_t **sets = family ? app->sub_rulesets : app->rulesets;
+            bool *enabled = family ? old_subs_enabled : old_groups_enabled;
+            size_t count = family ? app->n_sub_rulesets : app->n_rulesets;
+            for (size_t i = 0; i < count; i++) {
+                if (!enabled[i]) { continue; }
+                mt_err_t restore = mt_ruleset_enable(sets[i]);
+                if (restore == MT_OK) { restore = mt_ruleset_sync(sets[i], app->cache, (int64_t)time(NULL)); }
+                if (restore != MT_OK) { MT_ERROR("failed to restore routes after reload: %s", mt_err_str(restore)); }
+            }
         }
     }
-    /* Unlike groups, absent/null subscriptions means CLEAR in Go. */
-    mt_subscription_t **subs = next.subscriptions;
-    size_t n = next.n_subscriptions;
-    next.subscriptions = NULL;
-    next.n_subscriptions = 0;
-    err = mt_app_replace_subscriptions(app, subs, n);
-    mt_config_clear(&next);
+    free(groups); free(subs); free(synth); free(old_groups_enabled); free(old_subs_enabled);
+    mt_ruleset_snapshot_free(snapshot); mt_config_clear(&next);
+    app_nf_leave(app);
     return err;
 }
 
@@ -1332,4 +1448,135 @@ mt_err_t mt_app_force_commit_iptables(mt_app_t *app) {
     if (err == MT_OK && app->ipt6) { err = mt_ipt_commit(app->ipt6); }
     app_nf_leave(app);
     return err;
+}
+
+/* ---- profiles ---- */
+
+size_t mt_app_profile_count(const mt_app_t *app) { return app->cfg->n_profiles; }
+
+const mt_profile_t *mt_app_profile_at(const mt_app_t *app, size_t index)
+{
+    return index < app->cfg->n_profiles ? app->cfg->profiles[index] : NULL;
+}
+
+mt_err_t mt_app_normalize_route(const mt_app_t *app, const char *profile, char **iface)
+{
+    return mt_route_normalize(app->cfg, profile, iface);
+}
+
+static mt_err_t reconfigure_profiles(mt_app_t *app)
+{
+    mt_err_t first = MT_OK;
+    for (size_t i = 0; i < app->n_rulesets; i++) {
+        mt_err_t err = mt_ruleset_reconfigure_profile(app->rulesets[i]);
+        if (first == MT_OK) { first = err; }
+    }
+    for (size_t i = 0; i < app->n_sub_rulesets; i++) {
+        mt_err_t err = mt_ruleset_reconfigure_profile(app->sub_rulesets[i]);
+        if (first == MT_OK) { first = err; }
+    }
+    return first;
+}
+
+typedef struct primary_shadow {
+    char **field;
+    char *next;
+} primary_shadow_t;
+
+static mt_err_t stage_shadow(primary_shadow_t *shadows, size_t capacity, size_t *count,
+                              const mt_config_t *view, const char *profile, char **iface)
+{
+    if (!profile || !*profile) { return MT_OK; }
+    if (!shadows || *count >= capacity) { return MT_ERR_NOMEM; }
+    const char *primary;
+    mt_err_t err = mt_route_primary(view, profile, *iface, &primary);
+    if (err != MT_OK) { return err; }
+    char *next = strdup(primary);
+    if (!next) { return MT_ERR_NOMEM; }
+    shadows[*count].field = iface;
+    shadows[*count].next = next;
+    (*count)++;
+    return MT_OK;
+}
+
+mt_err_t mt_app_replace_profiles(mt_app_t *app, mt_config_t *incoming,
+                                char *message, size_t message_size)
+{
+    if (!app || !incoming || incoming == app->cfg) { return MT_ERR_INVAL; }
+    app_nf_enter(app);
+    mt_config_t view = *app->cfg;
+    view.profiles = incoming->profiles; view.n_profiles = incoming->n_profiles;
+    mt_err_t err = mt_profiles_validate(&view, message, message_size);
+    if (err != MT_OK) { app_nf_leave(app); return err; }
+    if (view.n_groups > SIZE_MAX - view.n_subscriptions ||
+        view.n_groups + view.n_subscriptions > SIZE_MAX - app->n_sub_rulesets) {
+        app_nf_leave(app);
+        return MT_ERR_NOMEM;
+    }
+    size_t capacity = view.n_groups + view.n_subscriptions + app->n_sub_rulesets;
+    primary_shadow_t *shadows = capacity ? calloc(capacity, sizeof(*shadows)) : NULL;
+    if (capacity && !shadows) { app_nf_leave(app); return MT_ERR_NOMEM; }
+    size_t count = 0;
+    for (size_t i = 0; err == MT_OK && i < view.n_groups; i++) {
+        err = stage_shadow(shadows, capacity, &count, &view, view.groups[i]->profile, &view.groups[i]->iface);
+    }
+    for (size_t i = 0; err == MT_OK && i < view.n_subscriptions; i++) {
+        err = stage_shadow(shadows, capacity, &count, &view, view.subscriptions[i]->profile, &view.subscriptions[i]->iface);
+    }
+    for (size_t i = 0; err == MT_OK && i < app->n_sub_rulesets; i++) {
+        mt_group_t *g = app->sub_synth_groups[i];
+        err = stage_shadow(shadows, capacity, &count, &view, g->profile, &g->iface);
+    }
+    if (err == MT_OK) {
+        mt_config_t old = {.profiles = app->cfg->profiles, .n_profiles = app->cfg->n_profiles};
+        app->cfg->profiles = incoming->profiles; app->cfg->n_profiles = incoming->n_profiles;
+        err = reconfigure_profiles(app);
+        if (err != MT_OK) {
+            app->cfg->profiles = old.profiles; app->cfg->n_profiles = old.n_profiles;
+            mt_err_t rollback = reconfigure_profiles(app);
+            if (rollback != MT_OK) { MT_ERROR("failed to restore profile routes: %s", mt_err_str(rollback)); }
+        } else {
+            incoming->profiles = NULL; incoming->n_profiles = 0;
+            for (size_t i = 0; i < count; i++) {
+                free(*shadows[i].field);
+                *shadows[i].field = shadows[i].next;
+                shadows[i].next = NULL;
+            }
+            mt_config_clear_profiles(&old);
+        }
+    }
+    for (size_t i = 0; i < count; i++) { free(shadows[i].next); }
+    free(shadows);
+    app_nf_leave(app);
+    return err;
+}
+
+mt_err_t mt_app_reconcile_routes(mt_app_t *app, const char *interface_name)
+{
+    if (!app) { return MT_ERR_INVAL; }
+    /* Never lose an event while a committer rebuild owns the mutex.
+     * Return AGAIN to the event-loop retry queue; do not interrupt the
+     * background netfilter rebuild on each route notification. */
+    if (app->nf_mu_ready) {
+        int rc = pthread_mutex_trylock(&app->nf_mu);
+        if (rc != 0) { return rc == EBUSY ? MT_ERR_AGAIN : MT_ERR_SYS; }
+    }
+    mt_err_t result = MT_OK;
+    for (size_t family = 0; family < 2; family++) {
+        mt_ruleset_t **sets = family ? app->sub_rulesets : app->rulesets;
+        size_t count = family ? app->n_sub_rulesets : app->n_rulesets;
+        for (size_t i = 0; i < count; i++) {
+            if (interface_name && !mt_ruleset_uses_interface(sets[i], interface_name)) {
+                continue;
+            }
+            mt_err_t err = mt_ruleset_on_link_up(sets[i]);
+            if (err != MT_OK) {
+                const mt_group_t *g = mt_ruleset_group(sets[i]);
+                MT_ERROR("failed to reconcile route: group=%s err=%s", g->name, mt_err_str(err));
+                if (result == MT_OK) { result = err; }
+            }
+        }
+    }
+    if (app->nf_mu_ready) { pthread_mutex_unlock(&app->nf_mu); }
+    return result;
 }

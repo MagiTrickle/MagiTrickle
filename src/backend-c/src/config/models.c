@@ -54,6 +54,7 @@ void mt_group_free(mt_group_t *g)
     free(g->name);
     free(g->color);
     free(g->iface);
+    free(g->profile);
     free(g);
 }
 
@@ -121,6 +122,7 @@ void mt_subscription_free(mt_subscription_t *s)
     free(s->rules);
     free(s->name);
     free(s->iface);
+    free(s->profile);
     free(s->url);
     free(s);
 }
@@ -248,6 +250,7 @@ mt_err_t mt_config_init_defaults(mt_config_t *c)
 void mt_config_clear(mt_config_t *c)
 {
     mt_app_config_clear(&c->app);
+    mt_config_clear_profiles(c);
     for (size_t i = 0; i < c->n_groups; i++) {
         mt_group_free(c->groups[i]);
     }
@@ -346,4 +349,71 @@ mt_err_t mt_group_normalize_color(mt_group_t *g)
         }
     }
     return MT_OK;
+}
+
+/* ---- routing profiles ---- */
+
+mt_profile_t *mt_profile_new(void)
+{
+    return calloc(1, sizeof(mt_profile_t));
+}
+
+void mt_profile_free(mt_profile_t *p)
+{
+    if (!p) { return; }
+    free(p->id);
+    free(p->name);
+    for (size_t i = 0; i < p->n_interfaces; i++) { free(p->interfaces[i]); }
+    free(p->interfaces);
+    free(p);
+}
+
+mt_err_t mt_profile_add_interface(mt_profile_t *p, const char *name)
+{
+    if (!p || !name) { return MT_ERR_INVAL; }
+    if (p->n_interfaces >= SIZE_MAX / (2 * sizeof(char *))) { return MT_ERR_LIMIT; }
+    char *copy = strdup(name);
+    if (!copy) { return MT_ERR_NOMEM; }
+    mt_err_t err = grow_array((void ***)&p->interfaces, p->n_interfaces);
+    if (err != MT_OK) { free(copy); return err; }
+    p->interfaces[p->n_interfaces++] = copy;
+    return MT_OK;
+}
+
+mt_err_t mt_config_add_profile(mt_config_t *c, mt_profile_t *p)
+{
+    if (!c || !p) { return MT_ERR_INVAL; }
+    if (c->n_profiles >= SIZE_MAX / (2 * sizeof(void *))) { return MT_ERR_LIMIT; }
+    mt_err_t err = grow_array((void ***)&c->profiles, c->n_profiles);
+    if (err != MT_OK) { return err; }
+    c->profiles[c->n_profiles++] = p;
+    return MT_OK;
+}
+
+void mt_config_clear_profiles(mt_config_t *c)
+{
+    for (size_t i = 0; i < c->n_profiles; i++) { mt_profile_free(c->profiles[i]); }
+    free(c->profiles);
+    c->profiles = NULL;
+    c->n_profiles = 0;
+}
+
+mt_err_t mt_config_clone_profiles(mt_config_t *dst, const mt_config_t *src)
+{
+    if (!dst || !src || dst->profiles || dst->n_profiles) { return MT_ERR_INVAL; }
+    mt_err_t err = MT_OK;
+    for (size_t i = 0; i < src->n_profiles; i++) {
+        const mt_profile_t *s = src->profiles[i];
+        mt_profile_t *p = mt_profile_new();
+        if (!p) { err = MT_ERR_NOMEM; break; }
+        err = mt_strset(&p->id, s->id);
+        if (err == MT_OK) { err = mt_strset(&p->name, s->name); }
+        for (size_t j = 0; err == MT_OK && j < s->n_interfaces; j++) {
+            err = mt_profile_add_interface(p, s->interfaces[j]);
+        }
+        if (err == MT_OK) { err = mt_config_add_profile(dst, p); }
+        if (err != MT_OK) { mt_profile_free(p); break; }
+    }
+    if (err != MT_OK) { mt_config_clear_profiles(dst); }
+    return err;
 }

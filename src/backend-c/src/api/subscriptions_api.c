@@ -113,7 +113,7 @@ static mt_err_t apply_rule_changes(const cJSON *changes, mt_subscription_t *sub,
  * existing in Go (only ever taken from the request, defaulting to 0) --
  * faithfully NOT copied from existing here either, even though that
  * looks asymmetric next to LastUpdate/LastCheck. */
-static mt_err_t subscription_from_req(const cJSON *req, const mt_subscription_t *existing,
+static mt_err_t subscription_from_req(mt_app_t *app, const cJSON *req, const mt_subscription_t *existing,
                                       mt_subscription_t **out, const char **err_msg) {
     mt_id_t req_id;
     bool has_req_id;
@@ -138,6 +138,11 @@ static mt_err_t subscription_from_req(const cJSON *req, const mt_subscription_t 
 
     mt_err_t err = mt_strset(&sub->name, get_string(req, "name"));
     if (err == MT_OK) { err = mt_strset(&sub->iface, get_string(req, "interface")); }
+    const cJSON *profile = cJSON_GetObjectItemCaseSensitive(req, "profile");
+    if (profile && !cJSON_IsNull(profile) && !cJSON_IsString(profile)) { err = MT_ERR_INVAL; }
+    if (err == MT_OK) { err = mt_strset(&sub->profile, get_string(req, "profile")); }
+    if (err == MT_OK) { err = mt_app_normalize_route(app, sub->profile, &sub->iface); }
+    if (err != MT_OK) { *err_msg = "invalid or missing routing profile"; }
     if (err == MT_OK) { err = mt_strset(&sub->url, get_string(req, "url")); }
     if (err != MT_OK) {
         mt_subscription_free(sub);
@@ -268,6 +273,7 @@ static cJSON *subscription_to_json(const mt_subscription_t *s) {
     cJSON_AddStringToObject(obj, "id", id_buf);
     cJSON_AddStringToObject(obj, "name", s->name ? s->name : "");
     cJSON_AddStringToObject(obj, "interface", s->iface ? s->iface : "");
+    if (s->profile && *s->profile) { cJSON_AddStringToObject(obj, "profile", s->profile); }
     cJSON_AddBoolToObject(obj, "enable", s->enable);
     cJSON_AddStringToObject(obj, "url", s->url ? s->url : "");
     cJSON_AddNumberToObject(obj, "interval", s->interval);
@@ -359,7 +365,7 @@ static void handle_put_subscriptions(mt_http_req_t *req, mt_http_res_t *res, voi
             existing = mt_app_find_subscription_by_id(ctx->app, wanted_id);
         }
         const char *err_msg = "invalid subscription";
-        mt_err_t err = subscription_from_req(sub_req, existing, &new_subs[i], &err_msg);
+        mt_err_t err = subscription_from_req(ctx->app, sub_req, existing, &new_subs[i], &err_msg);
         if (err != MT_OK) {
             cJSON_Delete(json);
             for (int j = 0; j < i; j++) { mt_subscription_free(new_subs[j]); }
@@ -489,7 +495,7 @@ static void handle_create_subscription(mt_http_req_t *req, mt_http_res_t *res, v
     }
     mt_subscription_t *sub = NULL;
     const char *err_msg = "invalid subscription";
-    mt_err_t err = subscription_from_req(json, NULL, &sub, &err_msg);
+    mt_err_t err = subscription_from_req(ctx->app, json, NULL, &sub, &err_msg);
     cJSON_Delete(json);
     if (err != MT_OK) {
         mt_http_res_write_error(res, 400, err_msg);

@@ -27,6 +27,7 @@
 #include "magitrickle/iptables.h"
 #include "magitrickle/bytebuf.h"
 #include "magitrickle/log.h"
+#include "magitrickle/restore_diagnostic.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -179,7 +180,8 @@ static mt_err_t spawn_with_pipes(const char *const argv[], bool need_stdin_pipe,
     return MT_OK;
 }
 
-static mt_err_t wait_child(pid_t pid, const char *cmd, mt_bytebuf_t *err_buf) {
+static mt_err_t wait_child(pid_t pid, const char *cmd, mt_bytebuf_t *err_buf,
+                            const uint8_t *input, size_t input_len) {
     int status = 0;
     pid_t w;
     do {
@@ -195,6 +197,12 @@ static mt_err_t wait_child(pid_t pid, const char *cmd, mt_bytebuf_t *err_buf) {
         }
         MT_ERROR("%s failed (status=%d): %.*s", cmd, status, (int)err_buf->len,
                  (const char *)err_buf->data);
+        /* Old iptables-restore often reports only 'line N failed'.
+         * Print bounded context from the exact transaction that failed. */
+        if (input) {
+            mt_ipt_log_restore_context(cmd, input, input_len,
+                                       err_buf->data, err_buf->len);
+        }
         return MT_ERR_IO;
     }
     return MT_OK;
@@ -300,7 +308,7 @@ static mt_err_t real_save(mt_ipt_executable_t *self, uint8_t **out, size_t *out_
         kill_child(pid);
         err = MT_ERR_CANCELED;
     } else {
-        mt_err_t wait_err = wait_child(pid, e->save_cmd, &err_buf);
+        mt_err_t wait_err = wait_child(pid, e->save_cmd, &err_buf, NULL, 0);
         if (err == MT_OK) { err = wait_err; }
         if (err == MT_OK && stdout_limited) { err = MT_ERR_LIMIT; }
     }
@@ -448,7 +456,7 @@ static mt_err_t real_restore(mt_ipt_executable_t *self, const uint8_t *data, siz
         kill_child(pid);
         err = MT_ERR_CANCELED;
     } else {
-        mt_err_t wait_err = wait_child(pid, e->restore_cmd, &err_buf);
+        mt_err_t wait_err = wait_child(pid, e->restore_cmd, &err_buf, data, len);
         if (err == MT_OK) { err = wait_err; }
     }
 

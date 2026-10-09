@@ -44,6 +44,7 @@ typedef struct mt_ruleset mt_ruleset_t;
  * cfg.app.netfilter.ipset.table_prefix / cfg.app.netfilter.iptables.chain_prefix
  * strings), matching Go's Helper.IpsetPrefix/ChainPrefix. */
 typedef struct mt_ruleset_deps {
+    const mt_config_t *config; /* live profile registry, borrowed; optional without profile refs */
     mt_ipt_t *ipt4;
     mt_ipt_t *ipt6;
     mt_rtnl_t *rtnl;
@@ -70,6 +71,8 @@ mt_group_t *mt_ruleset_group_mut(mt_ruleset_t *rs);
 bool mt_ruleset_runtime_enabled(const mt_ruleset_t *rs);
 
 mt_err_t mt_ruleset_enable(mt_ruleset_t *rs);
+mt_err_t mt_ruleset_reconfigure_profile(mt_ruleset_t *rs);
+bool mt_ruleset_uses_interface(const mt_ruleset_t *rs, const char *name);
 mt_err_t mt_ruleset_disable(mt_ruleset_t *rs);
 
 /* Re-stages this group's iptables chains for a full table rebuild without
