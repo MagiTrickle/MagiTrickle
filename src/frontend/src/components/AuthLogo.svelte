@@ -33,12 +33,11 @@
     display: block;
     width: 100%;
     height: 100%;
-    filter: drop-shadow(0 3px 16px #329be52e);
+    filter: brightness(0.82) contrast(0.9) saturate(0.9);
     user-select: none;
   }
   .illuminated img {
-    filter: none;
-    opacity: 0.94;
+    opacity: 0.9;
     mix-blend-mode: screen;
   }
   @media (max-width: 700px) {

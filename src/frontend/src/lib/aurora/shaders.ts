@@ -150,13 +150,13 @@ void main() {
     float surround = 0.0;
     for (int i=0;i<8;i++) {
       float a = float(i)*.785398;
-      surround += texture2D(logo,clamp(local+vec2(cos(a),sin(a))*.028,0.0,1.0)).a;
+      surround += texture2D(logo,clamp(local+vec2(cos(a),sin(a))*.021,0.0,1.0)).a;
     }
     // Reach zero before the branch boundary, including at coarse resolutions.
     // A clamped alpha sample must never expose the rectangular texture bounds.
     float boundary = max(abs(local.x-.5),abs(local.y-.5));
     float fade = 1.0-smoothstep(.50,.57,boundary);
-    col += vec3(.12,.44,.65) * surround*.125*(1.0-coverage)*(.055+energy*.5)*fade;
+    col += vec3(.12,.44,.65) * surround*.125*(1.0-coverage)*(.028+energy*.28)*fade;
   }
   gl_FragColor = vec4(col,1.0);
 }`;
