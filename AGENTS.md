@@ -12,6 +12,8 @@ Keep this file free of transient progress notes and benchmark numbers.
 - `src/frontend/` — Svelte 5 + TypeScript WebUI (Vite build, Deno mock
   backend in `dev/`, Playwright e2e in `tests/`). Only confirmed
   compatibility fixes are allowed, no redesigns.
+  Read `src/frontend/AGENTS.md` for detailed frontend coding rules and
+  the accepted UI and interaction patterns.
 - `config/entware/*.config`, `config/openwrt/*.config` — the build target
   matrix. This is the single source of truth for supported targets; never
   hand-edit a hardcoded target list elsewhere, never drop a target
@@ -54,7 +56,7 @@ sudo -E env "PATH=$PATH" sh tests/differential/run_diff.sh  # regression suites 
 
 cd src/frontend
 npm run check                 # svelte-check + tsc
-npm run format:check          # prettier (CI)
+npm run format:check          # prettier
 npm run test:unit             # Deno unit tests
 npm run test:e2e              # Playwright (needs built/mocked backend)
 ```
