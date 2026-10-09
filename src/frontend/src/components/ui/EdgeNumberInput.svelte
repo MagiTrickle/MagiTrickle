@@ -14,7 +14,6 @@
   let { label, title, value = $bindable() }: Props = $props();
   let draft = $state("");
   const titleId = $props.id();
-  const helpId = `${titleId}-help`;
 
   $effect(() => {
     draft = Number.isFinite(value) ? String(value) : "";
@@ -80,7 +79,6 @@
             max={MAX_PRIORITY}
             step="1"
             aria-label={label}
-            aria-describedby={helpId}
             value={draft}
             oninput={handleInput}
             onblur={restoreDraft}
@@ -98,7 +96,6 @@
             onclick={() => stepValue(1)}>+</button
           >
         </div>
-        <p id={helpId}>{t("1–1000. Higher values take precedence.")}</p>
       </Popover.Content>
     </Popover.Portal>
   </Popover.Root>
@@ -199,14 +196,6 @@
   .priority-editor button:disabled {
     opacity: 0.4;
     cursor: default;
-  }
-
-  p {
-    max-width: 14rem;
-    margin: 0.5rem 0 0;
-    color: var(--text-2);
-    font-size: 0.75rem;
-    text-align: center;
   }
 
   input {

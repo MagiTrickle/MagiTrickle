@@ -3,7 +3,6 @@
   "Subscription priority": "Приоритет подписки",
   "Decrease priority": "Уменьшить приоритет",
   "Increase priority": "Увеличить приоритет",
-  "1–1000. Higher values take precedence.": "1–1000. Чем больше значение, тем выше приоритет.",
   "Save Changes": "Сохранить изменения",
   "Export Config": "Экспортировать конфиг",
   "Empty config exported": "Экспортирован пустой конфиг",

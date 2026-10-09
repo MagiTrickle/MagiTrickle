@@ -13,8 +13,8 @@ mt_ipset_nl_t *__wrap_mt_ipset_nl_real_new(void) { return NULL; }
 
 static const char *original =
     "configVersion: 0.8\nprofiles: [{id: old, name: Old, interfaces: [tun0, tun1]}]\n"
-    "groups: [{id: aabbccdd, name: Group, profile: old, enable: false}]\n"
-    "subscriptions: [{id: 11223344, name: Sub, profile: old, enable: false}]\n";
+    "groups: [{id: aabbccdd, name: Group, profile: old, enable: false, priority: 731}]\n"
+    "subscriptions: [{id: 11223344, name: Sub, profile: old, enable: false, priority: 219}]\n";
 
 static mt_err_t reload(mt_app_t *app, const char *text) {
     char path[] = "/tmp/mt-profile-reload-XXXXXX";
@@ -37,6 +37,8 @@ TEST failed_apply_restores_definitions_and_all_consumers(void) {
     ASSERT_EQ(MT_OK, mt_profiles_validate(&cfg, NULL, 0));
     ASSERT_STR_EQ("old", cfg.profiles[0]->id); ASSERT_STR_EQ("tun0", cfg.groups[0]->iface);
     ASSERT_STR_EQ("old", mt_ruleset_group(mt_app_subscription_ruleset_at(app, 0))->profile);
+    ASSERT_EQ(731, cfg.groups[0]->priority); ASSERT_EQ(219, cfg.subscriptions[0]->priority);
+    ASSERT_EQ(219, mt_ruleset_group(mt_app_subscription_ruleset_at(app, 0))->priority);
     char *out = NULL; size_t n;
     ASSERT_EQ(MT_OK, mt_config_save_buffer(&cfg, "0.8", &out, &n)); free(out);
     mt_app_destroy(app); mt_config_clear(&cfg); PASS();
@@ -49,11 +51,24 @@ TEST reload_overlay_normalizes_preserved_groups_and_clears_absent_subscriptions(
     ASSERT_EQ(MT_OK, reload(app, "configVersion: 0.8\nprofiles: [{id: old, name: Renamed, interfaces: [tun1, tun0]}]\n"));
     ASSERT_EQ((size_t)1, cfg.n_groups); ASSERT_EQ((size_t)0, cfg.n_subscriptions);
     ASSERT_STR_EQ("tun1", cfg.groups[0]->iface); ASSERT_STR_EQ("old", cfg.groups[0]->profile);
+    ASSERT_EQ(731, cfg.groups[0]->priority);
+    ASSERT_EQ(731, mt_ruleset_group(mt_app_user_group_at(app, 0))->priority);
     ASSERT_STR_EQ("Renamed", cfg.profiles[0]->name);
     ASSERT_EQ(MT_ERR_NOENT, reload(app, "configVersion: 0.8\nprofiles: []\n"));
     ASSERT_EQ((size_t)1, cfg.n_profiles); ASSERT_STR_EQ("tun1", cfg.groups[0]->iface);
+    ASSERT_EQ(731, cfg.groups[0]->priority);
     ASSERT_EQ(MT_OK, reload(app, "configVersion: 0.8\napp: {logLevel: debug}\n"));
     ASSERT_EQ((size_t)1, cfg.n_profiles); ASSERT_EQ((size_t)1, cfg.n_groups);
+    ASSERT_EQ(731, cfg.groups[0]->priority);
+    ASSERT_EQ(731, mt_ruleset_group(mt_app_user_group_at(app, 0))->priority);
+    char *saved = NULL; size_t saved_size = 0;
+    ASSERT_EQ(MT_OK, mt_config_save_buffer(&cfg, "0.8", &saved, &saved_size));
+    mt_config_t loaded; ASSERT_EQ(MT_OK, mt_config_init_defaults(&loaded));
+    ASSERT_EQ(MT_OK, mt_config_load_buffer(&loaded, saved, saved_size));
+    ASSERT_EQ(731, loaded.groups[0]->priority);
+    ASSERT_STR_EQ("old", loaded.groups[0]->profile);
+    ASSERT_STR_EQ("tun1", loaded.groups[0]->iface);
+    free(saved); mt_config_clear(&loaded);
     mt_app_destroy(app); mt_config_clear(&cfg); PASS();
 }
 

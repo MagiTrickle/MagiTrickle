@@ -3354,3 +3354,69 @@ The exact historical `COMMIT` failure cannot be attributed exclusively to
 this cause without the failed full transcript and device-side kernel state.
 The bug is independently actionable and consistent with the observed failure
 shape.
+
+## D-73 — Explicit routing priority for groups and subscriptions (2026-10-09)
+
+The user requested a common numeric priority that determines the outgoing
+interface when a destination matches several enabled groups/subscriptions.
+The field is `priority`, an integer from 1 through 1000, with defaults 300 for
+user groups and 100 for subscriptions. Larger numbers win. This intentionally
+changes overlap behavior for legacy configurations: a group now takes
+precedence over a subscription with the default values, including a domain
+group whose resolved address lies inside a subscription's broad cloud subnet.
+
+The model allocators supply defaults; missing YAML/create-request fields use
+them. Existing-object updates that omit priority preserve the current value,
+including compact rule-delta updates. JSON responses and YAML saves explicitly
+include it. New-field validation rejects nonnumeric, noninteger, null, duplicate
+and out-of-range values before mutation; YAML requires an integer scalar. The
+YAML prepass only validates priority inside otherwise inspectable mappings so
+unrelated malformed legacy inputs retain their old validation/overlay timing.
+No config-version bump, endpoint rename, mark/table allocation change, or
+change to rule IDs and netfilter names is involved.
+
+Ordering belongs in the packet path. DNS still populates every matching set:
+choosing just one DNS match would ignore subnet rules and discard the fallback
+membership needed when a winner is disabled or reprioritized. Subscription
+runtime groups explicitly copy their subscription's priority. Group equality
+includes priority so compact bulk changes cannot reuse the old model silently.
+Reload cloning also preserves priority when the YAML overlay omits groups.
+
+Priority selects the matching group/subscription's route table; D-70's profile
+ordering independently selects an available interface within that table.
+Reconfiguring a profile preserves its consumer's priority. An exhausted profile
+retains its terminal blackhole and does not fall through to a lower-priority
+group or subscription.
+
+Each group's mangle chain sets MARK and saves CONNMARK without terminating the
+parent chain. Therefore the last matching jump wins; all group/subscription
+jumps are ordered together in **ascending** priority order. The new
+`mt_ipt_append_ordered` patch operation also moves already-present rules, unlike
+the existing Append/InsertUnique behavior. It compares desired order with the
+kernel snapshot, removes only exact registered ordered rules when needed, and
+reinstates the sorted subset at the first occurrence of each unique original
+managed rule. Duplicate slots are discarded; extra new rules extend the last
+managed slot, or append when no such slot exists. Foreign rule contents and
+relative order are preserved. Ordinary append/insert/delete semantics remain
+unchanged, and staged-state reset/rebuild uses the same reconciliation.
+
+Equal priorities use lexical chain-name order (the common configured prefix
+plus the canonical eight-character hex ID); the higher ID wins. This is an
+explicit deterministic tie policy, not a claim to preserve historical
+enable/list order, which could change after individual updates. Filter ACCEPT
+and NAT MASQUERADE rules keep their existing behavior; IPv4, IPv6, blackhole
+routing, and the Keenetic-critical CONNMARK save rule are preserved.
+
+The frontend binds its existing edge editor to the model, rejects invalid
+values, bounds the increment/decrement buttons, defaults old responses/imports,
+and includes priority in compact saves. Applied-but-not-persisted responses
+continue using D-68's retry path and retain the chosen priority. Priority edits
+remain local until the existing Save action is used.
+
+Regression coverage includes API/config validation, defaults, reload, compact
+priority-only updates, subscription refresh/runtime synthesis, ordered patch
+updates with foreign/duplicate rules, stable ties, cancellation/failed-write
+retries, and generated packet/connection marking for overlapping host/subnet
+membership in both families. The latter uses an in-memory netfilter harness;
+it does not establish real-kernel or on-router validation. Existing golden
+YAML/HTTP fixtures are extended only with the expected default priority fields.
