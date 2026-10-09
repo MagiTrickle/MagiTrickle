@@ -174,7 +174,7 @@
     aspect-ratio: 8 / 5;
     left: 50%;
     top: var(--aurora-anchor-y, 30vh);
-    transform: translate(-50%, -30.98%);
+    transform: translate(-50%, -31.58%);
     background: url("../assets/aurora-still.webp") center / 100% 100% no-repeat;
     -webkit-mask-image: linear-gradient(transparent, #000 10%, #000 85%, transparent);
     mask-image: linear-gradient(transparent, #000 10%, #000 85%, transparent);

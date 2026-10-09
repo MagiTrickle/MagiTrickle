@@ -33,16 +33,46 @@ float fbm(vec2 p) {
   p = mat2(.8, -.6, .6, .8) * p * 2.01 + 7.3;
   return n + .09 * noise(p);
 }
+// Jittered cells avoid a visible grid. Each depth has its own scale, softness
+// and drift; the distant stars remain stationary while foreground dust moves.
+float stars(vec2 pixel, float spacing, float threshold, float radius) {
+  vec2 cell = floor(pixel/spacing);
+  vec2 center = vec2(hash(cell+17.3),hash(cell+41.8))*.6+.2;
+  vec2 delta = (fract(pixel/spacing)-center)*spacing;
+  float seed = hash(cell+9.1);
+  float core = exp(-dot(delta,delta)/(radius*radius));
+  float bloom = exp(-dot(delta,delta)/(radius*radius*12.0))*.045;
+  float shimmer = .83+.17*sin(time*.12+seed*129.0);
+  return (core+bloom)*step(threshold,seed)*(.35+.65*seed)*shimmer;
+}
 void main() {
   float scale = min(size.y, max(620.0, size.x * 1.4));
   // Top-down coordinates, shared with the DOM logo's measured position.
   vec2 p = (vec2(uv.x, 1.0-uv.y) * size - anchor) / scale;
   float t = time * .022;
   vec2 drift = vec2(t * .23, -t * .17);
-  float cloud = fbm(p * 2.1 + drift);
-  vec3 col = vec3(.006, .012, .027);
-  col += vec3(.008, .025, .055) * exp(-dot(p*vec2(.8,1.3),p*vec2(.8,1.3))*1.8);
-  col += vec3(.012, .025, .055) * cloud * cloud;
+  vec3 col = vec3(.003, .006, .015);
+
+  // Broad, irregular clouds sit behind the silk, with cooler emission in the
+  // depths and a little violet in the distant dust. Dark lanes absorb light
+  // instead of filling every empty region with an additive blue wash.
+  vec2 nebula = mat2(.91,-.41,.41,.91)*(p-vec2(.12,.22));
+  vec2 warp = vec2(fbm(nebula*1.7+drift*.3),fbm(nebula*1.9+vec2(8.1,2.4)-drift*.2));
+  float cloud = fbm(nebula*4.3+warp*2.6+drift*.14);
+  float wisps = fbm(nebula*10.0+warp*3.1-drift*.21);
+  float volume = exp(-nebula.y*nebula.y*2.7-nebula.x*nebula.x*.55);
+  float density = smoothstep(.23,.63,cloud)*volume;
+  float dustLane = smoothstep(.38,.65,fbm(nebula*3.1-warp*1.6+11.0));
+  float cavity = exp(-dot((p-vec2(.32,-.18))*vec2(1.8,2.6),(p-vec2(.32,-.18))*vec2(1.8,2.6)));
+  vec3 gas = mix(vec3(.066,.047,.15),vec3(.028,.17,.23),smoothstep(.26,.59,warp.x));
+  col += gas*density*(.36+wisps*.85)*(1.0-dustLane*.7)*(1.0-cavity*.52);
+  col += vec3(.018,.056,.105)*pow(density,2.0)*(1.0-dustLane)*1.2;
+  col += vec3(.009,.025,.048)*exp(-dot(p*vec2(.9,1.4),p*vec2(.9,1.4))*2.0);
+
+  vec2 sky = vec2(uv.x,1.0-uv.y)*size;
+  float extinction = 1.0-density*.62;
+  col += vec3(.48,.61,.83)*stars(sky,29.0,.73,.65)*.19*extinction;
+  col += vec3(.67,.81,1.0)*stars(sky+153.7,67.0,.79,1.05)*.43*extinction;
 
   // Three sheets occupy different depths. Domain warping changes their folds,
   // density and curvature, while broad scattering softens the fine filaments.
@@ -70,7 +100,7 @@ void main() {
     vec3 cyan = vec3(.12, .73, .82);
     vec3 tint = mix(blue, cyan, smoothstep(.28,.68,folds + p.x*.14));
     tint = mix(tint, vec3(.27,.19,.59), .14*smoothstep(.2,.8,-p.x));
-    col += tint * (veil + edge*.32 + scattering) * illumination * fade * 1.8;
+    col += tint * (veil + edge*.24 + scattering) * illumination * fade * 1.48;
   }
 
   // A broken, depth-occluded eddy curves into the mark. Its density comes
@@ -83,17 +113,15 @@ void main() {
   col += vec3(.12,.55,.82) * exp(-abs(eddyDistance)*210.0)*broken*.22;
   col += vec3(.025,.12,.20) * exp(-eddyDistance*eddyDistance*900.0)*broken*.2;
 
-  // Distant dust and a soft reflected pool give the scene scale without a grid
-  // or a literal horizon. Stars stay sparse and vary gently, never flashing.
-  float mist = fbm(p*vec2(2.2,4.8) + vec2(9.0, -t*.09));
-  col += vec3(.016,.055,.10) * mist * exp(-pow((p.y-.62)*5.0,2.0));
-  vec2 starCoord = (vec2(uv.x,1.0-uv.y)*size)/4.0;
-  vec2 cell = floor(starCoord);
-  float seed = hash(cell);
-  float star = pow(max(0.0,1.0-length(fract(starCoord)-.5)*2.0), 7.0);
-  star *= step(.997, seed) * (.22+.10*sin(time*.23 + seed*312.0));
-  col += vec3(.48,.70,1.0)*star;
-  float vignette = 1.0 - .4 * smoothstep(.25, 1.0, length((uv-.5)*vec2(1.0,.85)));
+  // A separate foreground veil partially obscures the silk. Its slow drift
+  // creates depth without camera motion or particles competing with the form.
+  float fog = fbm(p*vec2(3.1,2.0)+vec2(13.0,7.0)+drift*.43);
+  float foreground = smoothstep(.3,.68,fog)*exp(-pow((p.y-.58)*1.5,2.0));
+  col *= 1.0-foreground*.26-dustLane*volume*.14;
+  col += vec3(.016,.040,.065)*foreground*.55;
+  vec2 particles = sky + vec2(time*1.15,-time*.65);
+  col += vec3(.30,.57,.70)*stars(particles+57.0,137.0,.91,1.7)*.23;
+  float vignette = 1.0-.55*smoothstep(.18,.72,length((uv-.5)*vec2(.95,.85)));
   col *= vignette;
   // Dither below a display code value to prevent bands in dark gradients.
   col += (hash(gl_FragCoord.xy)-.5)/255.0;

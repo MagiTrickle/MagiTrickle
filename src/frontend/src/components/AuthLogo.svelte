@@ -26,7 +26,7 @@
     flex: none;
     width: 236px;
     height: 236px;
-    margin: 0 auto 1.95rem;
+    margin: 0 auto 0.5rem;
     pointer-events: none;
   }
   img {
@@ -45,14 +45,14 @@
     .logo-stage {
       width: 192px;
       height: 192px;
-      margin-bottom: 1.45rem;
+      margin-bottom: 0.95rem;
     }
   }
   @media (max-height: 660px) {
     .logo-stage {
       width: 140px;
       height: 140px;
-      margin-bottom: 0.8rem;
+      margin-bottom: 0.3rem;
     }
   }
 </style>
