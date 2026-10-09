@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
+  <title id="title">Glossy Cyan C Code Logo</title>
+  <desc id="desc">A vector cyan-blue satin ribbon in the shape of a C, surrounding a rounded code bracket, slash and two circles. Smooth gradient highlights, transparent background.</desc>
+  <defs>
+    <linearGradient id="body" x1="141" y1="440" x2="1074" y2="872" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a8f5e6"/>
+      <stop offset=".26" stop-color="#249bf9"/>
+      <stop offset=".55" stop-color="#198cf9"/>
+      <stop offset="1" stop-color="#9dcbff"/>
+    </linearGradient>
+    <linearGradient id="crown" x1="224" y1="318" x2="822" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7dd9d8"/>
+      <stop offset=".47" stop-color="#8bdcf8"/>
+      <stop offset="1" stop-color="#69b9ff"/>
+    </linearGradient>
+    <linearGradient id="upperFace" x1="357" y1="570" x2="1018" y2="173" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a3f3f7"/>
+      <stop offset=".46" stop-color="#94d8fb"/>
+      <stop offset="1" stop-color="#edfaff"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="387" y1="581" x2="796" y2="962" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#269cde"/>
+      <stop offset=".45" stop-color="#91dcfc"/>
+      <stop offset="1" stop-color="#ecffff"/>
+    </linearGradient>
+    <linearGradient id="lowerFace" x1="324" y1="919" x2="1116" y2="896" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#29a5ee"/>
+      <stop offset=".53" stop-color="#5aaaff"/>
+      <stop offset=".63" stop-color="#5aacfc"/>
+      <stop offset=".80" stop-color="#b8dffc"/>
+      <stop offset="1" stop-color="#d4ffff"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="200" y1="672" x2="994" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c5fff0"/>
+      <stop offset=".57" stop-color="#c4f5ff"/>
+      <stop offset="1" stop-color="#fff"/>
+    </linearGradient>
+    <linearGradient id="bottomRim" x1="360" y1="969" x2="1094" y2="922" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6dccfa"/>
+      <stop offset=".55" stop-color="#b5e4ff"/>
+      <stop offset="1" stop-color="#d6ffff"/>
+    </linearGradient>
+    <linearGradient id="code" x1="640" y1="542" x2="816" y2="777" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#87def7"/>
+      <stop offset=".48" stop-color="#70c9fa"/>
+      <stop offset="1" stop-color="#529ef8"/>
+    </linearGradient>
+    <radialGradient id="leftToning" cx="160" cy="525" r="156" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#41c1c2" stop-opacity=".53"/>
+      <stop offset=".40" stop-color="#41c1c2" stop-opacity=".35"/>
+      <stop offset=".75" stop-color="#41c1c2" stop-opacity=".07"/>
+      <stop offset="1" stop-color="#41c1c2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="innerLight" gradientUnits="userSpaceOnUse" cx="707" cy="942" r="463">
+      <stop stop-color="#d9fdff" stop-opacity=".21"/>
+      <stop offset=".62" stop-color="#92e0ff" stop-opacity=".07"/>
+      <stop offset="1" stop-color="#74ccfd" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="crownGlintFade" x1="96" y1="653" x2="749" y2="144" gradientUnits="userSpaceOnUse">
+      <stop stop-color="black"/>
+      <stop offset=".12" stop-color="white"/>
+      <stop offset=".81" stop-color="white"/>
+      <stop offset="1" stop-color="black"/>
+    </linearGradient>
+    <linearGradient id="rimFade" x1="240" y1="1045" x2="580" y2="325" gradientUnits="userSpaceOnUse">
+      <stop stop-color="black"/>
+      <stop offset=".10" stop-color="white"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <linearGradient id="lowerBandFade" x1="225" y1="890" x2="1160" y2="860" gradientUnits="userSpaceOnUse">
+      <stop stop-color="black"/>
+      <stop offset=".14" stop-color="white"/>
+      <stop offset=".75" stop-color="white"/>
+      <stop offset=".95" stop-color="#aaaaaa"/>
+      <stop offset="1" stop-color="black"/>
+    </linearGradient>
+    <mask id="crownGlintMask" maskUnits="userSpaceOnUse"><rect width="1254" height="1254" fill="url(#crownGlintFade)"/></mask>
+    <mask id="rimFadeMask" maskUnits="userSpaceOnUse"><rect width="1254" height="1254" fill="url(#rimFade)"/></mask>
+    <mask id="lowerBandMask" maskUnits="userSpaceOnUse"><rect width="1254" height="1254" fill="url(#lowerBandFade)"/></mask>
+    <radialGradient id="tipSheen" gradientUnits="userSpaceOnUse" cx="1026" cy="860" r="398">
+      <stop stop-color="#eefaff" stop-opacity=".52"/>
+      <stop offset=".45" stop-color="#eefaff" stop-opacity=".36"/>
+      <stop offset=".78" stop-color="#caeaff" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#b8dcff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="dots" x1="875" y1="622" x2="912" y2="699" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#86dcfa"/>
+      <stop offset="1" stop-color="#55a6fc"/>
+    </linearGradient>
+    <path id="silhouette" d="M 1094,329 C 1076,394 1011,439 944,412 C 863,375 805,359 736,369 C 598,386 497,462 453,558 C 412,644 429,752 486,825 C 543,899 625,927 716,921 C 797,918 858,888 922,850 C 993,807 1046,801 1093,833 C 1149,867 1163,912 1125,968 C 1048,1078 913,1153 763,1173 C 585,1197 418,1146 290,1052 C 156,952 89,818 90,663 C 88,478 169,309 307,199 C 439,95 632,59 789,93 C 916,115 1030,158 1077,229 C 1097,260 1106,298 1094,329 Z"/>
+    <clipPath id="clip"><use href="#silhouette"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <use href="#silhouette" fill="url(#body)"/>
+    <path d="M 88,659 C 100,473 180,307 307,199 C 439,95 632,59 789,93 C 866,105 935,128 984,155 C 698,95 308,282 156,469 C 114,524 96,587 88,659 Z" fill="url(#crown)"/>
+    <use href="#silhouette" fill="url(#leftToning)"/>
+    <path d="M 89,654 C 104,552 143,472 203,409 C 343,265 570,161 762,146 C 473,211 227,401 128,576 C 111,607 97,640 89,671 Z" fill="#d2fff4" opacity=".70" mask="url(#crownGlintMask)"/>
+    <path d="M 734,251 C 572,321 415,455 359,594 C 310,717 335,820 419,897 C 482,955 562,973 665,950 C 807,932 978,844 1106,756 C 978,729 853,802 715,830 C 591,865 492,801 473,684 C 451,559 543,435 654,352 C 711,309 734,270 734,251 Z" fill="url(#inner)"/>
+    <path d="M 734,251 C 572,321 415,455 359,594 C 310,717 335,820 419,897 C 482,955 562,973 665,950 C 807,932 978,844 1106,756 C 978,729 853,802 715,830 C 591,865 492,801 473,684 C 451,559 543,435 654,352 C 711,309 734,270 734,251 Z" fill="url(#innerLight)"/>
+    <path d="M 273,1040 C 187,965 172,868 205,764 C 249,593 364,426 514,293 C 673,153 813,121 914,138 C 997,138 1061,178 1087,246 C 1102,280 1108,325 1082,351 C 1047,380 1012,335 943,319 C 776,258 658,291 517,408 C 366,524 260,638 219,780 C 187,888 210,977 273,1040 Z" fill="url(#upperFace)" mask="url(#rimFadeMask)"/>
+    <path d="M 273,1040 C 187,965 172,868 205,764 C 249,593 364,426 514,293 C 673,153 813,121 914,138 C 984,137 1048,169 1076,217 C 1034,170 972,151 910,155 C 791,155 653,201 524,310 C 380,438 264,610 221,770 C 189,878 207,973 273,1040 Z" fill="url(#rim)" mask="url(#rimFadeMask)"/>
+    <path d="M 238,891 C 365,1007 512,1046 655,1042 C 844,1043 1009,987 1096,864 C 1139,882 1161,912 1125,968 C 1048,1078 913,1153 763,1173 C 560,1152 361,1068 238,891 Z" fill="url(#lowerFace)"/>
+    <path d="M 238,891 C 365,1007 512,1046 655,1042 C 844,1043 1009,987 1096,864 C 1132,884 1149,898 1144,928 C 1011,1036 813,1074 656,1068 C 486,1063 329,1005 238,891 Z" fill="url(#bottomRim)" mask="url(#lowerBandMask)"/>
+    <path d="M 253,903 C 375,1012 519,1045 655,1042 C 844,1043 1009,987 1096,864" fill="none" stroke="#e5faff" stroke-width="1.4" stroke-linecap="round" opacity=".58" mask="url(#lowerBandMask)"/>
+    <path d="M 219,780 C 260,638 366,524 517,408 C 658,291 776,258 943,319 C 1012,335 1047,380 1082,351" fill="none" stroke="#f1ffff" stroke-linecap="round" stroke-width="1.65" opacity=".77"/>
+    <path d="M 480,817 C 537,899 618,942 718,928 C 810,918 886,878 968,829" fill="none" stroke="#e9ffff" stroke-width="1.2" stroke-linecap="round" opacity=".30"/>
+    <use href="#silhouette" fill="url(#tipSheen)"/>
+  </g>
+  <use href="#silhouette" fill="none" stroke="#a8ecff" stroke-opacity=".43" stroke-width=".75"/>
+  <g fill="url(#code)" stroke="#a0e6ff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 633,542 C 645,529 662,530 675,542 C 687,553 685,570 674,582 L 598,655 L 660,716 C 673,729 672,746 660,758 C 648,770 631,768 619,756 L 537,675 C 525,663 525,647 537,635 Z"/>
+    <path d="M 768,551 C 774,534 790,526 805,532 C 822,537 830,552 824,568 L 749,762 C 743,779 728,787 711,781 C 695,775 688,759 694,743 Z"/>
+    <circle cx="883" cy="660" r="38" fill="url(#dots)"/>
+    <circle cx="988" cy="660" r="38" fill="url(#dots)"/>
+  </g>
+</svg>

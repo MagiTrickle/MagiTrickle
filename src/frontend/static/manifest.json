@@ -1,6 +1,6 @@
 {
-    "name": "MagiTrickle WebUI",
-    "short_name": "MagiTrickle",
+    "name": "mt-c WebUI",
+    "short_name": "mt-c",
     "start_url": "/",
     "display": "standalone",
     "icons": [
