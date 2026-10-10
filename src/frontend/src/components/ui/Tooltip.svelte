@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { type Snippet } from "svelte";
+  import { onDestroy, type Snippet } from "svelte";
 
-  import { hide, show } from "../../lib/tooltip/tooltip.svelte";
+  import { hide, hideFor, show } from "../../lib/tooltip/tooltip.svelte";
 
   let { value, children }: { value: string; children: Snippet } = $props();
   let triggerEl: HTMLElement;
+
+  onDestroy(() => hideFor(triggerEl));
 </script>
 
 <div

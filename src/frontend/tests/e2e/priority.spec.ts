@@ -12,6 +12,8 @@ async function editor(
   priority?: number,
   failures: Failure[] = [],
   profile?: string,
+  rules: Group["rules"] = [],
+  extraGroupCount = 0,
 ) {
   let live: Item = {
     id: "aabbccdd",
@@ -24,8 +26,14 @@ async function editor(
     url: "https://example.com/list.txt",
     interval: 86400,
     lastUpdate: 1700000000,
-    rules: [],
+    rules,
   };
+  const extraGroups = Array.from({ length: extraGroupCount }, (_, i) => ({
+    ...structuredClone(live),
+    id: (i + 100).toString(16).padStart(8, "0"),
+    name: `Group ${i + 2}`,
+    rules: [],
+  }));
   let disk = structuredClone(live);
   const requests: any[] = [];
   await page.route("**/api/v1/**", async (route) => {
@@ -69,24 +77,27 @@ async function editor(
         });
       }
       disk = structuredClone(live);
-      return route.fulfill({ json: kind === "groups" ? { groups: [live] } : { status: "ok" } });
+      return route.fulfill({
+        json: kind === "groups" ? { groups: [live, ...extraGroups] } : { status: "ok" },
+      });
     }
     if (path.endsWith("/sync")) {
       live.lastUpdate = (live.lastUpdate ?? 0) + 60;
       return route.fulfill({ json: { rules: live.rules, lastUpdate: live.lastUpdate } });
     }
     if (path.endsWith("/groups"))
-      return route.fulfill({ json: { groups: kind === "groups" ? [live] : [] } });
+      return route.fulfill({ json: { groups: kind === "groups" ? [live, ...extraGroups] : [] } });
     if (path.endsWith("/subscriptions"))
       return route.fulfill({ json: { subscriptions: kind === "subscriptions" ? [live] : [] } });
     return route.continue();
   });
   await page.goto("/");
   if (kind === "subscriptions") await page.getByRole("tab", { name: "Subscriptions" }).click();
-  const trigger = page.locator(".priority-trigger");
+  const triggers = page.locator(".priority-trigger");
+  const trigger = triggers.first();
   const input = page.getByRole("spinbutton");
   const save = page.locator(kind === "groups" ? "#save-changes" : "#save-subscriptions");
-  await expect(trigger).toHaveCount(1);
+  await expect(triggers).toHaveCount(1 + extraGroupCount);
   return {
     trigger,
     input,
@@ -217,3 +228,64 @@ test("a new group starts with priority 300", async ({ page }) => {
   await expect(page.locator(".priority-trigger")).toHaveCount(2);
   await expect(page.locator(".priority-trigger").first()).toHaveText("300");
 });
+
+async function scrollPosition(page: Page) {
+  return page.evaluate(async () => {
+    // Let deferred autofocus and layout updates finish before checking the viewport.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return { window: window.scrollY, body: document.body.scrollTop };
+  });
+}
+
+for (const width of [1280, 390]) {
+  test(`long group keeps scroll when editing priority and saving at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const rules: Group["rules"] = Array.from({ length: 40 }, (_, i) => ({
+      id: (i + 1).toString(16).padStart(8, "0"),
+      name: "",
+      rule: `item${i}.example.com`,
+      type: "namespace",
+      enable: true,
+    }));
+    const e = await editor(page, "groups", 300, [], undefined, rules, 20);
+    await expect(page.locator(".rule")).toHaveCount(40);
+    await page.locator('[data-value="Expand Group"] button').first().click();
+    await expect(page.locator(".rule").last()).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollHeight))
+      .toBeGreaterThan(1500);
+    await page.evaluate(() => window.scrollTo(0, 60));
+    const initialScroll = await scrollPosition(page);
+    const box = await e.trigger.boundingBox();
+    expect(box).not.toBeNull();
+    // Use the visible priority strip without Playwright scrolling to another element.
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + 20);
+    await expect(e.input).toBeVisible();
+    expect(await scrollPosition(page)).toEqual(initialScroll);
+    await e.input.fill("450");
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + 20);
+    await expect(e.input).not.toBeVisible();
+    await expect(e.trigger).toBeFocused();
+    expect(await scrollPosition(page)).toEqual(initialScroll);
+    await e.save.click();
+    await expect(e.save).toBeDisabled();
+    await expect(page.locator(".overlay")).not.toBeVisible();
+    expect(e.requests).toHaveLength(1);
+    expect(await scrollPosition(page)).toEqual(initialScroll);
+    await page.locator(".group-name").first().fill("Renamed");
+    const lowerInput = page.locator(".rule .pattern-input").last();
+    await lowerInput.focus();
+    await expect(lowerInput).toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, 60));
+    // Saving must also preserve the viewport when focus is below it.
+    await page.keyboard.press("Control+s");
+    await expect(e.save).toBeDisabled();
+    await expect(page.locator(".overlay")).not.toBeVisible();
+    expect(e.requests).toHaveLength(2);
+    expect(e.disk().name).toBe("Renamed");
+    await expect(lowerInput).toBeFocused();
+    expect(await scrollPosition(page)).toEqual(initialScroll);
+  });
+}

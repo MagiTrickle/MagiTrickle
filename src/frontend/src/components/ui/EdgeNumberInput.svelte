@@ -13,6 +13,8 @@
 
   let { label, title, value = $bindable() }: Props = $props();
   let draft = $state("");
+  let trigger = $state<HTMLButtonElement | null>(null);
+  let content = $state<HTMLDivElement | null>(null);
   const titleId = $props.id();
 
   $effect(() => {
@@ -52,12 +54,23 @@
       if (!open) restoreDraft();
     }}
   >
-    <Popover.Trigger class="priority-trigger" aria-label={label} title={label}>
+    <Popover.Trigger bind:ref={trigger} class="priority-trigger" aria-label={label} title={label}>
       <span class="priority-value">{Number.isFinite(value) ? value : "—"}</span>
     </Popover.Trigger>
     <Popover.Portal>
       <Popover.Content
+        bind:ref={content}
         class="priority-popover"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          content
+            ?.querySelector<HTMLElement>("button:not(:disabled), input")
+            ?.focus({ preventScroll: true });
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          trigger?.focus({ preventScroll: true });
+        }}
         side="left"
         sideOffset={8}
         align="center"

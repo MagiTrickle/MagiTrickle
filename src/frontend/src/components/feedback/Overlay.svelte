@@ -22,12 +22,12 @@
     previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     hide = false;
     await tick();
-    overlayEl?.focus();
+    if (!hide) overlayEl?.focus({ preventScroll: true });
   }
 
   function onHide() {
     if (previousFocus && document.contains(previousFocus)) {
-      previousFocus.focus();
+      previousFocus.focus({ preventScroll: true });
     }
     if (document.activeElement === overlayEl) {
       overlayEl?.blur();

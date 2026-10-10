@@ -1,15 +1,15 @@
 {
-    "name": "MagiTrickle WebUI",
-    "short_name": "MagiTrickle",
-    "start_url": "/",
-    "display": "standalone",
-    "icons": [
-        {
-            "src": "/static/favicon.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        }
-    ],
-    "orientation": "any",
-    "prefer_related_applications": false
+  "name": "mt-c WebUI",
+  "short_name": "mt-c",
+  "start_url": "/",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "orientation": "any",
+  "prefer_related_applications": false
 }

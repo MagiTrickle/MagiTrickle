@@ -54,3 +54,23 @@ test.describe("Header Settings", () => {
     await expect(dialog).not.toBeVisible();
   });
 });
+
+test("logout removes the hovered tooltip with its trigger", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("auth", JSON.stringify({ value: "test-token" }));
+  });
+  await page.route("**/api/v1/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/auth")) return route.fulfill({ json: { enabled: true } });
+    if (path.endsWith("/interfaces")) return route.fulfill({ json: { interfaces: [] } });
+    if (path.endsWith("/profiles")) return route.fulfill({ json: { profiles: [] } });
+    return route.fulfill({ json: { groups: [] } });
+  });
+  await page.goto("/");
+  const logout = page.locator(".logout button");
+  await logout.hover();
+  await expect(page.locator("#global-tooltip")).toHaveText("Logout");
+  await logout.click();
+  await expect(page.locator("#login")).toBeVisible();
+  await expect(page.locator("#global-tooltip")).toHaveCount(0);
+});
