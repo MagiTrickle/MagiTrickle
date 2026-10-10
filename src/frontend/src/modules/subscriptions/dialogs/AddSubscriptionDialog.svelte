@@ -330,8 +330,9 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    height: auto !important;
-    min-height: 2.85rem;
+    height: 2.85rem !important;
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
   }
 
   input:focus,

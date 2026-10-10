@@ -19,6 +19,7 @@
   onMount(mountUpdates);
   const version = import.meta.env.VITE_PKG_VERSION || "0.0.0";
   const commit = version.match(/(?:\(|~git\d{14}\.)([a-f0-9]{7,40})\)?$/i)?.[1] ?? "";
+  const displayVersion = version.replace(/\s*\([a-f0-9]{7,40}\)$|~git\d{14}\.[a-f0-9]{7,40}$/i, "");
   const isDev =
     import.meta.env.VITE_PKG_VERSION_IS_DEV?.toLowerCase() === "true" || version === "0.0.0";
   const isMobile =
@@ -85,7 +86,7 @@
         class="version-trigger"
         aria-label={`${t("Software update")}: ${version}. ${hint}`}
       >
-        <span class="version-text">{version}</span>
+        <span class="version-text">{displayVersion}</span>
         {#if choice.newer || isDev}
           <span class="version-dot" class:available={choice.newer} aria-hidden="true"></span>
         {/if}
