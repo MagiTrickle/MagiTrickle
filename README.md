@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/logo.svg" alt="mt-c" width="196"/>
+  <img src="src/frontend/src/assets/logo.svg" alt="mt-c" width="196"/>
 </p>
 
 <p align="center">

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import logoUrl from "../../../../img/logo.svg";
+  import logoUrl from "../assets/logo.svg";
 
   type Props = {
     anchor?: HTMLDivElement;

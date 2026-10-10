@@ -1,5 +1,5 @@
 <script lang="ts">
-  import logoUrl from "../../../../img/logo.svg";
+  import logoUrl from "../assets/logo.svg";
   import { createAuroraRenderer, type AuroraRenderer } from "../lib/aurora/renderer";
 
   type Props = {
