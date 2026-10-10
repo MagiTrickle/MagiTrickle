@@ -117,9 +117,9 @@ for (const kind of ["groups", "subscriptions"] as const) {
     await e.open();
     await expect(e.input).toHaveValue(defaultPriority);
     await expect(e.input).toHaveAttribute("min", "1");
-    await expect(e.input).toHaveAttribute("max", "1000");
+    await expect(e.input).toHaveAttribute("max", "999");
     await expect(e.input).toHaveAttribute("step", "1");
-    for (const invalid of ["0", "-1", "1001", "1.5"]) {
+    for (const invalid of ["0", "-1", "1000", "1001", "1.5"]) {
       await e.input.fill(invalid);
       await expect(e.input).toHaveValue(defaultPriority);
       await expect(e.save).toHaveClass(/inactive/);
@@ -131,10 +131,10 @@ for (const kind of ["groups", "subscriptions"] as const) {
     await expect(page.getByRole("button", { name: "Decrease priority" })).toBeDisabled();
     await page.getByRole("button", { name: "Increase priority" }).click();
     await expect(e.input).toHaveValue("2");
-    await e.input.fill("1000");
+    await e.input.fill("999");
     await expect(page.getByRole("button", { name: "Increase priority" })).toBeDisabled();
     await page.getByRole("button", { name: "Decrease priority" }).click();
-    await expect(e.input).toHaveValue("999");
+    await expect(e.input).toHaveValue("998");
     await e.input.fill("750");
     await e.input.fill("1001");
     await expect(e.input).toHaveValue("750");

@@ -31,7 +31,7 @@
 /* Routing precedence shared by user groups and subscriptions. Larger values
  * win; an omitted field in a legacy config or create request uses its default. */
 #define MT_PRIORITY_MIN 1
-#define MT_PRIORITY_MAX 1000
+#define MT_PRIORITY_MAX 999
 #define MT_GROUP_DEFAULT_PRIORITY 300
 #define MT_SUBSCRIPTION_DEFAULT_PRIORITY 100
 

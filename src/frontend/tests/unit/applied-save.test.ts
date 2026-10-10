@@ -78,10 +78,10 @@ Deno.test("malformed/duplicate rule identities are not repaired into an invented
 
 Deno.test("applied state preserves priorities and only defaults omitted legacy values", () => {
   const applied = failure({
-    groups: [{ ...group, priority: 1000, profile: "shared" }],
+    groups: [{ ...group, priority: 999, profile: "shared" }],
     subscriptions: [{ ...sub, priority: 1, profile: "shared" }],
   });
-  assert.equal(appliedGroups(applied)?.[0].priority, 1000);
+  assert.equal(appliedGroups(applied)?.[0].priority, 999);
   assert.equal(appliedSubscriptions(applied)?.[0].priority, 1);
   assert.equal(appliedGroups(applied)?.[0].profile, "shared");
   assert.equal(appliedSubscriptions(applied)?.[0].profile, "shared");

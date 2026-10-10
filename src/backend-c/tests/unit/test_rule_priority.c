@@ -447,7 +447,7 @@ TEST dns_host_group_beats_cloud_subscription_and_saves_final_connmark(void) {
 TEST changing_priority_alone_changes_the_route_mark_in_both_families(void) {
     make_links();
     ASSERT_EQ(MT_OK, prepare_links());
-    mt_ipset_to_link_set_priority(fixture.links[1], 1000);
+    mt_ipset_to_link_set_priority(fixture.links[1], 999);
     ASSERT_EQ(MT_OK, prepare_links());
     for (unsigned family = 0; family < 2; family++) {
         packet_t overlap = packet(family, true, true, false);

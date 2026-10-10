@@ -129,7 +129,7 @@ static mt_err_t subscription_from_req(mt_app_t *app, const cJSON *req, const mt_
 
     uint16_t priority = existing ? existing->priority : MT_SUBSCRIPTION_DEFAULT_PRIORITY;
     if (mt_json_parse_priority(req, &priority) != MT_OK) {
-        *err_msg = "priority must be an integer between 1 and 1000";
+        *err_msg = "priority must be an integer between 1 and 999";
         return MT_ERR_INVAL;
     }
 

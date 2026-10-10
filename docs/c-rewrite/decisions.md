@@ -3420,3 +3420,14 @@ retries, and generated packet/connection marking for overlapping host/subnet
 membership in both families. The latter uses an in-memory netfilter harness;
 it does not establish real-kernel or on-router validation. Existing golden
 YAML/HTTP fixtures are extended only with the expected default priority fields.
+
+### D-73 amendment — Priority maximum is 999 (2026-10-10)
+
+At the user's request, the accepted integer range is now **1 through 999**,
+replacing D-73's original upper bound of 1000. Frontend validation, increment
+controls, JSON API validation, YAML loading, and the API reference use this
+same limit. Explicit 1000 is rejected without mutation, just like larger
+values; existing configurations containing it must be edited to the accepted
+range before loading. Defaults, ordering, ties, and omitted-field behavior
+remain as defined in D-73. Boundary tests cover acceptance of 999 and rejection
+of 1000, including preservation of live and persisted state on invalid writes.

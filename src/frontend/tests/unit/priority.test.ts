@@ -10,7 +10,7 @@ import {
 } from "../../src/utils/priority";
 
 Deno.test("priority accepts integer boundaries and rejects invalid values consistently", () => {
-  for (const value of [1, 100, 300, 999, 1000]) {
+  for (const value of [1, 100, 300, 999]) {
     assert.equal(isValidPriority(value), true);
     assert.equal(safeParse(PrioritySchema, value).success, true);
   }
@@ -22,6 +22,7 @@ Deno.test("priority accepts integer boundaries and rejects invalid values consis
     "",
     -1,
     0,
+    1000,
     1001,
     1.5,
     NaN,

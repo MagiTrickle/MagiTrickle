@@ -52,8 +52,8 @@ TEST parse_roundtrip(void)
 
 TEST priority_accepts_only_bounded_integer_numbers(void)
 {
-    const char *valid[] = {"1", "100", "300", "1000", "300.0", "3e2"};
-    const uint16_t expected[] = {1, 100, 300, 1000, 300, 300};
+    const char *valid[] = {"1", "100", "300", "999", "300.0", "3e2"};
+    const uint16_t expected[] = {1, 100, 300, 999, 300, 300};
     for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
         char text[64];
         snprintf(text, sizeof(text), "{\"priority\":%s}", valid[i]);
@@ -65,7 +65,7 @@ TEST priority_accepts_only_bounded_integer_numbers(void)
         cJSON_Delete(obj);
     }
     const char *invalid[] = {
-        "0", "-1", "1001", "65536", "1.5", "1e309", "-1e309",
+        "0", "-1", "1000", "1001", "65536", "1.5", "1e309", "-1e309",
         "null", "true", "false", "\"300\"", "{}", "[]"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {

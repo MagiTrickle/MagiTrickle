@@ -41,7 +41,7 @@ bool mt_ipset_to_link_uses_interface(const mt_ipset_to_link_t *l, const char *na
 
 /* Routing precedence, independent of the allocated fwmark/table number.
  * Set before enable, or before prepare_iptables to stage a live change.
- * Callers validate the model's 1..1000 range. Higher values run later and
+ * Callers validate the model's 1..999 range. Higher values run later and
  * win when multiple sets contain the destination. */
 void mt_ipset_to_link_set_priority(mt_ipset_to_link_t *l, uint16_t priority);
 

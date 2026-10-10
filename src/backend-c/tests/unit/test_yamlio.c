@@ -271,20 +271,20 @@ TEST priority_defaults_boundaries_and_save_reload(void)
         "groups:\n"
         "- {id: aaaa0001, name: legacy}\n"
         "- {id: aaaa0002, priority: 1}\n"
-        "- {id: aaaa0003, priority: 1000}\n"
+        "- {id: aaaa0003, priority: 999}\n"
         "subscriptions:\n"
         "- {id: bbbb0001, name: legacy}\n"
         "- {id: bbbb0002, priority: 1}\n"
-        "- {id: bbbb0003, priority: 1000}\n";
+        "- {id: bbbb0003, priority: 999}\n";
     ASSERT_EQ(MT_OK, load_str(&cfg, doc));
     ASSERT_EQ(3, cfg.n_groups);
     ASSERT_EQ(3, cfg.n_subscriptions);
     ASSERT_EQ(300, cfg.groups[0]->priority);
     ASSERT_EQ(1, cfg.groups[1]->priority);
-    ASSERT_EQ(1000, cfg.groups[2]->priority);
+    ASSERT_EQ(999, cfg.groups[2]->priority);
     ASSERT_EQ(100, cfg.subscriptions[0]->priority);
     ASSERT_EQ(1, cfg.subscriptions[1]->priority);
-    ASSERT_EQ(1000, cfg.subscriptions[2]->priority);
+    ASSERT_EQ(999, cfg.subscriptions[2]->priority);
 
     char *saved = NULL;
     size_t size = 0;
@@ -311,7 +311,7 @@ TEST priority_defaults_boundaries_and_save_reload(void)
 TEST invalid_priorities_preserve_config_before_any_overlay(void)
 {
     const char *invalid[] = {
-        "0", "-1", "1001", "65536", "1.5", "300.0", ".nan", ".inf",
+        "0", "-1", "1000", "1001", "65536", "1.5", "300.0", ".nan", ".inf",
         "18446744073709551616", "null", "~", "true", "'300'", "[]", "{}"
     };
     mt_config_t cfg;

@@ -129,10 +129,11 @@
 
   .priority-value {
     transform: rotate(-90deg);
+    color: var(--text-2);
     font-family: var(--font);
-    font-size: 1rem;
+    font-size: 0.8rem;
     font-style: italic;
-    font-weight: 600;
+    font-weight: 400;
   }
 
   :global(.priority-trigger:hover),

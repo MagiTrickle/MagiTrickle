@@ -22,7 +22,7 @@ Source: `config/config.go`, `config/app.go`, `config.go`
 | Duration parsing | yaml v2 accepts Go duration strings (`5s`, `1h0m0s`) and bare integers = **nanoseconds**; legacy normalization: dnsProxy.timeout < 1 ms ⇒ treat as ms; additionalTTL < 1 s ⇒ treat as s (empirically verified) | Gap | DIFF |
 | Duration serialization | saved as Go duration strings (`5s`, `1h0m0s`) | Gap | DIFF |
 | `enable` default | **absent `enable` on group/rule/subscription unmarshals to `false`** (plain Go bool; empirically verified). NOTE: contradicts CLAUDE.md claim of default-true; API create paths default group Enable to true instead | Gap | DIFF |
-| Routing priority (D-73) | Additive `priority` on groups/subscriptions: integer 1–1000, defaults 300/100 when absent. Save always includes it; invalid explicit priority rejects before applying config changes | Priority config/API tests | UT+CT |
+| Routing priority (D-73) | Additive `priority` on groups/subscriptions: integer 1–999, defaults 300/100 when absent. Save always includes it; invalid explicit priority rejects before applying config changes | Priority config/API tests | UT+CT |
 | Field names | camelCase app keys (`httpWeb`, `dnsProxy`, `disableRemap53`, …); group/rule keys lowercase; subscription uses `last_update` (snake) | Gap | DIFF |
 | Save shape | full app tree always written; key order = Go struct order (`configVersion`, `app`, `groups`, `subscriptions`); `groups`/`subscriptions` always present (may be `[]`) | Gap | DIFF |
 | Group color | invalid `#rrggbb` → `#ffffff`; valid → lowercased (regexp2 IgnoreCase) | Gap | DIFF |

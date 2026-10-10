@@ -152,7 +152,7 @@ static mt_err_t group_from_req(mt_app_t *app, const cJSON *req, const mt_group_t
 
     uint16_t priority = existing ? existing->priority : MT_GROUP_DEFAULT_PRIORITY;
     if (mt_json_parse_priority(req, &priority) != MT_OK) {
-        *err_msg = "priority must be an integer between 1 and 1000";
+        *err_msg = "priority must be an integer between 1 and 999";
         return MT_ERR_INVAL;
     }
 

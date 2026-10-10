@@ -1,7 +1,7 @@
 import { integer, maxValue, minValue, number, pipe } from "valibot";
 
 export const MIN_PRIORITY = 1;
-export const MAX_PRIORITY = 1000;
+export const MAX_PRIORITY = 999;
 export const DEFAULT_GROUP_PRIORITY = 300;
 export const DEFAULT_SUBSCRIPTION_PRIORITY = 100;
 

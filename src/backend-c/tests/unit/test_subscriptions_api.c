@@ -604,35 +604,35 @@ TEST subscription_priority_survives_fetch_sync_compact_save_and_reload(void) {
     harness_t *h = harness_start_mode(1); ASSERT(h);
     char body[512];
     snprintf(body, sizeof(body),
-        "{\"id\":\"aabbccdd\",\"name\":\"priority-sub\",\"url\":\"%s\",\"priority\":1000}",
+        "{\"id\":\"aabbccdd\",\"name\":\"priority-sub\",\"url\":\"%s\",\"priority\":999}",
         stub_url("/list"));
     cJSON *out = NULL;
     ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions?fetch=true", body, &out));
     cJSON *sub = cJSON_GetObjectItemCaseSensitive(out, "subscription");
-    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
+    ASSERT_EQ(999, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
     ASSERT_EQ(2, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(sub, "rules")));
     cJSON_Delete(out);
     mt_id_t id; ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &id));
     mt_ruleset_t *synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
     ASSERT(synth);
-    ASSERT_EQ(1000, mt_ruleset_group(synth)->priority);
+    ASSERT_EQ(999, mt_ruleset_group(synth)->priority);
     /* The new source adds a rule, forcing sync to rebuild the synthetic
      * ruleset rather than just touching the last-check timestamp. */
     snprintf(body, sizeof(body), "{\"url\":\"%s\"}", stub_url("/list-updated"));
     ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions/aabbccdd/sync", body, NULL));
     synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
     ASSERT(synth);
-    ASSERT_EQ(1000, mt_ruleset_group(synth)->priority);
+    ASSERT_EQ(999, mt_ruleset_group(synth)->priority);
     ASSERT_EQ(3, mt_ruleset_group(synth)->n_rules);
     snprintf(body, sizeof(body), "{\"subscriptions\":[{\"id\":\"aabbccdd\","
         "\"name\":\"renamed\",\"url\":\"%s\",\"ruleChanges\":[]}]}", stub_url("/list-updated"));
     ASSERT_EQ(200, do_request("PUT", "/api/v1/subscriptions", body, NULL));
     synth = mt_app_find_subscription_ruleset_by_id(h->app, id);
     ASSERT(synth);
-    ASSERT_EQ(1000, mt_ruleset_group(synth)->priority);
+    ASSERT_EQ(999, mt_ruleset_group(synth)->priority);
     ASSERT_EQ(200, do_request("GET", "/api/v1/subscriptions", NULL, &out));
     sub = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "subscriptions"), 0);
-    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
+    ASSERT_EQ(999, cJSON_GetObjectItemCaseSensitive(sub, "priority")->valueint);
     ASSERT_EQ(3, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(sub, "rules")));
     cJSON_Delete(out);
     snprintf(body, sizeof(body), "{\"subscriptions\":[{\"id\":\"aabbccdd\","
@@ -654,7 +654,7 @@ TEST invalid_subscription_priorities_do_not_change_live_or_persisted_state(void)
     ASSERT_EQ(200, do_request("POST", "/api/v1/subscriptions",
         "{\"id\":\"aabbccdd\",\"name\":\"original\",\"url\":\"https://example.com/list\",\"priority\":222}", NULL));
     const char *invalid[] = {
-        "0", "-1", "1001", "1.5", "1e309", "null", "true", "\"100\"", "{}", "[]"
+        "0", "-1", "1000", "1001", "1.5", "1e309", "null", "true", "\"100\"", "{}", "[]"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         char body[512];

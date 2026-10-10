@@ -665,25 +665,25 @@ TEST group_priority_updates_persists_and_omission_preserves_it(void) {
     harness_t *h = harness_start_saved(true); ASSERT(h);
     cJSON *out = NULL;
     ASSERT_EQ(200, do_request("POST", "/api/v1/groups?save=true",
-        "{\"id\":\"aabbccdd\",\"name\":\"priority-group\",\"priority\":1000,"
+        "{\"id\":\"aabbccdd\",\"name\":\"priority-group\",\"priority\":999,"
         "\"rules\":[{\"name\":\"one\",\"rule\":\"one.example\",\"type\":\"domain\",\"enable\":true}]}", &out));
-    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    ASSERT_EQ(999, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
     cJSON_Delete(out);
     ASSERT_EQ(200, do_request("GET", "/api/v1/groups/aabbccdd", NULL, &out));
-    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    ASSERT_EQ(999, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
     cJSON_Delete(out);
 
     /* Existing clients omit the additive field: both individual edits and
      * compact bulk saves retain the current priority instead of resetting it. */
     ASSERT_EQ(200, do_request("PUT", "/api/v1/groups/aabbccdd?save=true",
         "{\"name\":\"renamed\"}", &out));
-    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
+    ASSERT_EQ(999, cJSON_GetObjectItemCaseSensitive(out, "priority")->valueint);
     ASSERT_EQ(1, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(out, "rules")));
     cJSON_Delete(out);
     ASSERT_EQ(200, do_request("PUT", "/api/v1/groups?save=true",
         "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"renamed\",\"ruleChanges\":[]}]}", &out));
     cJSON *group = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(out, "groups"), 0);
-    ASSERT_EQ(1000, cJSON_GetObjectItemCaseSensitive(group, "priority")->valueint);
+    ASSERT_EQ(999, cJSON_GetObjectItemCaseSensitive(group, "priority")->valueint);
     cJSON_Delete(out);
     /* Same group order, metadata and rules; priority alone must bypass the
      * app's unchanged-group reuse optimization and publish the replacement. */
@@ -710,7 +710,7 @@ TEST invalid_group_priorities_do_not_change_live_or_persisted_state(void) {
     ASSERT_EQ(200, do_request("POST", "/api/v1/groups?save=true",
         "{\"id\":\"aabbccdd\",\"name\":\"original\",\"priority\":777}", NULL));
     const char *invalid[] = {
-        "0", "-1", "1001", "1.5", "1e309", "null", "true", "\"300\"", "{}", "[]"
+        "0", "-1", "1000", "1001", "1.5", "1e309", "null", "true", "\"300\"", "{}", "[]"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         char body[512];
