@@ -70,6 +70,120 @@ TEST add_group_rejects_duplicate_id(void) {
     PASS();
 }
 
+static mt_subscription_t *make_subscription_with_id(const char *id)
+{
+    mt_subscription_t *sub = mt_subscription_new();
+    if (!sub) { return NULL; }
+    if (mt_id_parse(id, &sub->id) != MT_OK ||
+        mt_strset(&sub->name, "test subscription") != MT_OK ||
+        mt_strset(&sub->iface, "eth0") != MT_OK) {
+        mt_subscription_free(sub);
+        return NULL;
+    }
+    return sub;
+}
+
+TEST cross_source_ids_rejected_in_app_create(void) {
+    mt_config_t cfg;
+    ASSERT_EQ(MT_OK, mt_config_init_defaults(&cfg));
+    mt_group_t *group = make_group("existing", false);
+    ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &group->id));
+    ASSERT_EQ(MT_OK, mt_config_add_group(&cfg, group));
+    mt_subscription_t *sub = make_subscription_with_id("aabbccdd");
+    ASSERT(sub);
+    sub->priority = group->priority; /* same ID and same priority */
+    ASSERT_EQ(MT_OK, mt_config_add_subscription(&cfg, sub));
+    ASSERT_EQ(MT_ERR_EXIST, mt_config_check_route_id_collisions(&cfg));
+    mt_cache_t *cache = mt_cache_create(0);
+    mt_app_deps_t deps = {.cfg = &cfg, .cache = cache};
+    ASSERT(mt_app_create(&deps) == NULL);
+    mt_cache_destroy(cache);
+    mt_config_clear(&cfg);
+    PASS();
+}
+
+TEST app_single_and_bulk_mutations_reject_cross_source_ids(void) {
+    mt_config_t cfg;
+    ASSERT_EQ(MT_OK, mt_config_init_defaults(&cfg));
+    mt_cache_t *cache = mt_cache_create(0);
+    mt_app_deps_t deps = {.cfg = &cfg, .cache = cache};
+    mt_app_t *app = mt_app_create(&deps);
+    ASSERT(app);
+
+    mt_group_t *group = make_group("original", false);
+    ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &group->id));
+    ASSERT_EQ(MT_OK, mt_app_add_group(app, group));
+
+    mt_subscription_t *sub = make_subscription_with_id("aabbccdd");
+    ASSERT(sub);
+    ASSERT_EQ(MT_ERR_EXIST, mt_app_add_subscription(app, sub));
+    ASSERT_EQ(0u, mt_app_subscription_count(app));
+
+    mt_subscription_t **bulk_subs = calloc(1, sizeof(*bulk_subs));
+    ASSERT(bulk_subs);
+    bulk_subs[0] = make_subscription_with_id("aabbccdd");
+    ASSERT(bulk_subs[0]);
+    ASSERT_EQ(MT_ERR_EXIST, mt_app_replace_subscriptions(app, bulk_subs, 1));
+    ASSERT_EQ(0u, mt_app_subscription_count(app));
+
+    sub = make_subscription_with_id("11223344");
+    ASSERT(sub);
+    ASSERT_EQ(MT_OK, mt_app_add_subscription(app, sub));
+    mt_group_t *dup_group = make_group("duplicate", false);
+    ASSERT_EQ(MT_OK, mt_id_parse("11223344", &dup_group->id));
+    ASSERT_EQ(MT_ERR_EXIST, mt_app_add_group(app, dup_group));
+
+    mt_group_t **bulk_groups = calloc(1, sizeof(*bulk_groups));
+    ASSERT(bulk_groups);
+    bulk_groups[0] = make_group("would replace", false);
+    ASSERT_EQ(MT_OK, mt_id_parse("11223344", &bulk_groups[0]->id));
+    ASSERT_EQ(MT_ERR_EXIST, mt_app_replace_groups(app, bulk_groups, 1));
+    ASSERT_EQ(1u, mt_app_user_group_count(app));
+    ASSERT_STR_EQ("original", mt_ruleset_group(mt_app_user_group_at(app, 0))->name);
+    ASSERT_EQ(1u, mt_app_subscription_count(app));
+    ASSERT_EQ(MT_OK, mt_config_check_route_id_collisions(&cfg));
+
+    mt_app_destroy(app);
+    mt_cache_destroy(cache);
+    mt_config_clear(&cfg);
+    PASS();
+}
+
+TEST reload_rejects_collision_with_preserved_group(void) {
+    mt_config_t cfg;
+    ASSERT_EQ(MT_OK, mt_config_init_defaults(&cfg));
+    mt_group_t *group = make_group("retained", false);
+    ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &group->id));
+    ASSERT_EQ(MT_OK, mt_config_add_group(&cfg, group));
+    mt_cache_t *cache = mt_cache_create(0);
+    mt_app_deps_t deps = {.cfg = &cfg, .cache = cache};
+    mt_app_t *app = mt_app_create(&deps);
+    ASSERT(app);
+
+    /* No 'groups' key: the active group is cloned only after the YAML
+     * loader has processed this colliding subscription. */
+    const char *yaml = "configVersion: 0.7.0\n"
+                       "subscriptions:\n"
+                       "  - id: aabbccdd\n"
+                       "    priority: 300\n";
+    char path[] = "/tmp/mt-cross-route-reload-XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT(fd >= 0);
+    ASSERT_EQ((ssize_t)strlen(yaml), write(fd, yaml, strlen(yaml)));
+    close(fd);
+    ASSERT_EQ(MT_ERR_EXIST, mt_app_reload_config(app, path));
+    ASSERT_EQ(1u, mt_app_user_group_count(app));
+    ASSERT_STR_EQ("retained", mt_ruleset_group(mt_app_user_group_at(app, 0))->name);
+    ASSERT_EQ(0u, mt_app_subscription_count(app));
+    ASSERT_EQ(MT_OK, mt_config_check_route_id_collisions(&cfg));
+    unlink(path);
+
+    mt_app_destroy(app);
+    mt_cache_destroy(cache);
+    mt_config_clear(&cfg);
+    PASS();
+}
+
 TEST add_group_rejects_duplicate_rule_id(void) {
     mt_config_t cfg;
     mt_config_init_defaults(&cfg);
@@ -281,6 +395,9 @@ int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
     RUN_TEST(create_wraps_preexisting_groups);
     RUN_TEST(add_group_rejects_duplicate_id);
+    RUN_TEST(cross_source_ids_rejected_in_app_create);
+    RUN_TEST(app_single_and_bulk_mutations_reject_cross_source_ids);
+    RUN_TEST(reload_rejects_collision_with_preserved_group);
     RUN_TEST(add_group_rejects_duplicate_rule_id);
     RUN_TEST(add_group_while_not_running_does_not_touch_netfilter);
     RUN_TEST(add_group_while_running_rolls_back_on_failure);

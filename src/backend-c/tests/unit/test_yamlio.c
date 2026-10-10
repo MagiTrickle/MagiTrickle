@@ -117,6 +117,41 @@ TEST duplicate_ids_fail(void)
     PASS();
 }
 
+/* Cross-source IDs must be unique even if priorities differ or neither
+ * route is enabled. Otherwise ipset and chain identities alias. */
+TEST cross_source_ids_rejected_in_yaml(void)
+{
+    mt_config_t cfg;
+    /* Regress the exact bug: identical source IDs and numeric priorities. */
+    const char *collision =
+        "configVersion: 0.7.0\n"
+        "groups:\n"
+        "  - id: aabbccdd\n"
+        "    priority: 300\n"
+        "subscriptions:\n"
+        "  - id: aabbccdd\n"
+        "    priority: 300\n";
+    ASSERT_EQ(MT_OK, mt_config_init_defaults(&cfg));
+    ASSERT_EQ(MT_ERR_EXIST, load_str(&cfg, collision));
+    mt_config_clear(&cfg);
+
+    const char *distinct =
+        "configVersion: 0.7.0\n"
+        "groups:\n"
+        "  - id: aabbccdd\n"
+        "    priority: 300\n"
+        "subscriptions:\n"
+        "  - id: 11223344\n"
+        "    priority: 300\n";
+    ASSERT_EQ(MT_OK, mt_config_init_defaults(&cfg));
+    ASSERT_EQ(MT_OK, load_str(&cfg, distinct));
+    ASSERT_EQ(MT_OK, mt_config_check_route_id_collisions(&cfg));
+    ASSERT_EQ(1u, cfg.n_groups);
+    ASSERT_EQ(1u, cfg.n_subscriptions);
+    mt_config_clear(&cfg);
+    PASS();
+}
+
 TEST type_mismatch_fails(void)
 {
     mt_config_t cfg;
@@ -381,6 +416,7 @@ int main(int argc, char **argv)
     RUN_TEST(legacy_duration_normalization);
     RUN_TEST(absent_enable_is_false_and_color_normalized);
     RUN_TEST(duplicate_ids_fail);
+    RUN_TEST(cross_source_ids_rejected_in_yaml);
     RUN_TEST(type_mismatch_fails);
     RUN_TEST(corrupt_yaml_fails);
     RUN_TEST(save_shape_matches_committed_fixture);

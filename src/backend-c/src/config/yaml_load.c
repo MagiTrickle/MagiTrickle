@@ -828,7 +828,8 @@ mt_err_t mt_config_load_buffer(mt_config_t *cfg, const char *buf, size_t len)
         }
     }
 
-    err = mt_profiles_normalize(cfg);
+    err = mt_config_check_route_id_collisions(cfg);
+    if (err == MT_OK) { err = mt_profiles_normalize(cfg); }
 out:
     free(version_owned);
     yaml_document_delete(&doc);

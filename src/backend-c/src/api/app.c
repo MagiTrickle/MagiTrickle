@@ -216,6 +216,7 @@ mt_err_t mt_app_republish_dns_snapshot(mt_app_t *app) {
 }
 
 mt_app_t *mt_app_create(const mt_app_deps_t *deps) {
+    if (mt_config_check_route_id_collisions(deps->cfg) != MT_OK) { return NULL; }
     mt_app_t *app = calloc(1, sizeof(*app));
     if (!app) { return NULL; }
     app->cfg = deps->cfg;
@@ -359,6 +360,13 @@ mt_err_t mt_app_replace_groups(mt_app_t *app, mt_group_t **groups, size_t n) {
             if (!next[i]) { err = MT_ERR_NOMEM; goto done; }
         }
     }
+    /* The full candidate must not reuse a subscription's netfilter ID.
+     * Detect conflicts before disabling or replacing any live group. */
+    mt_config_t cross_view = *app->cfg;
+    cross_view.groups = replacement.groups;
+    cross_view.n_groups = n;
+    err = mt_config_check_route_id_collisions(&cross_view);
+    if (err != MT_OK) { goto done; }
     if (app->pipeline) {
         mt_config_t view = *app->cfg;
         view.groups = replacement.groups; view.n_groups = n;
@@ -420,6 +428,12 @@ done:
 static mt_err_t mt_app_add_group_unlocked(mt_app_t *app, mt_group_t *group) {
     for (size_t i = 0; i < app->cfg->n_groups; i++) {
         if (mt_id_equal(app->cfg->groups[i]->id, group->id)) {
+            mt_group_free(group);
+            return MT_ERR_EXIST;
+        }
+    }
+    for (size_t i = 0; i < app->cfg->n_subscriptions; i++) {
+        if (mt_id_equal(app->cfg->subscriptions[i]->id, group->id)) {
             mt_group_free(group);
             return MT_ERR_EXIST;
         }
@@ -569,6 +583,12 @@ static mt_err_t mt_app_add_subscription_unlocked(mt_app_t *app, mt_subscription_
             return MT_ERR_EXIST;
         }
     }
+    for (size_t i = 0; i < app->cfg->n_groups; i++) {
+        if (mt_id_equal(app->cfg->groups[i]->id, sub->id)) {
+            mt_subscription_free(sub);
+            return MT_ERR_EXIST;
+        }
+    }
     sub->revision = ++app->next_sub_revision;
     sub->sync_pending = false;
     mt_err_t err = mt_config_add_subscription(app->cfg, sub);
@@ -611,6 +631,17 @@ static mt_err_t mt_app_replace_subscriptions_unlocked(mt_app_t *app, mt_subscrip
             mt_config_clear_subscriptions(&replacement);
             return reserve_err;
         }
+    }
+    /* Check the complete candidate against live user groups before the
+     * subscription registry (or any netfilter ruleset) is changed. */
+    mt_config_t cross_view = *app->cfg;
+    cross_view.subscriptions = replacement.subscriptions;
+    cross_view.n_subscriptions = n;
+    mt_err_t id_err = mt_config_check_route_id_collisions(&cross_view);
+    if (id_err != MT_OK) {
+        free(subs); /* elements belong to replacement */
+        mt_config_clear_subscriptions(&replacement);
+        return id_err;
     }
     mt_subscription_t **new_arr = replacement.subscriptions;
     free(subs); /* array shell only; elements moved into new_arr */
@@ -1195,7 +1226,10 @@ mt_err_t mt_app_reload_config(mt_app_t *app, const char *path) {
             err = clone_reload_group(&next, app->cfg->groups[i]);
         }
     }
-    /* Absent subscriptions still CLEAR, as before; absent profiles overlay. */
+    /* Absent subscriptions still CLEAR, as before; absent profiles overlay.
+     * Recheck after restoring groups omitted from the YAML overlay: a newly
+     * loaded subscription might collide with one of those preserved groups. */
+    if (err == MT_OK) { err = mt_config_check_route_id_collisions(&next); }
     if (err == MT_OK) { err = mt_profiles_normalize(&next); }
     if (err != MT_OK) { mt_config_clear(&next); return err; }
 

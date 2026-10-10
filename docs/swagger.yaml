@@ -202,6 +202,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/types.ErrorRes'
+        "409":
+          description: Conflict - идентификатор уже используется группой или подпиской
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
         "500":
           description: Internal Server Error
           schema:
@@ -233,6 +237,10 @@ paths:
             $ref: '#/definitions/types.GroupsRes'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "409":
+          description: Conflict - повторяющиеся идентификаторы групп или совпадение с подпиской
           schema:
             $ref: '#/definitions/types.ErrorRes'
         "500":

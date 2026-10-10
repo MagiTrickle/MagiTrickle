@@ -3400,12 +3400,13 @@ managed slot, or append when no such slot exists. Foreign rule contents and
 relative order are preserved. Ordinary append/insert/delete semantics remain
 unchanged, and staged-state reset/rebuild uses the same reconciliation.
 
-Equal priorities use lexical chain-name order (the common configured prefix
-plus the canonical eight-character hex ID); the higher ID wins. This is an
-explicit deterministic tie policy, not a claim to preserve historical
-enable/list order, which could change after individual updates. Filter ACCEPT
-and NAT MASQUERADE rules keep their existing behavior; IPv4, IPv6, blackhole
-routing, and the Keenetic-critical CONNMARK save rule are preserved.
+In the original 2026-10-09 implementation, equal priorities used lexical
+chain-name order (the common configured prefix plus the canonical
+eight-character hex ID), so the higher ID won regardless of source type.
+This original rule was deterministic, not dependent on enable/list order,
+and is superseded by the 2026-10-10 group-over-subscription amendment below.
+Filter ACCEPT and NAT MASQUERADE rules retain their behavior; IPv4, IPv6,
+blackhole routing, and the Keenetic-critical CONNMARK save rule are preserved.
 
 The frontend binds its existing edge editor to the model, rejects invalid
 values, bounds the increment/decrement buttons, defaults old responses/imports,
@@ -3428,6 +3429,64 @@ replacing D-73's original upper bound of 1000. Frontend validation, increment
 controls, JSON API validation, YAML loading, and the API reference use this
 same limit. Explicit 1000 is rejected without mutation, just like larger
 values; existing configurations containing it must be edited to the accepted
-range before loading. Defaults, ordering, ties, and omitted-field behavior
-remain as defined in D-73. Boundary tests cover acceptance of 999 and rejection
-of 1000, including preservation of live and persisted state on invalid writes.
+range before loading. Defaults and omitted-field behavior remain as defined
+in D-73; this range-only change did not alter the ordering/tie policy at the
+time. The subsequent amendment below supersedes the original cross-source
+tie rule. Boundary tests cover acceptance of 999 and rejection of 1000,
+including preservation of live and persisted state on invalid writes.
+
+### D-73 amendment — User groups win equal-priority ties (2026-10-10)
+
+At the user's request, equal numeric routing priority now favors manually
+configured user groups over subscription-derived rule sets. This is an
+intentional, observable divergence from D-73's original higher-ID-wins
+policy across source types. Precedence for overlapping enabled sets is:
+
+1. The higher numeric `priority` wins (range 1–999), regardless of source.
+2. At equal numeric priority, a user group wins over a subscription,
+   regardless of either object's ID.
+3. At equal numeric priority **within the same source type**, the higher
+   canonical eight-character hex ID still wins, as in the original policy.
+
+For example, group(300) beats subscription(300) regardless of IDs, but
+subscription(301) beats group(300). This supersedes the original cross-source
+tie policy above; the earlier 999-limit amendment did not change ties *at
+the time* and must not be interpreted as restoring the previous policy.
+Enable order, list order, and service restarts do not change the outcome.
+
+The subscription-to-runtime-group converter carries a runtime-only
+`from_subscription` flag; no new YAML/API field is introduced. The effective
+iptables order key is `2 * priority + (from_subscription ? 0 : 1)`, sorted
+ascending in the shared mangle PREROUTING chain. Because MARK/CONNMARK
+updates are non-terminating, the last matching rule wins. If the keys
+match, the existing stable chain-name/ID comparison breaks the tie.
+Both initial enable and live/rebuild staging calculate the same key.
+Stored priority values, defaults (300/100), accepted range (1–999), DNS
+set membership, profile failover, and unrelated firewall rules are unchanged.
+
+### D-73 amendment — Reject cross-source ID collisions (2026-10-10)
+
+User groups and subscriptions use the same netfilter chain/ipset naming format
+based on their eight-hex-digit ID. A group and subscription with identical IDs
+would therefore share a jump target, and the ordered iptables compiler would
+deduplicate the two entries before their group/subscription tie-break could
+apply. This is not fixed merely by giving them distinct effective priorities.
+
+The IDs of user groups and subscriptions must now be disjoint, irrespective of
+configured priority or enabled state. A cross-source collision is rejected with
+`MT_ERR_EXIST` during YAML loading, API single-object creation (HTTP 409), and
+bulk group/subscription updates (HTTP 409, without changing live state).
+Startup also checks programmatically constructed configurations. SIGHUP reload
+rechecks after retaining groups omitted from the YAML overlay, before touching
+live routes; conflicts leave the previous configuration active. Existing
+configurations with cross-source duplicate IDs must assign a new unique ID to
+one resource before they can be loaded.
+
+IDs are not silently rewritten; valid existing resource IDs, netfilter
+names, and the group's precedence over subscriptions on a numeric tie remain
+unchanged. Neither priority values nor the tie-break calculation are changed.
+
+Regression tests in `test_priority_source.c` cover equal-value source
+precedence independent of arrival order and IDs, a strictly higher
+subscription priority, live reordering, disable/re-enable and rebuild,
+and same-source ID ordering with in-memory iptables transports.

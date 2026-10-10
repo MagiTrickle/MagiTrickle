@@ -397,7 +397,7 @@ static void handle_put_subscriptions(mt_http_req_t *req, mt_http_res_t *res, voi
 
     mt_err_t err = mt_app_replace_subscriptions(ctx->app, new_subs, (size_t)n); /* always takes ownership */
     if (err != MT_OK) {
-        mt_http_res_write_error(res, 500, mt_err_str(err));
+        mt_http_res_write_error(res, err == MT_ERR_EXIST ? 409 : 500, mt_err_str(err));
         return;
     }
     if (maybe_save(ctx, req) != MT_OK) {

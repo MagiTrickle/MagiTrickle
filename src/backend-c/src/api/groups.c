@@ -434,7 +434,10 @@ static void handle_put_groups(mt_http_req_t *req, mt_http_res_t *res, void *ud) 
     cJSON_Delete(json);
 
     mt_err_t err = mt_app_replace_groups(ctx->app, new_groups, (size_t)n_req);
-    if (err != MT_OK) { mt_http_res_write_error(res, 500, mt_err_str(err)); return; }
+    if (err != MT_OK) {
+        mt_http_res_write_error(res, err == MT_ERR_EXIST ? 409 : 500, mt_err_str(err));
+        return;
+    }
     cJSON *out = cJSON_CreateObject();
     cJSON *arr = cJSON_AddArrayToObject(out, "groups");
     for (size_t k = 0; k < mt_app_user_group_count(ctx->app); k++) {
@@ -470,7 +473,7 @@ static void handle_create_group(mt_http_req_t *req, mt_http_res_t *res, void *ud
 
     err = mt_app_add_group(ctx->app, group); /* always takes ownership */
     if (err != MT_OK) {
-        mt_http_res_write_error(res, 500, mt_err_str(err));
+        mt_http_res_write_error(res, err == MT_ERR_EXIST ? 409 : 500, mt_err_str(err));
         return;
     }
     mt_http_res_write_json(res, 200, group_to_json(group, true)); /* still valid: no free on success */

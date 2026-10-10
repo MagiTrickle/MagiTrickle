@@ -244,7 +244,7 @@ static mt_err_t ruleset_enable_locked(mt_ruleset_t *rs) {
         mt_ipset_free(ipset);
         return MT_ERR_NOMEM;
     }
-    mt_ipset_to_link_set_priority(link, rs->group->priority);
+    mt_ipset_to_link_set_priority(link, mt_group_routing_order(rs->group));
 
     mt_err_t err = MT_OK;
     if (rs->group->profile && *rs->group->profile) {
@@ -313,7 +313,7 @@ mt_err_t mt_ruleset_prepare_iptables(mt_ruleset_t *rs) {
     if (!rs->enabled) { return MT_OK; }
     if (!configured_enabled(rs)) { return MT_OK; }
     if (!rs->ipset_to_link) { return MT_OK; }
-    mt_ipset_to_link_set_priority(rs->ipset_to_link, rs->group->priority);
+    mt_ipset_to_link_set_priority(rs->ipset_to_link, mt_group_routing_order(rs->group));
     return mt_ipset_to_link_prepare_iptables(rs->ipset_to_link);
 }
 

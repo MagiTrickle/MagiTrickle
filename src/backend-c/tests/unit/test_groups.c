@@ -651,10 +651,28 @@ TEST failed_group_save_returns_error_and_keeps_dirty_retry_possible(void) {
     mt_config_clear(&loaded); harness_stop(h); PASS();
 }
 
+TEST group_create_and_bulk_reject_subscription_id_collision(void) {
+    harness_t *h = harness_start(); ASSERT(h);
+    mt_subscription_t *sub = mt_subscription_new();
+    ASSERT(sub);
+    ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &sub->id));
+    ASSERT_EQ(MT_OK, mt_strset(&sub->name, "cloud"));
+    ASSERT_EQ(MT_OK, mt_strset(&sub->iface, "eth0"));
+    ASSERT_EQ(MT_OK, mt_app_add_subscription(h->app, sub));
+
+    ASSERT_EQ(409, do_request("POST", "/api/v1/groups",
+        "{\"id\":\"aabbccdd\",\"name\":\"conflicting\"}", NULL));
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/groups",
+        "{\"groups\":[{\"id\":\"aabbccdd\",\"name\":\"conflicting\"}]}", NULL));
+    ASSERT_EQ(0u, mt_app_user_group_count(h->app));
+    ASSERT_EQ(1u, mt_app_subscription_count(h->app));
+    harness_stop(h); PASS();
+}
+
 TEST invalid_batch_preserves_existing_groups(void) {
     harness_t *h = harness_start(); ASSERT(h);
     ASSERT_EQ(200, do_request("POST", "/api/v1/groups", "{\"id\":\"aabbccdd\",\"name\":\"original\"}", NULL));
-    ASSERT_EQ(500, do_request("PUT", "/api/v1/groups", "{\"groups\":[{\"id\":\"aabbccdd\"},{\"id\":\"aabbccdd\"}]}", NULL));
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/groups", "{\"groups\":[{\"id\":\"aabbccdd\"},{\"id\":\"aabbccdd\"}]}", NULL));
     cJSON *out = NULL; ASSERT_EQ(200, do_request("GET", "/api/v1/groups?with_rules=true", NULL, &out));
     cJSON *groups = cJSON_GetObjectItemCaseSensitive(out, "groups"); ASSERT_EQ(1, cJSON_GetArraySize(groups));
     ASSERT_STR_EQ("original", jstr(cJSON_GetArrayItem(groups, 0), "name"));
@@ -744,6 +762,7 @@ int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
     RUN_TEST(fifty_thousand_group_rules_full_compact_strict_and_persist);
     RUN_TEST(failed_group_save_returns_error_and_keeps_dirty_retry_possible);
+    RUN_TEST(group_create_and_bulk_reject_subscription_id_collision);
     RUN_TEST(invalid_batch_preserves_existing_groups);
     RUN_TEST(group_priority_updates_persists_and_omission_preserves_it);
     RUN_TEST(invalid_group_priorities_do_not_change_live_or_persisted_state);

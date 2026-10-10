@@ -50,10 +50,21 @@ typedef struct mt_group {
     char *iface; /* yaml key: interface; configured primary, never runtime active */
     char *profile; /* optional stable profile ID; authoritative when nonempty */
     bool enable;
+    bool from_subscription; /* runtime only; user groups default to false */
     uint16_t priority;
     mt_rule_t **rules;
     size_t n_rules;
 } mt_group_t;
+
+/* Internal ordering key, never persisted in priority. The low bit gives a
+ * user group precedence over a subscription only when their numbers match:
+ * group(p) < subscription(p + 1). Equal keys retain the stable ID tie-break
+ * in the iptables compiler. Both initial enable and rebuild use this key. */
+_Static_assert(MT_PRIORITY_MAX <= (UINT16_MAX - 1u) / 2u,
+               "routing priority key must fit in uint16_t");
+static inline uint16_t mt_group_routing_order(const mt_group_t *g) {
+    return (uint16_t)(2u * g->priority + (g->from_subscription ? 0u : 1u));
+}
 
 typedef struct mt_sub_rule {
     mt_id_t id;
@@ -174,6 +185,10 @@ mt_err_t mt_app_config_clone(mt_app_config_t *dst, const mt_app_config_t *src);
 
 mt_err_t mt_config_init_defaults(mt_config_t *c);
 void mt_config_clear(mt_config_t *c);
+/* A group and subscription must never share an ID: both otherwise use the
+ * same chain/ipset names, so their ordered jumps collapse into one.
+ * Checks cross-source IDs only; returns MT_ERR_EXIST on a collision. */
+mt_err_t mt_config_check_route_id_collisions(const mt_config_t *c);
 mt_err_t mt_config_add_group(mt_config_t *c, mt_group_t *g);
 /* Frees c->groups[idx] and shifts the remaining pointers down (idx must
  * be < c->n_groups). */

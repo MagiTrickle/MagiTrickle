@@ -13,6 +13,7 @@ mt_group_t *mt_sub_runtime_group(const mt_subscription_t *sub) {
 
     g->id = sub->id;
     g->priority = sub->priority;
+    g->from_subscription = true;
 
     const char *name = sub->name;
     char fallback[16 + MT_ID_STR_LEN];

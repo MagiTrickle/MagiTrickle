@@ -1,4 +1,5 @@
 #include "magitrickle/models.h"
+#include "magitrickle/lookup.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -268,6 +269,28 @@ void mt_config_clear(mt_config_t *c)
     }
     free(c->subscriptions);
     memset(c, 0, sizeof(*c));
+}
+
+/* Netfilter chain and ipset names are derived from the 4-byte ID without
+ * encoding the resource kind. Reject cross-source duplicates before enabling
+ * routes, rather than letting two ordered jumps alias the same rule.
+ * Index groups once so bulk loads stay linear in the number of resources. */
+mt_err_t mt_config_check_route_id_collisions(const mt_config_t *c)
+{
+    if (c->n_groups == 0 || c->n_subscriptions == 0) { return MT_OK; }
+    mt_lookup_t ids = {0};
+    mt_err_t err = MT_OK;
+    for (size_t i = 0; i < c->n_groups && err == MT_OK; i++) {
+        const mt_id_t *id = &c->groups[i]->id;
+        err = mt_lookup_put(&ids, id->b, sizeof(id->b), i, NULL);
+    }
+    for (size_t i = 0; i < c->n_subscriptions && err == MT_OK; i++) {
+        const mt_id_t *id = &c->subscriptions[i]->id;
+        size_t index;
+        if (mt_lookup_get(&ids, id->b, sizeof(id->b), &index)) { err = MT_ERR_EXIST; }
+    }
+    mt_lookup_clear(&ids);
+    return err;
 }
 
 mt_err_t mt_config_add_group(mt_config_t *c, mt_group_t *g)

@@ -292,6 +292,24 @@ TEST create_subscription_duplicate_id_is_409(void) {
     PASS();
 }
 
+TEST subscription_create_and_bulk_reject_group_id_collision(void) {
+    harness_t *h = harness_start(); ASSERT(h);
+    mt_group_t *group = mt_group_new();
+    ASSERT(group);
+    ASSERT_EQ(MT_OK, mt_id_parse("aabbccdd", &group->id));
+    ASSERT_EQ(MT_OK, mt_strset(&group->name, "manual"));
+    ASSERT_EQ(MT_OK, mt_strset(&group->iface, "eth0"));
+    ASSERT_EQ(MT_OK, mt_app_add_group(h->app, group));
+
+    ASSERT_EQ(409, do_request("POST", "/api/v1/subscriptions",
+        "{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\"}", NULL));
+    ASSERT_EQ(409, do_request("PUT", "/api/v1/subscriptions",
+        "{\"subscriptions\":[{\"id\":\"aabbccdd\",\"url\":\"https://example.com/list\"}]}", NULL));
+    ASSERT_EQ(0u, mt_app_subscription_count(h->app));
+    ASSERT_EQ(1u, mt_app_user_group_count(h->app));
+    harness_stop(h); PASS();
+}
+
 TEST delete_subscription_removes_it_and_404s_unknown(void) {
     harness_t *h = harness_start();
     ASSERT(h != NULL);
@@ -699,6 +717,7 @@ int main(int argc, char **argv) {
     RUN_TEST(create_subscription_requires_url);
     RUN_TEST(create_subscription_defaults_and_appears_in_list);
     RUN_TEST(create_subscription_duplicate_id_is_409);
+    RUN_TEST(subscription_create_and_bulk_reject_group_id_collision);
     RUN_TEST(delete_subscription_removes_it_and_404s_unknown);
     RUN_TEST(put_subscriptions_missing_key_and_missing_url);
     RUN_TEST(put_subscriptions_bulk_replace_reuses_ids_and_seeds_last_update);

@@ -223,11 +223,17 @@ transcripts + IT in netns.
 - `iptables` batching: desired state compiled against `iptables-save`
   output; committed via `iptables-restore --noflush`; external flushes are
   healed on the next Commit (netfilterd hook → ForceCommitIPTables).
-- D-73 explicitly defines overlapping-set precedence: the highest group or
-  subscription `priority` wins, with higher ID breaking ties. Managed mangle
-  PREROUTING jumps are reconciled in ascending priority/ID order because MARK
+- D-73 (as amended on 2026-10-10) defines overlapping-set precedence:
+  the highest numeric group/subscription `priority` wins; when equal, a user
+  group beats a subscription regardless of ID. Within the same source type,
+  higher ID still wins an equal-priority tie. Managed mangle PREROUTING jumps
+  are reconciled in ascending effective priority/source/ID order because MARK
   and CONNMARK saving do not terminate traversal. All matching DNS sets remain
   populated, and unrelated firewall rules retain their relative order.
+  Cross-source duplicate group/subscription IDs are rejected (D-73 amendment)
+  because both sources otherwise generate identical chain/ipset names. YAML
+  loading and API bulk updates fail instead of silently changing IDs, while
+  invalid SIGHUP overlays preserve the active configuration.
 
 ## 8. Subscriptions
 
