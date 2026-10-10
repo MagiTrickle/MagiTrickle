@@ -38,12 +38,15 @@ Source: `config/config.go`, `config/app.go`, `config.go`
 
 Source: `api/http.go`, `api/unixsocket.go`, `api/v1/router.go`,
 `api/v1/handlers.go`, `api/v1/subscription_handlers.go`, `api/auth/*`,
-`docs/swagger.yaml`. Existing test: `src/backend/tests/handlers_v1_test.go`
+`docs/swagger.yaml`. New C-only update source (D-74):
+`src/backend-c/src/platform/update.c`, `src/backend-c/src/update/release.c`.
+Existing test: `src/backend/tests/handlers_v1_test.go`
 (in-process, groups PUT/GET round-trip, subnet ipset behaviour with fake
 netfilter absent — subnet rules verified via RuleSet.sync fake?, см. файл).
 
 Transports: TCP HTTP (`HTTPWeb.Host`, only when `HTTPWeb.Enabled`) and Unix
-socket `<SockPath>` (always on, **never authenticated**). Same router.
+socket `<SockPath>` (always on, without the general HTTP auth middleware).
+Same router; **D-74 requires root JWT verification for install even on Unix**.
 
 Auth middleware (HTTP only): applies to paths starting `/api/` except
 `/api/v1/auth`; only active when `HTTPWeb.Auth.Enabled`. Non-`/api/` paths
@@ -70,6 +73,25 @@ Routes (all under `/api/v1`):
 | GET /system/interfaces | 200 `{"interfaces":[{"id","name"?}]}` |
 | POST /system/config/save | 200 `{}`? (writes config; error → 500) |
 | POST /system/hooks/netfilterd | body `{"type","table"}`; triggers iptables re-commit; 200 |
+| **GET /system/update (D-74)** | **200** `{"installed_version":string,"installed_revision":positive_integer,"asset_suffix":string,"can_install":bool,"reason":string}`; purely local, no GitHub request; capability failures are described in `reason`, allocation failure → **500** |
+| **GET /system/update/status (D-74)** | **200** `{"stage":"idle"}` when no job, otherwise persisted job JSON; stages `queued/checking/downloading/verifying/backing_up/installing/restarting/succeeded/failed/interrupted`; invalid/unreadable persisted status or allocation failure → **500** |
+| **POST /system/update/install (D-74)** | JSON `{"tag":string,"release_id":positive_safe_integer,"preview":bool}` (exact fields); accepted → **202** `{"job_id":"<32 hex>","stage":"queued"}`; invalid/non-newer/cross-site/wrong content type → **400**, missing verified root JWT/unavailable installer → **403**, active update → **409**, preparation failure → **500** |
+
+D-74 routes are an **intentional additive C-only contract**, absent from the
+historical Go parity surface. Both new GET responses have
+`Cache-Control: no-store`. Non-idle status includes `job_id`; optional
+persisted fields are `tag`, `previous_version`, `target_version`,
+`target_revision`, `package_size`, `backup_path`, `error`,
+`started_at`, `finished_at` and `package_installed`.
+The `interrupted` state is synthesized if an active job's lock is no longer
+held. POST requires a verified **root** JWT even when normal HTTP auth is
+disabled and when called through the Unix socket. Existing TCP auth
+middleware may first return 401. The 202 response does not mean installation
+succeeded; the client must poll the status route and, after restart, confirm
+the reported installed version/revision. Errors retain the usual JSON
+`{"error":"..."}` body. Verify via unit/HTTP contract tests plus
+on-router MAN tests; the older Go differential harness has no equivalent
+route (see D-74 and `docs/webui-updates.md`).
 
 Details to freeze exactly (from code):
 
@@ -292,6 +314,13 @@ Source: root Makefile, `files/**`, CI workflow.
 - Upgrade path: package replace + service restart; config preserved via
   conffiles; C binary must load the Go-era config byte-for-byte and (on
   save) keep the documented shape.
+- D-74 adds a separately packaged `mt-c-updater` helper: the WebUI begins
+  a root-authorized, on-demand `opkg`/`apk` installation of an exact GitHub
+  release asset after version/platform and SHA-256 validation. Persisted
+  `<AppStateDir>/update` status, bounded logs and pre-install config/auth
+  backups survive the daemon restart. The upgrade is non-transactional;
+  automatic binary rollback is **not** promised. Device testing is still
+  required; see `docs/webui-updates.md`.
 - Deps (must stay valid for the C build): Entware `libc, iptables`
   (+socat `_kn`); OpenWrt `libc, iptables-nft, iptables-mod-conntrack-extra,
   kmod-ipt-nat, kmod-ipt-ipset, ip6tables-nft`.

@@ -2,6 +2,7 @@
  * NetfilterDHook. */
 #include "magitrickle/system.h"
 #include "magitrickle/profiles_api.h"
+#include "magitrickle/update.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,7 @@ static void handle_netfilterd_hook(mt_http_req_t *req, mt_http_res_t *res, void 
 
 void mt_system_register_routes(mt_httpd_t *h, mt_system_ctx_t *ctx) {
     mt_profiles_register_routes(h, ctx);
+    mt_update_register_routes(h, ctx);
     must_route(h, "GET", "/api/v1/system/interfaces", handle_list_interfaces, ctx);
     must_route(h, "POST", "/api/v1/system/config/save", handle_save_config, ctx);
     must_route(h, "POST", "/api/v1/system/hooks/netfilterd", handle_netfilterd_hook, ctx);

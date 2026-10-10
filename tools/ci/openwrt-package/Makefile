@@ -40,6 +40,7 @@ define Build/Compile
 	$(MAKE) -C $(PKG_BUILD_DIR)/src/backend-c \
 		BUILD=openwrt-$(PKGARCH) \
 		MT_VERSION="$(PKG_VERSION)" \
+		MT_BUILD_TARGET="$(PKGARCH)" MT_PACKAGE_REVISION="$(PKG_RELEASE)" \
 		CROSS_COMPILE="$(TARGET_CROSS)" \
 		PLATFORM=openwrt \
 		WITH_DEPS=1 \
@@ -53,6 +54,9 @@ define Package/mt-c/install
 	$(INSTALL_BIN) \
 		$(PKG_BUILD_DIR)/src/backend-c/build/openwrt-$(PKGARCH)/magitrickled-c \
 		$(1)/usr/bin/magitrickled
+	$(INSTALL_BIN) \
+		$(PKG_BUILD_DIR)/src/backend-c/build/openwrt-$(PKGARCH)/mt-c-updater \
+		$(1)/usr/bin/mt-c-updater
 
 	$(INSTALL_DIR) $(1)/usr/share/magitrickle/skins/default
 	$(CP) $(PKG_BUILD_DIR)/src/frontend/dist/. \

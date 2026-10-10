@@ -98,6 +98,53 @@ definitions:
         example: iptables
         type: string
     type: object
+  types.UpdateInfoRes:
+    type: object
+    required: [installed_version, installed_revision, asset_suffix, can_install, reason]
+    properties:
+      installed_version: {type: string, example: '0.8.2.2'}
+      installed_revision: {type: integer, minimum: 1, example: 1}
+      asset_suffix: {type: string, example: entware_aarch64-3.10_kn.ipk}
+      can_install: {type: boolean}
+      reason: {type: string}
+  types.UpdateInstallReq:
+    type: object
+    additionalProperties: false
+    required: [tag, release_id, preview]
+    properties:
+      tag: {type: string, example: '0.8.3'}
+      release_id: {type: integer, format: int64, minimum: 1, maximum: 9007199254740991}
+      preview: {type: boolean}
+  types.UpdateAcceptedRes:
+    type: object
+    required: [job_id, stage]
+    properties:
+      job_id:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+      stage:
+        type: string
+        enum: [queued]
+  types.UpdateStatusRes:
+    type: object
+    required: [stage]
+    properties:
+      stage:
+        type: string
+        enum: [idle, queued, checking, downloading, verifying, backing_up, installing, restarting, succeeded, failed, interrupted]
+      job_id:
+        type: string
+        pattern: '^[0-9a-f]{32}$'
+      tag: {type: string}
+      previous_version: {type: string}
+      target_version: {type: string}
+      target_revision: {type: integer}
+      package_size: {type: integer}
+      backup_path: {type: string}
+      error: {type: string}
+      started_at: {type: integer}
+      finished_at: {type: integer}
+      package_installed: {type: boolean}
   types.RuleReq:
     properties:
       enable:
@@ -617,6 +664,94 @@ paths:
       summary: Хук эвента netfilter.d
       tags:
       - hooks
+  /api/v1/system/update:
+    get:
+      summary: Installed version and update capability
+      description: >-
+        Returns local build/job information without contacting GitHub (D-74).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.UpdateInfoRes'
+        "401":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "500":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+      tags:
+      - updates
+  /api/v1/system/update/status:
+    get:
+      summary: Last update status or idle
+      description: >-
+        Returns local build/job information without contacting GitHub (D-74).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.UpdateStatusRes'
+        "401":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "500":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+      tags:
+      - updates
+  /api/v1/system/update/install:
+    post:
+      summary: Queue a root-authorized GitHub release installation
+      description: >-
+        Requires a verified root JWT on HTTP and Unix transports, even if
+        general WebUI authentication is disabled. Revalidates the official
+        release and device package. HTTP 202 means queued, not installed (D-74).
+      consumes:
+      - application/json
+      parameters:
+      - in: body
+        name: json
+        required: true
+        schema:
+          $ref: '#/definitions/types.UpdateInstallReq'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Worker exec confirmed; job queued
+          schema:
+            $ref: '#/definitions/types.UpdateAcceptedRes'
+        "400":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "401":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "403":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "409":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+        "500":
+          description: Error
+          schema:
+            $ref: '#/definitions/types.ErrorRes'
+      tags:
+      - updates
   /api/v1/system/interfaces:
     get:
       description: Возвращает список интерфейсов

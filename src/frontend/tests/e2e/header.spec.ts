@@ -8,6 +8,22 @@ test.describe("Header Settings", () => {
       route.fulfill({ json: { groups: [] } }),
     );
     await page.route("**/interfaces", async (route) => route.fulfill({ json: { interfaces: [] } }));
+    // The header always mounts the updater; keep unrelated UI checks offline.
+    await page.route("**/system/update/status", (route) =>
+      route.fulfill({ json: { stage: "idle" } }),
+    );
+    await page.route("**/system/update", (route) =>
+      route.fulfill({
+        json: {
+          installed_version: "1.0.0",
+          installed_revision: 1,
+          asset_suffix: "test.ipk",
+          can_install: true,
+          reason: "",
+        },
+      }),
+    );
+    await page.route("https://api.github.com/**", (route) => route.fulfill({ json: [] }));
     await page.goto("/");
   });
 
@@ -15,7 +31,22 @@ test.describe("Header Settings", () => {
     // Version is in .version span.version-text
     const version = page.locator(".version .version-text");
     await expect(version).toBeVisible();
-    expect(version.textContent.length).toBeGreaterThan(0);
+    await expect(version).not.toHaveText("");
+  });
+
+  test("version popup opens from keyboard and follows language", async ({ page }) => {
+    const trigger = page.getByRole("button", { name: /Software update:/ });
+    await expect(trigger).toBeVisible();
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const popup = page.getByRole("dialog", { name: "Software update", exact: true });
+    await expect(popup).toBeVisible();
+    await expect(popup.getByRole("button", { name: "Up to date" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+
+    await page.locator(".locale button").click();
+    await page.getByRole("button", { name: /Обновление программы:/ }).click();
+    await expect(page.getByRole("dialog", { name: "Обновление программы" })).toBeVisible();
   });
 
   test("should rotate locale", async ({ page }) => {

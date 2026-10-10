@@ -73,6 +73,7 @@ define Build/Compile
 	$(MAKE) -C $(PKG_BUILD_DIR)/src/backend-c \
 		BUILD=entware-$(MAGITRICKLE_TARGET) \
 		MT_VERSION="$(PKG_VERSION)" \
+		MT_BUILD_TARGET="$(MAGITRICKLE_TARGET)" MT_PACKAGE_REVISION="$(PKG_RELEASE)" \
 		CROSS_COMPILE="$(TARGET_CROSS)" \
 		PLATFORM=entware \
 		$(if $(MAGITRICKLE_IS_KN),ENTWARE_KN=1) \
@@ -91,6 +92,9 @@ define Package/mt-c/install
 	$(INSTALL_BIN) \
 		$(PKG_BUILD_DIR)/src/backend-c/build/entware-$(MAGITRICKLE_TARGET)/magitrickled-c \
 		$(1)/opt/bin/magitrickled
+	$(INSTALL_BIN) \
+		$(PKG_BUILD_DIR)/src/backend-c/build/entware-$(MAGITRICKLE_TARGET)/mt-c-updater \
+		$(1)/opt/bin/mt-c-updater
 
 	$(INSTALL_DIR) $(1)/opt/usr/share/magitrickle/skins/default
 	$(CP) $(PKG_BUILD_DIR)/src/frontend/dist/. \

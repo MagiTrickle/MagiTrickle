@@ -131,7 +131,7 @@ endif
 
 BACKEND_DEPENDENCIES :=
 BACKEND_SOURCES := $(shell find ./src/backend-c/src ./src/backend-c/include -type f \( -name '*.c' -o -name '*.h' \) 2>/dev/null)
-BACKEND_BUILD_PROPERTIES := PLATFORM=\"$(PLATFORM)\" TARGET=\"$(TARGET)\" PKG_VERSION=\"$(PKG_VERSION)\" CROSS_COMPILE=\"$(CROSS_COMPILE)\" SYSROOT=\"$(SYSROOT)\" ENTWARE_KN=\"$(ENTWARE_KN)\"
+BACKEND_BUILD_PROPERTIES := PLATFORM=\"$(PLATFORM)\" TARGET=\"$(TARGET)\" PKG_VERSION=\"$(PKG_VERSION)\" PKG_REVISION=\"$(PKG_REVISION)\" CROSS_COMPILE=\"$(CROSS_COMPILE)\" SYSROOT=\"$(SYSROOT)\" ENTWARE_KN=\"$(ENTWARE_KN)\"
 
 FRONTEND_DEPENDENCIES := ./src/frontend/package.json ./src/frontend/package-lock.json
 FRONTEND_SOURCES := $(shell find ./src/frontend/src -type f 2>/dev/null)
@@ -197,11 +197,13 @@ $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME): FORCE
 $(STAMPS_DIR)/build-backend-$(UNIQUE_NAME): $(STAMPS_DIR)/download-backend $(BACKEND_SOURCES) $(STAMPS_DIR)/build-properties-backend-$(UNIQUE_NAME)
 	mkdir -p "$(COMPILE_DIR)"
 	$(MAKE) -C ./src/backend-c BUILD="$(UNIQUE_NAME)" MT_VERSION="$(PKG_VERSION)" \
+	    MT_BUILD_TARGET="$(TARGET)" MT_PACKAGE_REVISION="$(PKG_REVISION)" \
 	    $(if $(PLATFORM),PLATFORM="$(PLATFORM)") \
 	    $(if $(CROSS_COMPILE),CROSS_COMPILE="$(CROSS_COMPILE)") \
 	    $(if $(SYSROOT),SYSROOT="$(SYSROOT)") \
 	    $(if $(ENTWARE_KN),ENTWARE_KN=1)
 	cp "./src/backend-c/build/$(UNIQUE_NAME)/magitrickled-c" "$(COMPILE_DIR)/magitrickled"
+	cp "./src/backend-c/build/$(UNIQUE_NAME)/mt-c-updater" "$(COMPILE_DIR)/mt-c-updater"
 
 	@mkdir -p $(STAMPS_DIR)
 	@touch "$(STAMPS_DIR)/build-backend-$(UNIQUE_NAME)"
@@ -258,6 +260,7 @@ prepare_files: build
 	rm -rf "$(ROOT_DIR)"
 	mkdir -p "$(BIN_DIR)"
 	cp "$(COMPILE_DIR)/magitrickled" "$(BIN_DIR)/magitrickled"
+	cp "$(COMPILE_DIR)/mt-c-updater" "$(BIN_DIR)/mt-c-updater"
 	mkdir -p "$(USRSHARE_DIR)/magitrickle/skins/default"
 	cp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"
 	$(call _copy_files,./files/common)

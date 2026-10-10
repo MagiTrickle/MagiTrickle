@@ -4,6 +4,8 @@ import { serveStatic } from "hono/deno";
 import { logger } from "hono/logger";
 import { streamSSE } from "hono/streaming";
 
+import { registerMockUpdateRoutes } from "./update-mock.ts";
+
 import { cleanProfiles, profileError } from "../src/modules/settings/profiles-data.ts";
 import type { RuleChange } from "../src/modules/subscriptions/subscription-payload.ts";
 import type { Group, Interfaces, Profile, Subscription } from "../src/types.ts";
@@ -310,6 +312,9 @@ app.delete(`${API_BASE}/subscriptions/:id`, async (c) => {
   }
   return c.json({ error: "Subscription not found" }, 404);
 });
+
+// The on-device updater has no side effects in local development.
+registerMockUpdateRoutes(app, STATIC_TOKEN);
 
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));
 app.get(`${API_BASE}/logs`, async (c) => {

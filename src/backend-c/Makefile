@@ -21,6 +21,8 @@ CC       := $(CROSS_COMPILE)gcc
 BUILD    ?= $(if $(CROSS_COMPILE),cross-$(patsubst %-,%,$(CROSS_COMPILE)),host)
 BUILDDIR := build/$(BUILD)
 MT_VERSION ?= unattached
+MT_BUILD_TARGET ?=
+MT_PACKAGE_REVISION ?= 1
 
 # Set to any non-empty value to enable Keenetic (Entware `_kn`) platform
 # behavior -- currently just the ignored-interfaces list in api/app.c
@@ -48,6 +50,7 @@ CFLAGS   ?=
 CFLAGS   += $(CSTD) $(OPT) $(WARNINGS) -Iinclude -MMD -MP \
             -D_POSIX_C_SOURCE=200809L \
             -DMT_VERSION=\"$(MT_VERSION)\" -fno-common \
+            -DMT_BUILD_TARGET=\"$(MT_BUILD_TARGET)\" -DMT_PACKAGE_REVISION=$(MT_PACKAGE_REVISION) \
             $(if $(ENTWARE_KN),-DMT_ENTWARE_KN) \
             $(if $(filter entware,$(PLATFORM)),-DMT_PLATFORM_ENTWARE) \
             $(if $(filter openwrt,$(PLATFORM)),-DMT_PLATFORM_OPENWRT)
@@ -142,6 +145,7 @@ API_SRCS := \
     src/api/app.c \
     src/api/groups.c \
     src/api/system.c src/api/profiles_api.c \
+    src/update/release.c src/platform/update.c \
     src/api/staticfiles.c \
     src/api/subscriptions_api.c \
     src/crypto/jwt.c
@@ -164,6 +168,7 @@ LIB_SRCS := $(CORE_SRCS) $(CONFIG_SRCS) $(NETFILTER_SRCS) $(API_SRCS) $(SUBSCRIP
             $(INTERFACES_SRCS)
 
 MAIN_SRC := src/main/main.c
+UPDATER_SRC := src/tools/updater.c
 CONFIGTOOL_SRC := src/tools/configtool.c
 DNSTOOL_SRC := src/tools/dnstool.c
 CACHETOOL_SRC := src/tools/cachetool.c
@@ -177,6 +182,7 @@ INTERFACES_OBJS := $(INTERFACES_SRCS:%.c=$(BUILDDIR)/%.o)
 LIB_OBJS := $(CORE_OBJS) $(CONFIG_OBJS) $(NETFILTER_OBJS) $(API_OBJS) $(SUBSCRIPTIONS_OBJS) \
             $(INTERFACES_OBJS)
 MAIN_OBJ := $(MAIN_SRC:%.c=$(BUILDDIR)/%.o)
+UPDATER_OBJ := $(UPDATER_SRC:%.c=$(BUILDDIR)/%.o)
 CONFIGTOOL_OBJ := $(CONFIGTOOL_SRC:%.c=$(BUILDDIR)/%.o)
 DNSTOOL_OBJ := $(DNSTOOL_SRC:%.c=$(BUILDDIR)/%.o)
 CACHETOOL_OBJ := $(CACHETOOL_SRC:%.c=$(BUILDDIR)/%.o)
@@ -223,10 +229,14 @@ FUZZ_BINS := $(FUZZ_SRCS:tests/fuzz/%.c=$(BUILDDIR)/fuzz/%)
 ifneq ($(and $(CROSS_COMPILE),$(if $(or $(SYSROOT),$(WITH_DEPS)),,1)),)
 all: core $(BUILDDIR)/mt-dnstool $(BUILDDIR)/mt-cachetool
 else
-all: $(BUILDDIR)/magitrickled-c $(BUILDDIR)/mt-configtool $(BUILDDIR)/mt-dnstool $(BUILDDIR)/mt-cachetool
+all: $(BUILDDIR)/mt-c-updater $(BUILDDIR)/magitrickled-c $(BUILDDIR)/mt-configtool $(BUILDDIR)/mt-dnstool $(BUILDDIR)/mt-cachetool
 endif
 
 core: $(CORE_OBJS)
+
+$(BUILDDIR)/mt-c-updater: $(LIB_OBJS) $(UPDATER_OBJ)
+	@mkdir -p $(dir $@)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS) $(DEP_LIBS)
 
 $(BUILDDIR)/magitrickled-c: $(LIB_OBJS) $(MAIN_OBJ)
 	@mkdir -p $(dir $@)
@@ -299,6 +309,11 @@ $(BUILDDIR)/tests/test_rule_priority: tests/unit/test_rule_priority.c $(LIB_OBJS
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(filter-out $(BUILDDIR)/src/netfilter/ipset_to_link.o,$(LIB_OBJS)) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
+# Include the real process boundary while avoiding duplicate exported symbols.
+$(BUILDDIR)/tests/test_update_process: tests/unit/test_update_process.c src/platform/update.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(filter-out $(BUILDDIR)/src/platform/update.o,$(LIB_OBJS)) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
 test: $(TEST_BINS)
 	@set -e; for t in $(TEST_BINS); do echo "== $$t"; $$t; done
 
@@ -339,17 +354,26 @@ $(BUILDDIR)/bench-large-rules: ../../tools/bench/large-rules.c $(LIB_OBJS)
 
 static_analysis:
 	@if command -v clang-tidy >/dev/null; then \
-	    clang-tidy --quiet $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(TEST_SUPPORT_SRCS) -- $(CSTD) -Iinclude -Itests/unit \
+	    clang-tidy --quiet $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(UPDATER_SRC) $(TEST_SUPPORT_SRCS) -- $(CSTD) -Iinclude -Itests/unit \
 	        -D_POSIX_C_SOURCE=200809L -DMT_VERSION=\"$(MT_VERSION)\"; \
 	else echo "clang-tidy not found (skipped)"; fi
 	@if command -v cppcheck >/dev/null; then \
 	    cppcheck --std=c11 --enable=warning,performance,portability \
 	        --error-exitcode=1 --inline-suppr -Iinclude -Itests/unit \
 	        -D_POSIX_C_SOURCE=200809L \
-	        $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(TEST_SUPPORT_SRCS); \
+	        $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(UPDATER_SRC) $(TEST_SUPPORT_SRCS); \
 	else echo "cppcheck not found (skipped)"; fi
 
 clean:
 	rm -rf build
 
--include $(LIB_OBJS:.o=.d) $(MAIN_OBJ:.o=.d)
+# Do not retain stale installed-version/target metadata on incremental rebuilds.
+.PHONY: update-build-info-force
+$(BUILDDIR)/.update-build-info: update-build-info-force
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(MT_VERSION)|$(MT_BUILD_TARGET)|$(MT_PACKAGE_REVISION)|$(PLATFORM)|$(ENTWARE_KN)' > $@.tmp
+	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
+
+$(LIB_OBJS) $(MAIN_OBJ) $(UPDATER_OBJ): $(BUILDDIR)/.update-build-info
+
+-include $(LIB_OBJS:.o=.d) $(MAIN_OBJ:.o=.d) $(UPDATER_OBJ:.o=.d)
