@@ -43,6 +43,7 @@ export const STAGES = [
 export type UpdateStatus = {
   stage: (typeof STAGES)[number];
   job_id?: string;
+  external?: boolean;
   tag?: string;
   target_version?: string;
   target_revision?: number;
@@ -83,11 +84,17 @@ export function parseStatus(value: unknown): UpdateStatus {
     throw new Error("Invalid update response");
   }
   const stage = STAGES.find((item) => item === value.stage)!;
-  if (stage !== "idle" && (!text(value.job_id, 32) || !/^[a-f0-9]{32}$/.test(value.job_id))) {
+  const external = stage === "installing" && value.external === true && value.job_id === undefined;
+  if (
+    stage !== "idle" &&
+    !external &&
+    (!text(value.job_id, 32) || !/^[a-f0-9]{32}$/.test(value.job_id))
+  ) {
     throw new Error("Invalid update response");
   }
   return {
     stage,
+    external,
     job_id: text(value.job_id, 32) ? value.job_id : undefined,
     tag: text(value.tag, 80) ? value.tag : undefined,
     target_version: text(value.target_version, 128) ? value.target_version : undefined,

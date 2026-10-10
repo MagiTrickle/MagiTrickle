@@ -203,7 +203,6 @@ $(STAMPS_DIR)/build-backend-$(UNIQUE_NAME): $(STAMPS_DIR)/download-backend $(BAC
 	    $(if $(SYSROOT),SYSROOT="$(SYSROOT)") \
 	    $(if $(ENTWARE_KN),ENTWARE_KN=1)
 	cp "./src/backend-c/build/$(UNIQUE_NAME)/magitrickled-c" "$(COMPILE_DIR)/magitrickled"
-	cp "./src/backend-c/build/$(UNIQUE_NAME)/mt-c-updater" "$(COMPILE_DIR)/mt-c-updater"
 
 	@mkdir -p $(STAMPS_DIR)
 	@touch "$(STAMPS_DIR)/build-backend-$(UNIQUE_NAME)"
@@ -260,7 +259,6 @@ prepare_files: build
 	rm -rf "$(ROOT_DIR)"
 	mkdir -p "$(BIN_DIR)"
 	cp "$(COMPILE_DIR)/magitrickled" "$(BIN_DIR)/magitrickled"
-	cp "$(COMPILE_DIR)/mt-c-updater" "$(BIN_DIR)/mt-c-updater"
 	mkdir -p "$(USRSHARE_DIR)/magitrickle/skins/default"
 	cp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"
 	$(call _copy_files,./files/common)

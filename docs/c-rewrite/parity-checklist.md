@@ -232,3 +232,13 @@ One sandbox-specific (not code-specific) live-verification gap is named
 in section 7 (`ipset` non-functional in this particular session's
 container). No section was found unimplemented, silently divergent, or
 regressed from the source contract.
+
+
+### Additive update API (D-74/D-75; no historical Go counterpart)
+
+- Keep browser/server GitHub selection, root authorization and package checks.
+- Volatile preparation status; external installer lock may have no job ID after
+  restart. A free lock is not success; WebUI verifies the running version.
+- Package handoff survives the daemon's process-group termination; no inherited
+  lock in the new daemon, no second updater binary or application-owned journal.
+- Real package-manager/rc.func/procd upgrade checks remain separate device tests.

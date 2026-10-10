@@ -48,6 +48,7 @@
 #include "magitrickle/subscriptions_api.h"
 #include "magitrickle/system.h"
 #include "magitrickle/version.h"
+#include "magitrickle/update.h"
 #include "magitrickle/yamlio.h"
 
 /* Matches Go's cfgFileLocation = AppStateDir + "/config.yaml", so the
@@ -98,6 +99,7 @@ static int64_t now_unix(void)
  * loop must outlive the watcher/proxy fds registered on it too. */
 static void daemon_teardown(struct daemon *d)
 {
+    mt_update_shutdown();
     mt_sub_fetcher_destroy(d->fetcher);
     d->fetcher = NULL;
     /* After joining I/O workers: the committer thread reads the ruleset registry and

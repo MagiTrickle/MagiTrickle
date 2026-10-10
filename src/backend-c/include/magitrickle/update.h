@@ -49,6 +49,6 @@ const char *mt_update_resolve(const char *json, size_t len, bool preview,
 struct mt_httpd;
 struct mt_system_ctx;
 void mt_update_register_routes(struct mt_httpd *http, struct mt_system_ctx *ctx);
-/* Only called by the separately packaged mt-c-updater, with inherited lock fd 3. */
-int mt_update_worker(void);
+/* Loop-thread shutdown: cancel/join preparation, never kill a package transaction. */
+void mt_update_shutdown(void);
 #endif

@@ -131,20 +131,17 @@ definitions:
     properties:
       stage:
         type: string
-        enum: [idle, queued, checking, downloading, verifying, backing_up, installing, restarting, succeeded, failed, interrupted]
+        enum: [idle, queued, checking, downloading, verifying, installing, failed]
       job_id:
         type: string
         pattern: '^[0-9a-f]{32}$'
+      external:
+        type: boolean
+        description: True when a system installer holds the lock after daemon restart; job_id is absent.
       tag: {type: string}
-      previous_version: {type: string}
       target_version: {type: string}
       target_revision: {type: integer}
-      package_size: {type: integer}
-      backup_path: {type: string}
       error: {type: string}
-      started_at: {type: integer}
-      finished_at: {type: integer}
-      package_installed: {type: boolean}
   types.RuleReq:
     properties:
       enable:
@@ -688,7 +685,7 @@ paths:
       - updates
   /api/v1/system/update/status:
     get:
-      summary: Last update status or idle
+      summary: Volatile preparation status, external installer, or idle
       description: >-
         Returns local build/job information without contacting GitHub (D-74).
       produces:
@@ -727,7 +724,7 @@ paths:
       - application/json
       responses:
         "202":
-          description: Worker exec confirmed; job queued
+          description: Preparation thread accepted; not an installation result
           schema:
             $ref: '#/definitions/types.UpdateAcceptedRes'
         "400":

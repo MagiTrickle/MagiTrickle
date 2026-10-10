@@ -1,9 +1,6 @@
-/* Exercise the real subprocess boundary, including descendants that retain stdout. */
+/* Exercise the real system-package handoff, never a real package manager. */
 #define _GNU_SOURCE
 #include <sys/stat.h>
-
-/* Model root-owned files without requiring sudo for make test. All descriptors
- * here refer to our private mkdtemp fixtures; modes/inodes/locks are real. */
 static int fixture_fstat(int fd, struct stat *st) {
     int result = fstat(fd, st);
     if (result == 0) { st->st_uid = 0; }
@@ -14,118 +11,114 @@ static int fixture_fstat(int fd, struct stat *st) {
 #undef fstat
 #include <assert.h>
 
-static void replace_status(int dir, const char *value) {
-    int fd = openat(dir, "status.next", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-    assert(fd >= 0);
-    assert(write_all(fd, value, strlen(value)));
-    assert(fsync(fd) == 0);
-    assert(close(fd) == 0);
-    assert(renameat(dir, "status.next", dir, "status.json") == 0);
+static void script(const char *path, const char *text) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0700);
+    assert(fd >= 0 && write_all(fd, text, strlen(text)) && close(fd) == 0);
 }
 
-static void test_status_race(int dir, const char *terminal) {
-    replace_status(dir, "{\"stage\":\"downloading\"}");
-    int held = open_lock(dir);
-    assert(held >= 0 && flock(held, LOCK_EX | LOCK_NB) == 0);
-    int gate[2];
-    assert(pipe(gate) == 0);
-    pid_t worker = fork();
-    assert(worker >= 0);
-    if (worker == 0) {
-        close(gate[1]);
-        char ready;
-        assert(read(gate[0], &ready, 1) == 1);
-        replace_status(dir, terminal);
-        assert(flock(held, LOCK_UN) == 0);
-        close(held); close(gate[0]);
-        _exit(0);
+static void wait_file(const char *path) {
+    for (unsigned i = 0; i < 500; i++) {
+        if (access(path, F_OK) == 0) { return; }
+        usleep(10000);
     }
-    close(gate[0]);
-    close(held);
-    cJSON *snapshot = read_json(dir, "status.json");
-    assert(snapshot && strcmp(str(snapshot, "stage"), "downloading") == 0);
-    /* Force the worker to finish after the first read and before the probe. */
-    assert(write_all(gate[1], "x", 1));
-    close(gate[1]);
-    int status;
-    assert(waitpid(worker, &status, 0) == worker && WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    assert(refresh_unlocked_status(dir, &snapshot));
-    cJSON *expected = cJSON_Parse(terminal);
-    assert(expected && strcmp(str(snapshot, "stage"), str(expected, "stage")) == 0);
-    assert(strcmp(str(snapshot, "error"), str(expected, "error")) == 0);
-    cJSON_Delete(snapshot); cJSON_Delete(expected);
+    assert(!"timed out waiting for fixture");
 }
 
-static void test_status_recovery(int dir) {
-    test_status_race(dir, "{\"stage\":\"succeeded\",\"error\":\"\"}");
-    test_status_race(dir, "{\"stage\":\"failed\",\"error\":\"Package checksum mismatch\"}");
-    replace_status(dir, "{\"stage\":\"installing\"}");
-    cJSON *snapshot = read_json(dir, "status.json");
-    assert(snapshot);
-    int held = open_lock(dir);
-    assert(held >= 0 && flock(held, LOCK_EX | LOCK_NB) == 0);
-    assert(refresh_unlocked_status(dir, &snapshot));
-    assert(strcmp(str(snapshot, "stage"), "installing") == 0);
-    assert(flock(held, LOCK_UN) == 0);
-    close(held);
-    assert(refresh_unlocked_status(dir, &snapshot));
-    assert(strcmp(str(snapshot, "stage"), "interrupted") == 0);
-    assert(unlinkat(dir, "status.json", 0) == 0);
-    assert(!refresh_unlocked_status(dir, &snapshot));
-    cJSON_Delete(snapshot);
+static void handoff(bool apk, bool fail, unsigned closed_stdio) {
+    char root[] = "/tmp/mt-package-handoff-XXXXXX";
+    assert(mkdtemp(root));
+    int dir = open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    assert(dir >= 0);
+    char temp[512], package[512], manager[512], init[512], ready[512], gate[512], restarted[512];
+    snprintf(temp, sizeof(temp), "%s/payload", root);
+    snprintf(package, sizeof(package), "%s/payload/package.%s", root, apk ? "apk" : "ipk");
+    snprintf(manager, sizeof(manager), "%s/manager", root);
+    snprintf(init, sizeof(init), "%s/init", root);
+    snprintf(ready, sizeof(ready), "%s/ready", root);
+    snprintf(gate, sizeof(gate), "%s/gate", root);
+    snprintf(restarted, sizeof(restarted), "%s/restarted", root);
+    assert(mkdir(temp, 0700) == 0);
+    script(package, "verified package fixture\n");
+    char text[4096];
+    snprintf(text, sizeof(text),
+        "#!/bin/sh\nset -eu\n[ ! -e /proc/self/fd/3 ]\n[ ! -e /proc/self/fd/19 ]\n"
+        "[ \"$1\" = '%s' ]\n%s[ -f \"$%d\" ]\n"
+        "echo package-manager-progress\necho package-manager-diagnostics >&2\ntouch '%s'\n"
+        "while [ ! -f '%s' ]; do sleep 0.01; done\nexit %d\n",
+        apk ? "add" : "install", apk ? "[ \"$2\" = '--allow-untrusted' ]\n" : "",
+        apk ? 3 : 2, ready, gate, fail ? 7 : 0);
+    script(manager, text);
+    snprintf(text, sizeof(text), "#!/bin/sh\nset -eu\n[ \"$1\" = restart ]\n"
+        "[ ! -e /proc/self/fd/3 ]\n[ ! -e /proc/self/fd/19 ]\ntouch '%s'\n", restarted);
+    script(init, text);
+    int notice[2];
+    assert(pipe2(notice, O_CLOEXEC) == 0);
+    pid_t daemon = fork();
+    assert(daemon >= 0);
+    if (daemon == 0) {
+        close(notice[0]);
+        assert(setsid() >= 0);
+        int lock = open_lock(dir);
+        assert(lock >= 0 && flock(lock, LOCK_EX | LOCK_NB) == 0);
+        int inherited = open("/dev/null", O_RDONLY);
+        assert(inherited >= 0 && dup2(inherited, 19) == 19);
+        assert(fcntl(19, F_SETFD, 0) == 0); /* Intentionally non-CLOEXEC. */
+        /* Simulate service managers that close some or all stdio fds. */
+        for (int stream = 0; stream < 3; stream++) {
+            if (closed_stdio & (1U << stream)) { close(stream); }
+        }
+        assert(launch_install(lock, manager, package, init, temp, apk, "/dev/null"));
+        close(lock);
+        assert(write_all(notice[1], "x", 1));
+        close(notice[1]);
+        for (;;) { pause(); }
+    }
+    close(notice[1]);
+    char byte;
+    assert(read(notice[0], &byte, 1) == 1);
+    close(notice[0]);
+    wait_file(ready);
+    /* The launching daemon and its process group die mid-transaction. */
+    assert(kill(-daemon, SIGTERM) == 0);
+    int status;
+    assert(waitpid(daemon, &status, 0) == daemon && WIFSIGNALED(status));
+    int lock = open_lock(dir);
+    assert(lock >= 0 && flock(lock, LOCK_EX | LOCK_NB) == -1);
+    assert(errno == EAGAIN || errno == EWOULDBLOCK);
+    script(gate, "continue\n");
+    bool unlocked = false;
+    for (unsigned i = 0; i < 500; i++) {
+        if (flock(lock, LOCK_EX | LOCK_NB) == 0) { unlocked = true; break; }
+        usleep(10000);
+    }
+    assert(unlocked);
+    assert(access(restarted, F_OK) == (fail ? -1 : 0));
+    assert(access(package, F_OK) == -1 && access(temp, F_OK) == -1);
+    assert(faccessat(dir, "install.log", F_OK, 0) == -1);
+    assert(faccessat(dir, "status.json", F_OK, 0) == -1);
+    assert(faccessat(dir, "request.json", F_OK, 0) == -1);
+    close(lock);
+    unlink(manager); unlink(init); unlink(ready); unlink(gate); unlink(restarted);
     assert(unlinkat(dir, "lock", 0) == 0);
+    close(dir);
+    assert(rmdir(root) == 0);
 }
 
 int main(void) {
-    char path[] = "/tmp/mt-c-command-test-XXXXXX";
-    assert(mkdtemp(path));
-    int dir = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    assert(dir >= 0);
-    test_status_recovery(dir);
-    char *ok[] = {"/bin/sh", "-c", "printf 'package log'; exit 0", NULL};
-    char *bad[] = {"/bin/sh", "-c", "exit 7", NULL};
-    char *missing[] = {"/nonexistent-mt-c-test-program", NULL};
-    assert(command(dir, ok));
-    assert(!command(dir, bad));
-    assert(!command(dir, missing));
-    /* A successful intermediate fork is not enough: only a successful
-     * grandchild execve() can make launch_executable() return true. */
-    int lock = openat(dir, "launch.lock", O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+    for (unsigned mask = 0; mask < 8; mask++) {
+        handoff(false, false, mask);
+        handoff(true, false, mask);
+    }
+    handoff(false, true, 0);
+    handoff(true, true, 1);
+    int lock = open("/dev/null", O_RDONLY | O_CLOEXEC);
     assert(lock >= 0);
-    assert(flock(lock, LOCK_EX | LOCK_NB) == 0);
-    assert(launch_executable(lock, "/bin/true"));
-    assert(!launch_executable(lock, "/nonexistent-mt-c-updater"));
-
-    /* access(X_OK) succeeds for a corrupt binary but execve() fails with
-     * ENOEXEC; the install endpoint must return 500, never a false 202. */
-    char corrupt[512];
-    assert(snprintf(corrupt, sizeof(corrupt), "%s/broken-updater", path) > 0);
-    int bad_exec = open(corrupt, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0700);
-    assert(bad_exec >= 0);
-    assert(write_all(bad_exec, "not an executable", 17));
-    assert(close(bad_exec) == 0);
-    assert(access(corrupt, X_OK) == 0);
-    assert(!launch_executable(lock, corrupt));
-    assert(unlink(corrupt) == 0);
-    assert(flock(lock, LOCK_UN) == 0);
+    assert(!launch_install(lock, "/nonexistent-manager", "/missing-package", "/missing-init",
+                           "/missing-temp", false, "/nonexistent-console"));
     close(lock);
-    assert(unlinkat(dir, "launch.lock", 0) == 0);
-    char *inherited_pipe[] = {"/bin/sh", "-c", "sleep 4 & exit 0", NULL};
-    struct timespec before, after;
-    assert(clock_gettime(CLOCK_MONOTONIC, &before) == 0);
-    assert(command(dir, inherited_pipe));
-    assert(clock_gettime(CLOCK_MONOTONIC, &after) == 0);
-    double elapsed = (double)(after.tv_sec - before.tv_sec) +
-        (double)(after.tv_nsec - before.tv_nsec) / 1000000000.0;
-    assert(elapsed < 3.0); /* Must not wait for the background descendant's EOF. */
-    char *large[] = {"/bin/sh", "-c", "head -c 200000 /dev/zero", NULL};
-    assert(command(dir, large));
-    struct stat st;
-    assert(fstatat(dir, "install.log", &st, 0) == 0);
-    assert(st.st_size == LOG_LIMIT);
-    assert(unlinkat(dir, "install.log", 0) == 0);
-    close(dir);
-    assert(rmdir(path) == 0);
-    puts("update process boundary checks passed");
+    atomic_store(&stopping, true);
+    assert(cancel_transfer(NULL, 0, 0, 0, 0) == 1);
+    mt_update_shutdown();
+    puts("system package handoff, parent death, descriptor isolation, failure and cleanup: passed");
     return 0;
 }

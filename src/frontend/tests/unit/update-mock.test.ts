@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-
 import { Hono } from "hono";
 
 import { registerMockUpdateRoutes } from "../../dev/update-mock.ts";
@@ -15,7 +14,9 @@ function fixture() {
   registerMockUpdateRoutes(app, ROOT, () => clock);
   return {
     app,
-    advance: (ms: number) => { clock += ms; },
+    advance: (ms: number) => {
+      clock += ms;
+    },
     install: (body: unknown = INSTALL, headers: Record<string, string> = AUTH) =>
       app.request(BASE + "/install", {
         method: "POST",
@@ -25,43 +26,57 @@ function fixture() {
   };
 }
 
-Deno.test("mock update GET routes expose real response shapes without touching GitHub", async () => {
-  const { app } = fixture();
-  const status = await app.request(BASE + "/status");
-  assert.equal(status.status, 200);
-  assert.deepEqual(await status.json(), { stage: "idle" });
-  assert.equal(status.headers.get("Cache-Control"), "no-store");
+Deno.test(
+  "mock update GET routes expose real response shapes without touching GitHub",
+  async () => {
+    const { app } = fixture();
+    const status = await app.request(BASE + "/status");
+    assert.equal(status.status, 200);
+    assert.deepEqual(await status.json(), { stage: "idle" });
+    assert.equal(status.headers.get("Cache-Control"), "no-store");
 
-  const unauthorized = await app.request(BASE);
-  assert.equal(unauthorized.status, 200);
-  const guestInfo = await unauthorized.json();
-  assert.equal(guestInfo.installed_version, "0.8.2.1");
-  assert.equal(guestInfo.installed_revision, 1);
-  assert.equal(guestInfo.asset_suffix, "entware_aarch64-3.10_kn.ipk");
-  assert.equal(guestInfo.can_install, false);
-  assert.equal(guestInfo.reason, "Sign in as root to install updates");
-  assert.equal(unauthorized.headers.get("Cache-Control"), "no-store");
+    const unauthorized = await app.request(BASE);
+    assert.equal(unauthorized.status, 200);
+    const guestInfo = await unauthorized.json();
+    assert.equal(guestInfo.installed_version, "0.8.2.1");
+    assert.equal(guestInfo.installed_revision, 1);
+    assert.equal(guestInfo.asset_suffix, "entware_aarch64-3.10_kn.ipk");
+    assert.equal(guestInfo.can_install, false);
+    assert.equal(guestInfo.reason, "Sign in as root to install updates");
+    assert.equal(unauthorized.headers.get("Cache-Control"), "no-store");
 
-  const root = await app.request(BASE, { headers: AUTH });
-  assert.equal(root.status, 200);
-  const info = await root.json();
-  assert.equal(info.can_install, true);
-  assert.equal(info.reason, "");
-});
+    const root = await app.request(BASE, { headers: AUTH });
+    assert.equal(root.status, 200);
+    const info = await root.json();
+    assert.equal(info.can_install, true);
+    assert.equal(info.reason, "");
+  },
+);
 
 Deno.test("mock update POST requires a root token and well-formed same-origin JSON", async () => {
   const { app, install } = fixture();
   assert.equal((await install(INSTALL, { Authorization: "Bearer disabled" })).status, 403);
   assert.equal((await install(INSTALL, { Authorization: "Bearer wrong" })).status, 403);
-  assert.equal((await app.request(BASE + "/install", {
-    method: "POST", headers: AUTH,
-    body: JSON.stringify(INSTALL),
-  })).status, 400);
-  assert.equal((await app.request(BASE + "/install", {
-    method: "POST",
-    headers: { ...AUTH, "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
-    body: JSON.stringify(INSTALL),
-  })).status, 400);
+  assert.equal(
+    (
+      await app.request(BASE + "/install", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify(INSTALL),
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await app.request(BASE + "/install", {
+        method: "POST",
+        headers: { ...AUTH, "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
+        body: JSON.stringify(INSTALL),
+      })
+    ).status,
+    400,
+  );
 
   for (const bad of [
     { ...INSTALL, tag: "0.8.2.1" },
@@ -75,11 +90,16 @@ Deno.test("mock update POST requires a root token and well-formed same-origin JS
   ]) {
     assert.equal((await install(bad)).status, 400);
   }
-  assert.equal((await app.request(BASE + "/install", {
-    method: "POST",
-    headers: { ...AUTH, "Content-Type": "application/json" },
-    body: "{bad json",
-  })).status, 400);
+  assert.equal(
+    (
+      await app.request(BASE + "/install", {
+        method: "POST",
+        headers: { ...AUTH, "Content-Type": "application/json" },
+        body: "{bad json",
+      })
+    ).status,
+    400,
+  );
   assert.deepEqual(await (await app.request(BASE + "/status")).json(), { stage: "idle" });
 });
 
@@ -101,12 +121,11 @@ Deno.test("mock update simulates one job and later returns the new installed ver
 
   advance(700);
   assert.equal((await (await app.request(BASE + "/status")).json()).stage, "checking");
-  advance(700 * 5);
-  assert.equal((await (await app.request(BASE + "/status")).json()).stage, "restarting");
+  advance(700 * 3);
+  assert.equal((await (await app.request(BASE + "/status")).json()).stage, "installing");
   advance(700);
   const finished = await (await app.request(BASE + "/status")).json();
-  assert.equal(finished.stage, "succeeded");
-  assert.equal(finished.job_id, started.job_id);
+  assert.deepEqual(finished, { stage: "idle" });
 
   const info = await (await app.request(BASE, { headers: AUTH })).json();
   assert.equal(info.installed_version, "0.8.2.2");

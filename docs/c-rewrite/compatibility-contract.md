@@ -74,24 +74,21 @@ Routes (all under `/api/v1`):
 | POST /system/config/save | 200 `{}`? (writes config; error → 500) |
 | POST /system/hooks/netfilterd | body `{"type","table"}`; triggers iptables re-commit; 200 |
 | **GET /system/update (D-74)** | **200** `{"installed_version":string,"installed_revision":positive_integer,"asset_suffix":string,"can_install":bool,"reason":string}`; purely local, no GitHub request; capability failures are described in `reason`, allocation failure → **500** |
-| **GET /system/update/status (D-74)** | **200** `{"stage":"idle"}` when no job, otherwise persisted job JSON; stages `queued/checking/downloading/verifying/backing_up/installing/restarting/succeeded/failed/interrupted`; invalid/unreadable persisted status or allocation failure → **500** |
+| **GET /system/update/status (D-74)** | **200** volatile preparation/job JSON (D-75); `idle` with no active job, or `installing, external:true` without job ID while a detached system installer holds the lock after restart; lock access/allocation failure → **500** |
 | **POST /system/update/install (D-74)** | JSON `{"tag":string,"release_id":positive_safe_integer,"preview":bool}` (exact fields); accepted → **202** `{"job_id":"<32 hex>","stage":"queued"}`; invalid/non-newer/cross-site/wrong content type → **400**, missing verified root JWT/unavailable installer → **403**, active update → **409**, preparation failure → **500** |
 
 D-74 routes are an **intentional additive C-only contract**, absent from the
 historical Go parity surface. Both new GET responses have
-`Cache-Control: no-store`. Non-idle status includes `job_id`; optional
-persisted fields are `tag`, `previous_version`, `target_version`,
-`target_revision`, `package_size`, `backup_path`, `error`,
-`started_at`, `finished_at` and `package_installed`.
-The `interrupted` state is synthesized if an active job's lock is no longer
-held. POST requires a verified **root** JWT even when normal HTTP auth is
-disabled and when called through the Unix socket. Existing TCP auth
-middleware may first return 401. The 202 response does not mean installation
-succeeded; the client must poll the status route and, after restart, confirm
-the reported installed version/revision. Errors retain the usual JSON
-`{"error":"..."}` body. Verify via unit/HTTP contract tests plus
-on-router MAN tests; the older Go differential harness has no equivalent
-route (see D-74 and `docs/webui-updates.md`).
+`Cache-Control: no-store`. D-75 supersedes durable job status: non-idle preparation
+includes `job_id`, `tag`, `target_version`, `target_revision` and optional transient
+`error`. A restarted daemon may return `{"stage":"installing","external":true}`
+without an ID; otherwise a free lock yields `idle`, not an inferred outcome.
+No update result/log is persisted. POST requires verified **root** JWT on both
+transports even with HTTP auth disabled; TCP middleware may return 401 first.
+202 acknowledges queued preparation, not an executed/successful package command.
+The browser confirms the running version/revision after the system installer exits
+and never automatically retries an uncertain POST. Errors remain
+`{"error":"..."}`. See D-74/D-75 and `docs/webui-updates.md`.
 
 Details to freeze exactly (from code):
 
@@ -314,13 +311,12 @@ Source: root Makefile, `files/**`, CI workflow.
 - Upgrade path: package replace + service restart; config preserved via
   conffiles; C binary must load the Go-era config byte-for-byte and (on
   save) keep the documented shape.
-- D-74 adds a separately packaged `mt-c-updater` helper: the WebUI begins
-  a root-authorized, on-demand `opkg`/`apk` installation of an exact GitHub
-  release asset after version/platform and SHA-256 validation. Persisted
-  `<AppStateDir>/update` status, bounded logs and pre-install config/auth
-  backups survive the daemon restart. The upgrade is non-transactional;
-  automatic binary rollback is **not** promised. Device testing is still
-  required; see `docs/webui-updates.md`.
+- D-75 removes the D-74 helper binary. The daemon prepares/validates the package;
+  a detached system shell runs `opkg`/`apk`, restarts the standard service and
+  cleans its temporary download. No second `magitrickled` is started. A lock
+  serializes transactions; no application-owned status/log/backup is persisted.
+  Root authorization, exact package selection, HTTPS and SHA-256 remain required.
+  Conffile preservation remains; rollback is not promised. Test real devices.
 - Deps (must stay valid for the C build): Entware `libc, iptables`
   (+socat `_kn`); OpenWrt `libc, iptables-nft, iptables-mod-conntrack-extra,
   kmod-ipt-nat, kmod-ipt-ipset, ip6tables-nft`.

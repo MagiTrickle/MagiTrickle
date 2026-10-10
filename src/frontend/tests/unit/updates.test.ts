@@ -64,10 +64,7 @@ Deno.test("numeric versions, package revisions and snapshots never imply a downg
   assert.equal(parseVersion("0.8.4_pre20261010140000")?.development, true);
   assert.equal(compareVersions("0.8.4", "0.8.4_pre20261010140000"), 1);
   assert.equal(compareVersions("0.8.3", "0.8.4_pre20261010140000"), -1);
-  assert.equal(
-    compareVersions("0.8.4_pre20261010140000", "0.8.4~git20261010140000.abcdef0"),
-    0,
-  );
+  assert.equal(compareVersions("0.8.4_pre20261010140000", "0.8.4~git20261010140000.abcdef0"), 0);
   for (const invalid of [
     "0.8.4_pre2026101014000",
     "0.8.4_pre202610101400000",
@@ -144,6 +141,8 @@ Deno.test("runtime responses are validated, not merely cast", () => {
   assert.deepEqual(parseBuildInfo(info), info);
   assert.throws(() => parseBuildInfo({ ...info, installed_revision: 0 }));
   assert.throws(() => parseStatus({ stage: "installing" }));
+  assert.equal(parseStatus({ stage: "installing", external: true }).external, true);
+  assert.throws(() => parseStatus({ stage: "queued", external: true }));
   assert.equal(parseStatus({ stage: "queued", job_id: "a".repeat(32) }).stage, "queued");
   assert.throws(() => parseRelease({ ...release(), assets: null }));
 });
@@ -250,26 +249,29 @@ Deno.test("blocked storage is optional and failed network does not become up-to-
   await assert.rejects(offline.latest(false, false), /offline/);
 });
 
-Deno.test("the shared list selects by publication date beyond the former 20-item window", async () => {
-  const older = { ...release("2.0.0"), published_at: "2026-10-01T00:00:00Z" };
-  const later = { ...release("1.1.0"), published_at: "2026-10-03T00:00:00Z" };
-  const preview = {
-    ...release("3.0.0"),
-    prerelease: true,
-    published_at: "2026-10-04T00:00:00Z",
-  };
-  assert.equal(pickRelease([older, later, preview], false)?.tag_name, "1.1.0");
-  assert.equal(pickRelease([older, later, preview], true)?.tag_name, "3.0.0");
+Deno.test(
+  "the shared list selects by publication date beyond the former 20-item window",
+  async () => {
+    const older = { ...release("2.0.0"), published_at: "2026-10-01T00:00:00Z" };
+    const later = { ...release("1.1.0"), published_at: "2026-10-03T00:00:00Z" };
+    const preview = {
+      ...release("3.0.0"),
+      prerelease: true,
+      published_at: "2026-10-04T00:00:00Z",
+    };
+    assert.equal(pickRelease([older, later, preview], false)?.tag_name, "1.1.0");
+    assert.equal(pickRelease([older, later, preview], true)?.tag_name, "3.0.0");
 
-  const list = Array.from({ length: 30 }, () => ({ ...older, prerelease: true }));
-  list.push(later);
-  let calls = 0;
-  const client = new ReleaseClient(null, async (url) => {
-    assert.equal(String(url), `${RELEASE_API}?per_page=100`);
-    calls++;
-    return new Response(JSON.stringify(list));
-  });
-  assert.equal((await client.latest(false, false)).release?.tag_name, "1.1.0");
-  assert.equal((await client.latest(true, false)).release?.tag_name, "1.1.0");
-  assert.equal(calls, 1);
-});
+    const list = Array.from({ length: 30 }, () => ({ ...older, prerelease: true }));
+    list.push(later);
+    let calls = 0;
+    const client = new ReleaseClient(null, async (url) => {
+      assert.equal(String(url), `${RELEASE_API}?per_page=100`);
+      calls++;
+      return new Response(JSON.stringify(list));
+    });
+    assert.equal((await client.latest(false, false)).release?.tag_name, "1.1.0");
+    assert.equal((await client.latest(true, false)).release?.tag_name, "1.1.0");
+    assert.equal(calls, 1);
+  },
+);

@@ -168,7 +168,6 @@ LIB_SRCS := $(CORE_SRCS) $(CONFIG_SRCS) $(NETFILTER_SRCS) $(API_SRCS) $(SUBSCRIP
             $(INTERFACES_SRCS)
 
 MAIN_SRC := src/main/main.c
-UPDATER_SRC := src/tools/updater.c
 CONFIGTOOL_SRC := src/tools/configtool.c
 DNSTOOL_SRC := src/tools/dnstool.c
 CACHETOOL_SRC := src/tools/cachetool.c
@@ -182,7 +181,6 @@ INTERFACES_OBJS := $(INTERFACES_SRCS:%.c=$(BUILDDIR)/%.o)
 LIB_OBJS := $(CORE_OBJS) $(CONFIG_OBJS) $(NETFILTER_OBJS) $(API_OBJS) $(SUBSCRIPTIONS_OBJS) \
             $(INTERFACES_OBJS)
 MAIN_OBJ := $(MAIN_SRC:%.c=$(BUILDDIR)/%.o)
-UPDATER_OBJ := $(UPDATER_SRC:%.c=$(BUILDDIR)/%.o)
 CONFIGTOOL_OBJ := $(CONFIGTOOL_SRC:%.c=$(BUILDDIR)/%.o)
 DNSTOOL_OBJ := $(DNSTOOL_SRC:%.c=$(BUILDDIR)/%.o)
 CACHETOOL_OBJ := $(CACHETOOL_SRC:%.c=$(BUILDDIR)/%.o)
@@ -229,14 +227,10 @@ FUZZ_BINS := $(FUZZ_SRCS:tests/fuzz/%.c=$(BUILDDIR)/fuzz/%)
 ifneq ($(and $(CROSS_COMPILE),$(if $(or $(SYSROOT),$(WITH_DEPS)),,1)),)
 all: core $(BUILDDIR)/mt-dnstool $(BUILDDIR)/mt-cachetool
 else
-all: $(BUILDDIR)/mt-c-updater $(BUILDDIR)/magitrickled-c $(BUILDDIR)/mt-configtool $(BUILDDIR)/mt-dnstool $(BUILDDIR)/mt-cachetool
+all: $(BUILDDIR)/magitrickled-c $(BUILDDIR)/mt-configtool $(BUILDDIR)/mt-dnstool $(BUILDDIR)/mt-cachetool
 endif
 
 core: $(CORE_OBJS)
-
-$(BUILDDIR)/mt-c-updater: $(LIB_OBJS) $(UPDATER_OBJ)
-	@mkdir -p $(dir $@)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS) $(DEP_LIBS)
 
 $(BUILDDIR)/magitrickled-c: $(LIB_OBJS) $(MAIN_OBJ)
 	@mkdir -p $(dir $@)
@@ -354,14 +348,14 @@ $(BUILDDIR)/bench-large-rules: ../../tools/bench/large-rules.c $(LIB_OBJS)
 
 static_analysis:
 	@if command -v clang-tidy >/dev/null; then \
-	    clang-tidy --quiet $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(UPDATER_SRC) $(TEST_SUPPORT_SRCS) -- $(CSTD) -Iinclude -Itests/unit \
+	    clang-tidy --quiet $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(TEST_SUPPORT_SRCS) -- $(CSTD) -Iinclude -Itests/unit \
 	        -D_POSIX_C_SOURCE=200809L -DMT_VERSION=\"$(MT_VERSION)\"; \
 	else echo "clang-tidy not found (skipped)"; fi
 	@if command -v cppcheck >/dev/null; then \
 	    cppcheck --std=c11 --enable=warning,performance,portability \
 	        --error-exitcode=1 --inline-suppr -Iinclude -Itests/unit \
 	        -D_POSIX_C_SOURCE=200809L \
-	        $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(UPDATER_SRC) $(TEST_SUPPORT_SRCS); \
+	        $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(TEST_SUPPORT_SRCS); \
 	else echo "cppcheck not found (skipped)"; fi
 
 clean:
@@ -374,6 +368,6 @@ $(BUILDDIR)/.update-build-info: update-build-info-force
 	@printf '%s\n' '$(MT_VERSION)|$(MT_BUILD_TARGET)|$(MT_PACKAGE_REVISION)|$(PLATFORM)|$(ENTWARE_KN)' > $@.tmp
 	@cmp -s $@.tmp $@ && rm $@.tmp || mv $@.tmp $@
 
-$(LIB_OBJS) $(MAIN_OBJ) $(UPDATER_OBJ): $(BUILDDIR)/.update-build-info
+$(LIB_OBJS) $(MAIN_OBJ): $(BUILDDIR)/.update-build-info
 
--include $(LIB_OBJS:.o=.d) $(MAIN_OBJ:.o=.d) $(UPDATER_OBJ:.o=.d)
+-include $(LIB_OBJS:.o=.d) $(MAIN_OBJ:.o=.d)

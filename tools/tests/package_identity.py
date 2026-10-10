@@ -30,7 +30,7 @@ def ipk_contract(work: Path, platform: str, target: str) -> None:
     key = f"{platform}_{target}"
     compile_dir = work / ".build" / key / "compile"
     compile_dir.mkdir(parents=True)
-    for name in ("magitrickled", "mt-c-updater"):
+    for name in ("magitrickled",):
         executable = compile_dir / name
         executable.write_text("#!/bin/sh\n# Synthetic payload: never install this test package.\nexit 0\n")
         executable.chmod(0o755)
@@ -55,7 +55,8 @@ def ipk_contract(work: Path, platform: str, target: str) -> None:
             binary_dir = "./opt/bin" if platform == "entware" else "./usr/bin"
             config = "./opt/var/lib/magitrickle/config.yaml" if platform == "entware" else "./etc/magitrickle/state/config.yaml"
             assert config in files
-            for name in ("magitrickled", "mt-c-updater"):
+            assert f"{binary_dir}/mt-c-updater" not in files
+            for name in ("magitrickled",):
                 binary = f"{binary_dir}/{name}"
                 assert binary in files
                 assert payload.getmember(binary).mode & 0o111
@@ -85,9 +86,11 @@ def apk_contract(work: Path) -> None:
     assert (root / "lib/apk/packages/mt-c.list").is_file()
     assert (root / "lib/apk/packages/mt-c.conffiles").is_file()
     inventory = (root / "lib/apk/packages/mt-c.list").read_text().splitlines()
-    for name in ("magitrickled", "mt-c-updater"):
+    for name in ("magitrickled",):
         assert f"/usr/bin/{name}" in inventory
         assert (root / "usr/bin" / name).stat().st_mode & 0o111
+    assert "/usr/bin/mt-c-updater" not in inventory
+    assert not (root / "usr/bin/mt-c-updater").exists()
     assert not list((root / "lib/apk/packages").glob("magitrickle.*"))
     for script in (work / ".build/openwrt_x86_64/apk").glob("*.sh"):
         assert 'pkgname="mt-c"' in script.read_text()

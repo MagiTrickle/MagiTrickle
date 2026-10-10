@@ -3570,3 +3570,43 @@ downloads, runs a package manager or restarts a device. Regression tests
 cover matching/version rules, process boundaries and mock request/status
 contracts. This does not constitute a real Entware/Keenetic/OpenWrt upgrade
 test. See `docs/webui-updates.md` and `compatibility-contract.md` §§2, 10.
+
+
+## D-75 — Hand WebUI installs to the system package manager (2026-10-10)
+
+Status: **accepted, intentional simplification of D-74 at the user's request**.
+Remove the separately packaged `mt-c-updater`, not replace it with another daemon
+mode/copy. The existing `magitrickled` prepares and verifies the exact GitHub
+package on a cancellable background thread, leaving the DNS/HTTP loop responsive.
+A short detached `/bin/sh` command runs `opkg`/`apk`, restarts the standard init
+service after success and removes the temporary download. No new service, PID-file
+scheme or edits to Entware rc.func/OpenWrt procd behavior are introduced.
+
+The system shell owns the inherited update `flock`; package scripts and restarted
+daemons must not inherit it. A pre-command gate ensures a failed/expired startup
+handshake cannot kill a live package transaction. Shutdown cancels/joins only
+preparation, never the detached installer. The old lock pathname is retained so
+a still-running legacy updater and a new daemon cannot install concurrently.
+
+**D-74's durable job/log/backup behavior is superseded:** no request/status JSON,
+application-owned install log, update history or backup file is written. Detailed
+package-manager diagnostics/recovery are left to the system console and CLI.
+Existing config save/conffile behavior remains; no automatic rollback is promised.
+Do not claim the system console necessarily provides persistent logs. Previously
+created legacy files are left alone; they are no longer used as job state.
+
+The three routes and request fields remain. POST 202 now acknowledges queued
+in-process preparation; later network/verification/start failures are transient
+in-memory status, not durable results. Preparation states have the existing job
+ID/tag/target fields. After daemon restart status may be
+`{"stage":"installing","external":true}` without `job_id` while the system shell
+holds the lock; after release it is `idle`, **not** `succeeded`/`interrupted` inferred
+from a lock. Clients must allow this explicit external state, keep expected target
+metadata per tab if reload recovery is desired, and verify the running version and
+revision. They must never repeat an uncertain installation POST automatically.
+
+A matching running version confirms the new daemon, not an atomic whole-package
+transaction. CLI recovery is still necessary for failed or power-interrupted
+installs. Older loaded WebUI versions may need a page reload on the first upgrade
+to this volatile-status contract. Tests and platform checks are described in
+`docs/webui-updates.md`; a mocked or host process test is not a real router upgrade.

@@ -54,9 +54,6 @@ define Package/mt-c/install
 	$(INSTALL_BIN) \
 		$(PKG_BUILD_DIR)/src/backend-c/build/openwrt-$(PKGARCH)/magitrickled-c \
 		$(1)/usr/bin/magitrickled
-	$(INSTALL_BIN) \
-		$(PKG_BUILD_DIR)/src/backend-c/build/openwrt-$(PKGARCH)/mt-c-updater \
-		$(1)/usr/bin/mt-c-updater
 
 	$(INSTALL_DIR) $(1)/usr/share/magitrickle/skins/default
 	$(CP) $(PKG_BUILD_DIR)/src/frontend/dist/. \

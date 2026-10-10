@@ -1,22 +1,17 @@
 import type { Hono } from "hono";
 
-import { compareVersions, parseVersion, type UpdateStatus } from "../src/modules/updates/releases.ts";
+import {
+  compareVersions,
+  parseVersion,
+  type UpdateStatus,
+} from "../src/modules/updates/releases.ts";
 
 const UPDATE_BASE = "/api/v1/system/update";
 const MOCK_ASSET_SUFFIX = "entware_aarch64-3.10_kn.ipk";
 // The mock deliberately starts below the stable GitHub release so the update
 // button is testable without creating a release or installing anything.
 const MOCK_INSTALLED_VERSION = "0.8.2.1";
-const STAGES = [
-  "queued",
-  "checking",
-  "downloading",
-  "verifying",
-  "backing_up",
-  "installing",
-  "restarting",
-  "succeeded",
-] as const;
+const STAGES = ["queued", "checking", "downloading", "verifying", "installing", "idle"] as const;
 const STAGE_DURATION_MS = 700;
 
 type MockJob = {
@@ -53,9 +48,11 @@ export function registerMockUpdateRoutes(
     const elapsed = Math.max(0, now() - job.startedAt);
     const index = Math.min(Math.floor(elapsed / STAGE_DURATION_MS), STAGES.length - 1);
     const stage = STAGES[index];
-    if (stage === "succeeded") {
+    if (stage === "idle") {
       installedVersion = job.target_version;
       installedRevision = job.target_revision;
+      job = null;
+      return { stage: "idle" };
     }
 
     return {
@@ -68,6 +65,7 @@ export function registerMockUpdateRoutes(
   }
 
   app.get(UPDATE_BASE, (c) => {
+    status();
     const allowed = isRoot(c.req.header("Authorization"));
     c.header("Cache-Control", "no-store");
     return c.json({
@@ -97,6 +95,7 @@ export function registerMockUpdateRoutes(
       return c.json({ error: "Expected same-origin JSON request" }, 400);
     }
 
+    status(); // Apply any completed simulation before comparing installed versions.
     const text = await c.req.text();
     if (!text || new TextEncoder().encode(text).length > 1024) {
       return c.json({ error: "Invalid or non-newer release" }, 400);

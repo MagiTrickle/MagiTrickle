@@ -17,6 +17,8 @@ export default defineConfig(() => ({
     ViteMinifyPlugin(),
   ],
   build: {
+    // Reduce the gzip JavaScript footprint in router packages.
+    minify: "terser" as const,
     cssTarget: "firefox115",
     emptyOutDir: true,
     target: "esnext",

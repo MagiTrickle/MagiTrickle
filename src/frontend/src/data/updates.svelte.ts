@@ -3,12 +3,14 @@ import {
   isActive,
   parseBuildInfo,
   parseStatus,
+  parseVersion,
   ReleaseClient,
   type BuildInfo,
   type Release,
   type UpdateStatus,
 } from "../modules/updates/releases";
 import { fetcher } from "../utils/fetcher";
+import { HttpError } from "../utils/http-error";
 
 export const updates = $state({
   info: null as BuildInfo | null,
@@ -24,16 +26,19 @@ export const updates = $state({
   installedThisSession: false,
 });
 
+type PendingInstall = { tag: string; version: string; revision: number };
+const PENDING_KEY = "mt-c.update-pending.v1";
+const UNCONFIRMED = "Update could not be confirmed; check the package manager from CLI";
+let pending: PendingInstall | null = null;
 let owner: AbortController | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
-let generation = 0;
 let mounts = 0;
 let client: ReleaseClient | null = null;
 let reconnectAttempts = 0;
-let awaitingTag: string | null = null;
-let observedJob: string | null = null;
-let pendingConfirmation: UpdateStatus | null = null;
 let polling: AbortSignal | null = null;
+/* A status GET from before the new install request must not replace the
+ * accepted job or clear its pending version confirmation. */
+let operationEpoch = 0;
 let infoRequest: { signal: AbortSignal; promise: Promise<void> } | null = null;
 
 function storage(): Storage | null {
@@ -41,6 +46,35 @@ function storage(): Storage | null {
     return window.localStorage;
   } catch {
     return null;
+  }
+}
+
+function rememberPending(value: PendingInstall | null) {
+  pending = value;
+  try {
+    if (value) window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(value));
+    else window.sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    /* Optional per-tab intent, never an installation log. */
+  }
+}
+
+function restorePending() {
+  pending = null;
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "null");
+    if (
+      value &&
+      typeof value.tag === "string" &&
+      typeof value.version === "string" &&
+      Number.isSafeInteger(value.revision) &&
+      value.revision > 0 &&
+      parseVersion(value.tag) &&
+      parseVersion(value.version, value.revision)
+    )
+      pending = { tag: value.tag, version: value.version, revision: value.revision };
+  } catch {
+    /* A blocked or stale session must not break the header. */
   }
 }
 
@@ -70,24 +104,22 @@ export async function checkUpdates(force = false) {
   )
     return;
   const signal = owner.signal;
-  const revision = ++generation;
   updates.checking = true;
   updates.error = "";
   try {
-    // Reopening the popup reuses build info and the one-hour release cache.
-    // A failed initial build-info request can still be retried without reload.
-    if (!updates.info) await refreshBuildInfo(signal);
-    if (signal.aborted || revision !== generation) return;
+    // Explicit Retry must refresh the installed router version as well.
+    // Normal popover opens and channel switches continue using the cache.
+    if (force || !updates.info) await refreshBuildInfo(signal);
+    if (signal.aborted) return;
     const result = await client!.latest(updates.preview, force, signal);
-    if (signal.aborted || revision !== generation) return;
+    if (signal.aborted) return;
     updates.release = result.release;
     updates.checkedAt = result.checkedAt;
   } catch (error) {
-    if (!signal.aborted && revision === generation) {
+    if (!signal.aborted)
       updates.error = error instanceof Error ? error.message : "Cannot check GitHub releases";
-    }
   } finally {
-    if (!signal.aborted && revision === generation) updates.checking = false;
+    if (!signal.aborted) updates.checking = false;
   }
 }
 
@@ -101,39 +133,23 @@ export function setUpdateChannel(preview: boolean) {
   try {
     storage()?.setItem("mt-c.update-preview", String(preview));
   } catch {
-    /* optional preference */
+    /* Optional. */
   }
 }
 
-async function confirmInstallation(signal: AbortSignal) {
-  const expected = pendingConfirmation;
-  if (!expected) return;
-  await refreshBuildInfo(signal);
-  if (signal.aborted) return;
-  if (
-    updates.info?.installed_version !== expected.target_version ||
-    updates.info?.installed_revision !== expected.target_revision
-  ) {
-    throw new Error("Installed version could not be confirmed");
-  }
-  pendingConfirmation = null;
+function stopWaiting() {
+  rememberPending(null);
   updates.reconnecting = false;
-  reconnectAttempts = 0;
-  updates.error = "";
-  // Historical jobs must not restore this hint after a page reload.
-  updates.installedThisSession = true;
+  updates.status = { stage: "idle" };
+  updates.error = UNCONFIRMED;
 }
 
 async function pollStatus() {
-  if (!owner || owner.signal.aborted || polling === owner.signal) return;
+  if (!owner || owner.signal.aborted || polling === owner.signal || updates.submitting) return;
   const signal = owner.signal;
+  const epoch = operationEpoch;
   polling = signal;
   try {
-    if (pendingConfirmation) {
-      // Retry only the idempotent version read, never the install POST.
-      await confirmInstallation(signal);
-      return;
-    }
     const status = parseStatus(
       await fetcher.get<unknown>("/system/update/status", {
         silent: true,
@@ -141,42 +157,58 @@ async function pollStatus() {
         timeoutMs: 7000,
       }),
     );
-    if (signal.aborted) return;
-    if (awaitingTag && status.tag !== awaitingTag) {
-      updates.error = "Update start was not confirmed; no automatic retry was made";
-      updates.reconnecting = false;
-      awaitingTag = null;
-      return;
-    }
+    // Discard a GET started before a new POST, even if it arrives last.
+    if (signal.aborted || epoch !== operationEpoch) return;
     const wasActive = isActive(updates.status);
-    if (awaitingTag) updates.error = "";
-    awaitingTag = null;
-    if (isActive(status)) observedJob = status.job_id ?? null;
     updates.status = status;
     updates.reconnecting = false;
-    reconnectAttempts = 0;
-    if (status.stage === "succeeded" && observedJob === status.job_id) {
-      pendingConfirmation = status;
+    if (isActive(status)) {
+      // An existing preparation may be observed by another tab. A restarted
+      // daemon can only report that the system installer holds the lock.
+      if (!pending && status.tag && status.target_version && status.target_revision) {
+        rememberPending({
+          tag: status.tag,
+          version: status.target_version,
+          revision: status.target_revision,
+        });
+      }
+      reconnectAttempts = 0;
+    } else if (status.stage === "failed" || status.stage === "interrupted") {
+      rememberPending(null);
+      updates.info = null;
+      await refreshBuildInfo(signal);
+      if (!signal.aborted) void checkUpdates();
+    } else if (pending) {
+      // The daemon deliberately does not persist job outcomes. A free lock or
+      // reachable HTTP alone is not success: read the newly running version.
       updates.reconnecting = true;
-      await confirmInstallation(signal);
-    } else if (wasActive && !isActive(status)) {
-      // A page reopened during an update must regain a usable candidate even
-      // when the worker fails. The package may have changed before failure.
+      const expected = pending;
+      await refreshBuildInfo(signal);
+      if (signal.aborted) return;
+      if (
+        updates.info?.installed_version === expected.version &&
+        updates.info?.installed_revision === expected.revision
+      ) {
+        rememberPending(null);
+        updates.installedThisSession = true;
+        updates.reconnecting = false;
+        updates.error = "";
+        reconnectAttempts = 0;
+      } else {
+        stopWaiting();
+      }
+    } else if (wasActive) {
       updates.info = null;
       await refreshBuildInfo(signal);
       if (!signal.aborted) void checkUpdates();
     }
   } catch (error) {
     if (!signal.aborted) {
-      if (
-        pendingConfirmation ||
-        isActive(updates.status) ||
-        updates.submitting ||
-        updates.reconnecting
-      ) {
+      if (pending || isActive(updates.status) || updates.submitting || updates.reconnecting) {
         updates.reconnecting = true;
         reconnectAttempts++;
-        if (pendingConfirmation) updates.error = "Installed version could not be confirmed";
+        if (pending) updates.error = "Installed version could not be confirmed";
+        if (reconnectAttempts >= 30) stopWaiting();
       } else {
         updates.error = error instanceof Error ? error.message : "Invalid update response";
       }
@@ -185,10 +217,7 @@ async function pollStatus() {
     if (polling === signal) polling = null;
     if (
       !signal.aborted &&
-      (pendingConfirmation ||
-        isActive(updates.status) ||
-        updates.reconnecting ||
-        updates.submitting)
+      (pending || isActive(updates.status) || updates.reconnecting || updates.submitting)
     ) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => void pollStatus(), Math.min(10000, 2000 + reconnectAttempts * 1000));
@@ -206,16 +235,18 @@ export async function installUpdate() {
     updates.submitting ||
     updates.checking ||
     updates.reconnecting ||
-    pendingConfirmation ||
+    pending ||
     isActive(updates.status)
   )
     return;
   const signal = owner.signal;
   const release = updates.release;
+  const version = parseVersion(release.tag_name)!;
+  operationEpoch++; // Invalidate earlier status GETs before submitting.
   updates.submitting = true;
   updates.installedThisSession = false;
-  awaitingTag = release.tag_name;
   updates.error = "";
+  rememberPending({ tag: release.tag_name, version: version.base, revision: version.revision });
   try {
     const result = parseStatus(
       await fetcher<unknown>("/system/update/install", {
@@ -231,12 +262,12 @@ export async function installUpdate() {
         timeoutMs: 10000,
       }),
     );
-    if (signal.aborted) return;
-    updates.status = result;
-    observedJob = result.job_id ?? null;
-  } catch {
+    if (!signal.aborted) updates.status = result;
+  } catch (error) {
     if (!signal.aborted) {
-      // The response can be lost after acceptance. Never blindly retry the POST.
+      // Never repeat a possibly accepted POST. Definite rejections discard intent;
+      // an uncertain transport result is resolved by status + installed version.
+      if (error instanceof HttpError && error.status < 500) rememberPending(null);
       updates.error = "Could not confirm update start; checking router status";
       updates.reconnecting = true;
     }
@@ -249,11 +280,10 @@ export async function installUpdate() {
   }
 }
 
-/** One owner in the persistent header. Closing the popup never cancels the
- * router's job; unmounting only cleans up browser requests and timers. */
 export function mountUpdates() {
   if (++mounts === 1) {
     owner = new AbortController();
+    operationEpoch++; // A previous mount's responses are no longer relevant.
     const signal = owner.signal;
     client = new ReleaseClient(storage());
     updates.info = null;
@@ -263,14 +293,13 @@ export function mountUpdates() {
     updates.submitting = false;
     updates.reconnecting = false;
     updates.installedThisSession = false;
-    awaitingTag = null;
-    observedJob = null;
-    pendingConfirmation = null;
     reconnectAttempts = 0;
+    restorePending();
+    updates.reconnecting = pending !== null;
     try {
       updates.preview = storage()?.getItem("mt-c.update-preview") === "true";
     } catch {
-      /* default stable */
+      /* Default stable. */
     }
     const cached = client.cached(updates.preview);
     updates.release = cached?.release ?? null;
@@ -278,24 +307,20 @@ export function mountUpdates() {
     void (async () => {
       await pollStatus();
       if (signal.aborted) return;
-      // Unlike discovery, this read must not be skipped during an active job.
-      // A simultaneous popup open may already have loaded it.
       try {
         if (!updates.info) await refreshBuildInfo(signal);
       } catch (error) {
-        if (!signal.aborted) {
+        if (!signal.aborted)
           updates.error = error instanceof Error ? error.message : "Invalid update response";
-        }
         return;
       }
-      if (!signal.aborted) void checkUpdates();
+      if (!signal.aborted && !pending && !updates.error) void checkUpdates();
     })();
   }
   return () => {
     if (--mounts === 0) {
       owner?.abort();
       owner = null;
-      generation++;
       if (timer) clearTimeout(timer);
       updates.dialogOpen = false;
     }
