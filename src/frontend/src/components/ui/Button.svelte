@@ -83,8 +83,7 @@
     }
 
     &.accent.inactive {
-      border: 1px solid var(--bg-light-extra) !important;
-      background: var(--bg-light) !important;
+      background: var(--bg-light-extra) !important;
       color: var(--text-2);
     }
 
@@ -116,17 +115,14 @@
     &.accent {
       position: relative;
       z-index: 0;
-      padding: 0.6rem;
-      border: 1px solid transparent !important;
+      padding: calc(0.6rem + 1px);
+      border: 0 !important;
       background: transparent !important;
       color: color-mix(in srgb, var(--accent), transparent 20%);
       clip-path: inset(0 round 0.5rem);
-      /* clip-path clips paint, not scrollable overflow from the rotating
-         200% border layer. Contain that decoration inside this button. */
+      /* Keep the painted border inside the padding box so paint containment
+         does not clip it. The extra padding preserves the button's size. */
       contain: paint;
-      /* Paint containment clips at the padding edge by default, hiding the
-         animated border. Keep the clip at the button's outer border edge. */
-      overflow-clip-margin: border-box;
       transition:
         color 0.3s ease,
         opacity 0.3s ease;
@@ -153,7 +149,7 @@
       content: "";
       position: absolute;
       z-index: -1;
-      inset: 0;
+      inset: 1px;
       background: var(--bg-light);
       border-radius: calc(0.5rem - 1px);
     }
