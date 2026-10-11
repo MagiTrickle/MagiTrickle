@@ -265,6 +265,7 @@
     inset: 0;
     width: auto;
     height: auto;
+    aspect-ratio: auto;
     transform: none;
     animation: none;
     opacity: 1;

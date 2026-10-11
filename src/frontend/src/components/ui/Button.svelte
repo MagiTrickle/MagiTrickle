@@ -133,8 +133,10 @@
       position: absolute;
       top: 50%;
       left: 50%;
+      /* A square keeps the rotating layer over the whole outline of wide
+         buttons, including Update, at every angle. */
       width: 200%;
-      height: 200%;
+      aspect-ratio: 1;
       z-index: -2;
       background-color: var(--bg-light-extra);
       background-image: conic-gradient(transparent 180deg, var(--accent) 360deg);
