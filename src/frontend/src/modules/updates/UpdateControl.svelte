@@ -255,13 +255,20 @@
   .update-action :global(button.accent) {
     overflow: hidden;
     transition:
-      border-color 0.3s ease,
       color 0.3s ease,
       opacity 0.3s ease;
   }
   .update-action.ready :global(button.accent) {
-    border-color: color-mix(in srgb, var(--accent), transparent 35%) !important;
     color: var(--accent);
+  }
+  .update-action.ready :global(button.accent::before) {
+    inset: 0;
+    width: auto;
+    height: auto;
+    transform: none;
+    animation: none;
+    opacity: 1;
+    background: color-mix(in srgb, var(--accent), transparent 35%);
   }
   .update-action :global(button.accent::after) {
     transition: background-color 0.3s ease;
