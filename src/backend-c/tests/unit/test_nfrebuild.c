@@ -253,6 +253,47 @@ TEST port_remap_uses_the_configured_chain_prefix(void) {
     PASS();
 }
 
+#ifdef MT_ENTWARE_KN
+TEST policy_lifecycle_empty_dispatch_late_group_and_disable(void) {
+    fixture_t fx;
+    fixture_up(&fx);
+    mt_kn_policy_config_t policy = {.enabled = true};
+    strcpy(policy.policy_id, "Policy0");
+    const char *jump[] = {"-j", "MT_POLICY"};
+    const char *terminal[] = {"-j", "RETURN"};
+    const char *include[] = {"-m", "mark", "!", "--mark", "0xffffd00/0x0fffffff", "-j", "RETURN"};
+    ASSERT_EQ(MT_OK, mt_app_policy_set(fx.app, &policy, true, 0xffffd00));
+    ASSERT(mt_fake_ipt_chain_exists(fx.fake, "mangle", "MT_POLICY_RULES"));
+    ASSERT(chain_has_rule(fx.fake, "mangle", "MT_POLICY_RULES", terminal, 2));
+    ASSERT(chain_has_rule(fx.fake, "nat", "MT_DNSOR", include, 7));
+    /* A group added after the terminal-only initial commit must execute
+     * before RETURN. A regular (unordered) terminal rule breaks this case. */
+    const char *group[] = {"-j", "MT_late"};
+    ASSERT_EQ(MT_OK, mt_ipt_register_chain_override(fx.ipt, "mangle", "MT_late"));
+    ASSERT_EQ(MT_OK, mt_ipt_append(fx.ipt, "mangle", "MT_late", terminal, 2));
+    ASSERT_EQ(MT_OK, mt_ipt_append_ordered(fx.ipt, "mangle", "MT_POLICY_RULES", 300, group, 2));
+    ASSERT_EQ(MT_OK, mt_ipt_commit(fx.ipt));
+    mt_ipt_rule_t *const *rules = NULL; size_t count = 0;
+    ASSERT(mt_fake_ipt_get_rules(fx.fake, "mangle", "MT_POLICY_RULES", &rules, &count));
+    ASSERT_EQ(2u, count); ASSERT_STR_EQ("MT_late", rules[0]->parts[1]);
+    ASSERT_STR_EQ("RETURN", rules[1]->parts[1]);
+    ASSERT_EQ(MT_OK, mt_app_rebuild_netfilter(fx.app, NULL));
+    ASSERT_EQ(1u, count_rule(fx.fake, "mangle", "PREROUTING", jump, 2));
+    policy.mode = MT_KN_POLICY_EXCLUDE;
+    ASSERT_EQ(MT_OK, mt_app_policy_set(fx.app, &policy, false, 0));
+    ASSERT(chain_has_rule(fx.fake, "nat", "MT_DNSOR", terminal, 2));
+    policy.enabled = false;
+    ASSERT_EQ(MT_OK, mt_app_policy_set(fx.app, &policy, false, 0));
+    ASSERT_FALSE(mt_fake_ipt_chain_exists(fx.fake, "mangle", "MT_POLICY_RULES"));
+    ASSERT_FALSE(mt_fake_ipt_chain_exists(fx.fake, "mangle", "MT_POLICY"));
+    ASSERT_EQ(0u, count_rule(fx.fake, "mangle", "PREROUTING", jump, 2));
+    ASSERT_FALSE(chain_has_rule(fx.fake, "nat", "MT_DNSOR", terminal, 2));
+    ASSERT(chain_has_rule(fx.fake, "nat", "POSTROUTING", k_foreign_post, 4));
+    fixture_down(&fx);
+    PASS();
+}
+#endif
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -264,5 +305,8 @@ int main(int argc, char **argv) {
     RUN_TEST(rebuild_aborts_on_a_raised_cancel);
     RUN_TEST(force_commit_without_a_committer_commits_in_place);
     RUN_TEST(port_remap_uses_the_configured_chain_prefix);
+#ifdef MT_ENTWARE_KN
+    RUN_TEST(policy_lifecycle_empty_dispatch_late_group_and_disable);
+#endif
     GREATEST_MAIN_END();
 }

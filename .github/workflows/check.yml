@@ -11,6 +11,8 @@ jobs:
   test_frontend:
     name: Frontend testing
     runs-on: ubuntu-latest
+    env:
+      VITE_ENTWARE_KN: '0'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -30,7 +32,20 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ./src/frontend
-        run: npm install
+        run: npm ci
+
+      - name: Check frontend types
+        working-directory: ./src/frontend
+        run: npm run check
+
+      - name: Build and verify platform bundles
+        working-directory: ./src/frontend
+        run: |
+          VITE_ENTWARE_KN=0 npm run build -- --outDir ../../.build/frontend-generic
+          VITE_ENTWARE_KN=1 npm run build -- --outDir ../../.build/frontend-keenetic
+          python3 ../../tools/tests/keenetic_policy_isolation.py \
+            --generic-frontend ../../.build/frontend-generic \
+            --keenetic-frontend ../../.build/frontend-keenetic
 
       - name: Install Playwright browsers
         working-directory: ./src/frontend
@@ -43,3 +58,7 @@ jobs:
       - name: Frontend e2e tests
         working-directory: ./src/frontend
         run: npm run test:e2e
+
+      - name: Keenetic policy e2e tests
+        working-directory: ./src/frontend
+        run: VITE_ENTWARE_KN=1 npm run test:e2e -- keenetic-policy.spec.ts

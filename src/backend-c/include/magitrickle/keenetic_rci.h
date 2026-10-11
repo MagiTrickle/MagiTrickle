@@ -22,12 +22,11 @@
  * the system name (nothing to show the user that they don't already
  * see).
  *
- * Built on every platform, but mt_kn_get_iface_aliases() only performs
- * the RCI calls under -DMT_ENTWARE_KN; elsewhere it yields an empty set
- * without touching the network, mirroring Go's DummyRouterSpecificAPI
- * and its !entware_kn build tag. */
+ * Compiled only under -DMT_ENTWARE_KN. Generic/OpenWrt builds contain
+ * neither the RCI transport/parsers nor a dummy implementation. */
 #ifndef MAGITRICKLE_KEENETIC_RCI_H
 #define MAGITRICKLE_KEENETIC_RCI_H
+#ifdef MT_ENTWARE_KN
 
 #include <stddef.h>
 
@@ -74,10 +73,8 @@ mt_err_t mt_kn_get_iface_aliases(mt_kn_aliases_t *out);
 
 /* Same, against an explicit base URL (no trailing slash required).
  * Exists so tests can point at a local stub server, mirroring the
- * BaseURL field Go's test overrode. Performs the RCI calls on every
- * platform, including non-Keenetic ones -- unlike
- * mt_kn_get_iface_aliases(), which is compiled out unless
- * MT_ENTWARE_KN. */
+ * BaseURL field Go's test overrode. Available only in KN builds, like
+ * the rest of this module. */
 mt_err_t mt_kn_get_iface_aliases_from(const char *base_url, mt_kn_aliases_t *out);
 
 /* Returns the alias for `system_name`, or NULL when there is none.
@@ -115,4 +112,5 @@ mt_err_t mt_kn_parse_system_names(const char *json, mt_kn_iface_meta_t *metas, s
  * final map. Caller frees *out with mt_kn_aliases_free(). */
 mt_err_t mt_kn_build_aliases(const mt_kn_iface_meta_t *metas, size_t n, mt_kn_aliases_t *out);
 
+#endif /* MT_ENTWARE_KN */
 #endif /* MAGITRICKLE_KEENETIC_RCI_H */

@@ -181,6 +181,8 @@
   "Move down": "Ниже",
   "If all interfaces are unavailable": "Если все интерфейсы недоступны",
   "Profiles saved": "Профили сохранены",
+  "Settings saved": "Настройки сохранены",
+  "Some settings could not be saved": "Не удалось сохранить часть настроек",
   "Failed to save profiles": "Не удалось сохранить профили",
   "No profiles yet": "Профилей пока нет",
   "Direct interface selection continues to work as before.": "Прямой выбор интерфейсов работает как прежде.",

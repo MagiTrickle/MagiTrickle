@@ -29,7 +29,11 @@ def run(args: list[str], cwd: Path, env: dict[str, str] | None = None) -> str:
 def ipk_contract(work: Path, platform: str, target: str) -> None:
     key = f"{platform}_{target}"
     compile_dir = work / ".build" / key / "compile"
-    compile_dir.mkdir(parents=True)
+    compile_dir.mkdir(parents=True, exist_ok=True)
+    frontend = work / ".build" / key / "frontend"
+    frontend.mkdir(parents=True, exist_ok=True)
+    marker = f"<title>synthetic {key}</title>\n"
+    (frontend / "index.html").write_text(marker)
     for name in ("magitrickled",):
         executable = compile_dir / name
         executable.write_text("#!/bin/sh\n# Synthetic payload: never install this test package.\nexit 0\n")
@@ -55,6 +59,10 @@ def ipk_contract(work: Path, platform: str, target: str) -> None:
             binary_dir = "./opt/bin" if platform == "entware" else "./usr/bin"
             config = "./opt/var/lib/magitrickle/config.yaml" if platform == "entware" else "./etc/magitrickle/state/config.yaml"
             assert config in files
+            assets = "./opt/usr/share" if platform == "entware" else "./usr/share"
+            html = payload.extractfile(f"{assets}/magitrickle/skins/default/index.html")
+            assert html and html.read().decode() == marker
+            assert not any(name.endswith(".mt-c-build-properties") for name in files)
             assert f"{binary_dir}/mt-c-updater" not in files
             for name in ("magitrickled",):
                 binary = f"{binary_dir}/{name}"
@@ -121,6 +129,7 @@ def main() -> None:
         dist.mkdir(parents=True)
         (dist / "index.html").write_text("<title>synthetic packaging fixture</title>\n")
         ipk_contract(work, "entware", "aarch64-3.10_kn")
+        ipk_contract(work, "entware", "aarch64-3.10")
         ipk_contract(work, "openwrt", "x86_64")
         apk_contract(work)
         sdk_contract(work, "entware")

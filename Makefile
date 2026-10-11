@@ -68,6 +68,8 @@ LIB_DIR := $(ROOT_DIR)/lib
 USRSHARE_DIR := $(ROOT_DIR)/usr/share
 STATE_DIR := $(ROOT_DIR)/var/lib/magitrickle
 
+override ENTWARE_KN := $(if $(filter entware,$(PLATFORM)),$(if $(filter %_kn,$(TARGET)),1,))
+
 ifeq ($(PLATFORM),entware)
 	BIN_DIR := $(ROOT_DIR)/opt/bin
 	ETC_DIR := $(ROOT_DIR)/opt/etc
@@ -75,9 +77,6 @@ ifeq ($(PLATFORM),entware)
 	USRSHARE_DIR := $(ROOT_DIR)/opt/usr/share
 	STATE_DIR := $(ROOT_DIR)/opt/var/lib/magitrickle
 
-	ifeq ($(filter %_kn,$(TARGET)),$(TARGET))
-		ENTWARE_KN := 1
-	endif
 endif
 
 ifeq ($(PLATFORM),openwrt)
@@ -137,7 +136,8 @@ FRONTEND_DEPENDENCIES := ./src/frontend/package.json ./src/frontend/package-lock
 FRONTEND_SOURCES := $(shell find ./src/frontend/src -type f 2>/dev/null)
 FRONTEND_SOURCES += ./src/frontend/vite.config.ts ./src/frontend/tsconfig.json
 FRONTEND_SOURCES += $(FRONTEND_DEPENDENCIES)
-FRONTEND_BUILD_PROPERTIES := PKG_VERSION_DISPLAY=\"$(PKG_VERSION_DISPLAY)\" PKG_VERSION_PRERELEASE=\"$(PKG_VERSION_PRERELEASE)\"
+FRONTEND_OUT_DIR ?= $(abspath $(BUILD_DIR)/frontend)
+FRONTEND_BUILD_PROPERTIES := ENTWARE_KN="$(ENTWARE_KN)" FRONTEND_OUT_DIR="$(FRONTEND_OUT_DIR)" PKG_VERSION_DISPLAY=\"$(PKG_VERSION_DISPLAY)\" PKG_VERSION_PRERELEASE=\"$(PKG_VERSION_PRERELEASE)\"
 
 # Packaging data
 
@@ -227,20 +227,22 @@ redownload_frontend:
 	@rm -f "$(STAMPS_DIR)/download-frontend"
 	$(MAKE) download_frontend
 
-$(STAMPS_DIR)/build-properties-frontend: FORCE
+$(STAMPS_DIR)/build-properties-frontend-$(UNIQUE_NAME): FORCE
 	@mkdir -p $(STAMPS_DIR)
 	@echo "$(FRONTEND_BUILD_PROPERTIES)" | cmp -s - $@ || echo "$(FRONTEND_BUILD_PROPERTIES)" > $@
+	@cmp -s "$@" "$(FRONTEND_OUT_DIR)/.mt-c-build-properties" && test -f "$(FRONTEND_OUT_DIR)/index.html" || touch "$@"
 
-$(STAMPS_DIR)/build-frontend: $(STAMPS_DIR)/download-frontend $(FRONTEND_SOURCES) $(STAMPS_DIR)/build-properties-frontend
-	cd ./src/frontend && VITE_PKG_VERSION="$(PKG_VERSION_DISPLAY)" VITE_PKG_VERSION_IS_DEV=$(if $(PKG_VERSION_PRERELEASE),true,false) npm run build
+$(STAMPS_DIR)/build-frontend-$(UNIQUE_NAME): $(STAMPS_DIR)/download-frontend $(FRONTEND_SOURCES) $(STAMPS_DIR)/build-properties-frontend-$(UNIQUE_NAME)
+	cd ./src/frontend && VITE_PKG_VERSION="$(PKG_VERSION_DISPLAY)" VITE_PKG_VERSION_IS_DEV=$(if $(PKG_VERSION_PRERELEASE),true,false) VITE_ENTWARE_KN=$(if $(ENTWARE_KN),1,0) npm run build -- --outDir "$(FRONTEND_OUT_DIR)"
 
 	@mkdir -p $(STAMPS_DIR)
-	@touch "$(STAMPS_DIR)/build-frontend"
+	@cp "$(STAMPS_DIR)/build-properties-frontend-$(UNIQUE_NAME)" "$(FRONTEND_OUT_DIR)/.mt-c-build-properties"
+	@touch "$(STAMPS_DIR)/build-frontend-$(UNIQUE_NAME)"
 
-build_frontend: $(STAMPS_DIR)/build-frontend
+build_frontend: $(STAMPS_DIR)/build-frontend-$(UNIQUE_NAME)
 
 rebuild_frontend:
-	@rm -f "$(STAMPS_DIR)/build-frontend"
+	@rm -f "$(STAMPS_DIR)/build-frontend-$(UNIQUE_NAME)"
 	$(MAKE) build_frontend
 
 # Packaging
@@ -260,7 +262,7 @@ prepare_files: build
 	mkdir -p "$(BIN_DIR)"
 	cp "$(COMPILE_DIR)/magitrickled" "$(BIN_DIR)/magitrickled"
 	mkdir -p "$(USRSHARE_DIR)/magitrickle/skins/default"
-	cp -r ./src/frontend/dist/* "$(USRSHARE_DIR)/magitrickle/skins/default"
+	cp -r "$(FRONTEND_OUT_DIR)"/* "$(USRSHARE_DIR)/magitrickle/skins/default"
 	$(call _copy_files,./files/common)
 	$(if $(filter entware,$(PLATFORM)), $(call _copy_files,./files/entware))
 	$(if $(filter entware,$(PLATFORM)), $(if $(filter %_kn,$(TARGET)), $(call _copy_files,./files/entware_kn)))

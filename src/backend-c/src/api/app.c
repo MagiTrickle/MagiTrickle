@@ -3,6 +3,9 @@
 #include "magitrickle/profiles.h"
 
 #include <errno.h>
+#ifdef MT_ENTWARE_KN
+#include <stdatomic.h>
+#endif
 #include <ifaddrs.h>
 #include <linux/if.h>
 #include <net/if.h>
@@ -12,7 +15,9 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef MT_ENTWARE_KN
 #include "magitrickle/keenetic_rci.h"
+#endif
 #include "magitrickle/log.h"
 #include "magitrickle/lookup.h"
 #include "magitrickle/netfilter_cleaner.h"
@@ -23,6 +28,13 @@
 #include "magitrickle/subparse.h"
 
 struct mt_app {
+#ifdef MT_ENTWARE_KN
+    /* Desired state is written on the event loop; active scope is published
+     * under nf_mu when a rebuild begins. All rulesets borrow its stable address. */
+    mt_kn_policy_scope_t policy_scope, policy_desired;
+    atomic_uint_fast64_t policy_generation, policy_applied;
+    atomic_int policy_apply_error;
+#endif
     mt_config_t *cfg;
     /* Immutable startup helper names: rulesets borrow these, not the
      * reloadable configuration strings. */
@@ -98,6 +110,9 @@ static void app_nf_leave(mt_app_t *app) {
 static mt_ruleset_deps_t ruleset_deps(mt_app_t *app) {
     mt_ruleset_deps_t deps = {
         .config = app->cfg,
+#ifdef MT_ENTWARE_KN
+        .policy = &app->policy_scope,
+#endif
         .ipt4 = app->ipt4,
         .ipt6 = app->ipt6,
         .rtnl = app->rtnl,
@@ -233,6 +248,17 @@ mt_app_t *mt_app_create(const mt_app_deps_t *deps) {
     app->pipeline = deps->pipeline;
     app->start_idx = deps->start_idx;
 
+#ifdef MT_ENTWARE_KN
+    atomic_init(&app->policy_generation, 1);
+    atomic_init(&app->policy_applied, 1);
+    atomic_init(&app->policy_apply_error, MT_OK);
+    if (mt_kn_policy_scope_init(&app->policy_scope, &app->cfg->app.keenetic_policy, app->chain_prefix) != MT_OK ||
+        mt_kn_policy_prepare(&app->policy_scope, app->ipt4) != MT_OK ||
+        mt_kn_policy_prepare(&app->policy_scope, app->ipt6) != MT_OK) {
+        mt_app_destroy(app); return NULL;
+    }
+    app->policy_desired = app->policy_scope;
+#endif
     mt_ruleset_deps_t rdeps = ruleset_deps(app);
     for (size_t i = 0; i < app->cfg->n_groups; i++) {
         mt_ruleset_t *rs = mt_ruleset_new(app->cfg->groups[i], &rdeps);
@@ -1162,8 +1188,8 @@ mt_err_t mt_app_list_interfaces(const mt_app_t *app, mt_iface_info_t **out, size
     }
     freeifaddrs(ifap);
 
-    /* Friendly names, when the platform can supply them (Keenetic RCI;
-     * a no-op empty set elsewhere). Go's interfaces.List logged the
+#ifdef MT_ENTWARE_KN
+    /* Friendly names from Keenetic RCI. Go's interfaces.List logged the
      * error at debug level and carried on with unnamed interfaces --
      * an unreachable RCI must never fail the interface list itself. */
     mt_kn_aliases_t aliases = {0};
@@ -1177,6 +1203,7 @@ mt_err_t mt_app_list_interfaces(const mt_app_t *app, mt_iface_info_t **out, size
         }
     }
     mt_kn_aliases_free(&aliases);
+#endif
 
     *out = arr;
     *out_n = n;
@@ -1234,17 +1261,21 @@ mt_err_t mt_app_reload_config(mt_app_t *app, const char *path) {
     if (err != MT_OK) { mt_config_clear(&next); return err; }
 
     size_t ng = next.n_groups, ns = next.n_subscriptions;
+    app_nf_enter(app);
+    /* One immutable size per old registry: allocation, capture, retirement
+     * and rollback must describe the same snapshot, including empty sets.
+     * Only the loop thread replaces these arrays; nf_mu excludes rebuilds. */
+    const size_t old_ng = app->n_rulesets, old_ns = app->n_sub_rulesets;
     mt_ruleset_t **groups = ng ? calloc(ng, sizeof(*groups)) : NULL;
     mt_ruleset_t **subs = ns ? calloc(ns, sizeof(*subs)) : NULL;
     mt_group_t **synth = ns ? calloc(ns, sizeof(*synth)) : NULL;
-    bool *old_groups_enabled = app->n_rulesets ? calloc(app->n_rulesets, sizeof(bool)) : NULL;
-    bool *old_subs_enabled = app->n_sub_rulesets ? calloc(app->n_sub_rulesets, sizeof(bool)) : NULL;
+    bool *old_groups_enabled = old_ng ? calloc(old_ng, sizeof(*old_groups_enabled)) : NULL;
+    bool *old_subs_enabled = old_ns ? calloc(old_ns, sizeof(*old_subs_enabled)) : NULL;
     mt_ruleset_snapshot_t *snapshot = NULL;
     bool touched = false, swapped = false;
     mt_config_t old = {0};
-    app_nf_enter(app);
     if ((ng && !groups) || (ns && (!subs || !synth)) ||
-        (app->n_rulesets && !old_groups_enabled) || (app->n_sub_rulesets && !old_subs_enabled)) {
+        (old_ng && !old_groups_enabled) || (old_ns && !old_subs_enabled)) {
         err = MT_ERR_NOMEM; goto done;
     }
     mt_ruleset_deps_t deps = ruleset_deps(app); /* stable cfg address */
@@ -1261,17 +1292,17 @@ mt_err_t mt_app_reload_config(mt_app_t *app, const char *path) {
         snapshot = mt_ruleset_snapshot_build(&next);
         if (!snapshot) { err = MT_ERR_NOMEM; goto done; }
     }
-    for (size_t i = 0; i < app->n_rulesets; i++) {
+    for (size_t i = 0; i < old_ng; i++) {
         old_groups_enabled[i] = mt_ruleset_runtime_enabled(app->rulesets[i]);
     }
-    for (size_t i = 0; i < app->n_sub_rulesets; i++) {
+    for (size_t i = 0; i < old_ns; i++) {
         old_subs_enabled[i] = mt_ruleset_runtime_enabled(app->sub_rulesets[i]);
     }
     touched = true;
-    for (size_t i = 0; err == MT_OK && i < app->n_rulesets; i++) {
+    for (size_t i = 0; err == MT_OK && i < old_ng; i++) {
         err = mt_ruleset_disable(app->rulesets[i]);
     }
-    for (size_t i = 0; err == MT_OK && i < app->n_sub_rulesets; i++) {
+    for (size_t i = 0; err == MT_OK && i < old_ns; i++) {
         err = mt_ruleset_disable(app->sub_rulesets[i]);
     }
     if (err != MT_OK) { goto done; }
@@ -1285,8 +1316,8 @@ mt_err_t mt_app_reload_config(mt_app_t *app, const char *path) {
         }
     }
     if (err != MT_OK) { goto done; }
-    for (size_t i = 0; i < app->n_rulesets; i++) { mt_ruleset_free(app->rulesets[i]); }
-    for (size_t i = 0; i < app->n_sub_rulesets; i++) {
+    for (size_t i = 0; i < old_ng; i++) { mt_ruleset_free(app->rulesets[i]); }
+    for (size_t i = 0; i < old_ns; i++) {
         mt_ruleset_free(app->sub_rulesets[i]); mt_group_free(app->sub_synth_groups[i]);
     }
     free(app->rulesets); free(app->sub_rulesets); free(app->sub_synth_groups);
@@ -1317,7 +1348,7 @@ done:
         for (size_t family = 0; family < 2; family++) {
             mt_ruleset_t **sets = family ? app->sub_rulesets : app->rulesets;
             bool *enabled = family ? old_subs_enabled : old_groups_enabled;
-            size_t count = family ? app->n_sub_rulesets : app->n_rulesets;
+            size_t count = family ? old_ns : old_ng;
             for (size_t i = 0; i < count; i++) {
                 if (!enabled[i]) { continue; }
                 mt_err_t restore = mt_ruleset_enable(sets[i]);
@@ -1326,6 +1357,15 @@ done:
             }
         }
     }
+#ifdef MT_ENTWARE_KN
+    if (err == MT_OK && !mt_kn_policy_config_equal(&app->policy_desired.config, &app->cfg->app.keenetic_policy)) {
+        mt_kn_policy_config_t policy = app->cfg->app.keenetic_policy;
+        /* Unlock before requesting a pass (test builds may run it synchronously). */
+        app_nf_leave(app);
+        err = mt_app_policy_set(app, &policy, false, 0);
+        app_nf_enter(app);
+    }
+#endif
     free(groups); free(subs); free(synth); free(old_groups_enabled); free(old_subs_enabled);
     mt_ruleset_snapshot_free(snapshot); mt_config_clear(&next);
     app_nf_leave(app);
@@ -1338,6 +1378,9 @@ mt_err_t mt_app_save_config(mt_app_t *app, const char *path, const char *version
 
 void mt_app_set_port_remap(mt_app_t *app, mt_port_remap_t *remap) {
     app->port_remap = remap;
+#ifdef MT_ENTWARE_KN
+    mt_port_remap_set_policy(remap, &app->policy_scope);
+#endif
 }
 
 /* One pass of the rebuild, with the netfilter lock already held. */
@@ -1369,6 +1412,12 @@ static mt_err_t rebuild_netfilter_locked(mt_app_t *app, mt_cancel_t *cancel) {
     err = mt_netfilter_register_base_chains(app->ipt4, app->ipt6);
     if (err != MT_OK) { return err; }
 
+#ifdef MT_ENTWARE_KN
+    app->policy_scope = app->policy_desired;
+    err = mt_kn_policy_prepare(&app->policy_scope, app->ipt4);
+    if (err == MT_OK) { err = mt_kn_policy_prepare(&app->policy_scope, app->ipt6); }
+    if (err != MT_OK) { return err; }
+#endif
     err = mt_port_remap_prepare_iptables(app->port_remap);
     if (err != MT_OK) { return err; }
 
@@ -1407,6 +1456,10 @@ mt_err_t mt_app_rebuild_netfilter(mt_app_t *app, mt_cancel_t *cancel) {
     if (app->ipt6) { mt_ipt_set_cancel(app->ipt6, cancel); }
 
     mt_err_t err = rebuild_netfilter_locked(app, cancel);
+#ifdef MT_ENTWARE_KN
+    atomic_store(&app->policy_apply_error, (int)err);
+    if (err == MT_OK) { atomic_store(&app->policy_applied, atomic_load(&app->policy_generation)); }
+#endif
 
     if (app->ipt4) { mt_ipt_set_cancel(app->ipt4, NULL); }
     if (app->ipt6) { mt_ipt_set_cancel(app->ipt6, NULL); }
@@ -1616,3 +1669,45 @@ mt_err_t mt_app_reconcile_routes(mt_app_t *app, const char *interface_name)
     if (app->nf_mu_ready) { pthread_mutex_unlock(&app->nf_mu); }
     return result;
 }
+
+#ifdef MT_ENTWARE_KN
+void mt_app_policy_get(const mt_app_t *app, mt_kn_policy_config_t *config,
+                        bool *ready, bool *applied, mt_err_t *apply_error)
+{
+    if (config) { *config = app->cfg->app.keenetic_policy; }
+    if (ready) { *ready = app->policy_desired.ready; }
+    if (applied) { *applied = atomic_load(&app->policy_applied) == atomic_load(&app->policy_generation); }
+    if (apply_error) { *apply_error = (mt_err_t)atomic_load(&app->policy_apply_error); }
+}
+mt_err_t mt_app_policy_set(mt_app_t *app, const mt_kn_policy_config_t *config, bool ready, uint32_t mark)
+{
+    mt_kn_policy_scope_t desired;
+    mt_err_t err = mt_kn_policy_scope_init(&desired, config, app->chain_prefix);
+    if (err != MT_OK || (ready && mark > MT_KN_POLICY_MASK)) { return MT_ERR_INVAL; }
+    desired.ready = config->enabled && ready;
+    desired.mark = desired.ready ? mark : 0;
+    /* Desired state is loop-owned. An unchanged periodic RCI result must not
+     * interrupt an in-flight netfilter rebuild or take its mutex. */
+    bool changed = !mt_kn_policy_config_equal(&app->policy_desired.config, config) ||
+                   app->policy_desired.ready != desired.ready || app->policy_desired.mark != desired.mark;
+    if (!changed) {
+        if (!app->committer && atomic_load(&app->policy_apply_error) != MT_OK) {
+            return mt_app_rebuild_netfilter(app, NULL);
+        }
+        return MT_OK;
+    }
+    app_nf_enter(app);
+    app->cfg->app.keenetic_policy = *config;
+    if (changed) {
+        app->policy_desired = desired;
+        atomic_fetch_add(&app->policy_generation, 1);
+        atomic_store(&app->policy_apply_error, MT_OK);
+    }
+    app_nf_leave(app);
+    if (changed) {
+        if (app->committer) { mt_nfcommit_request(app->committer); }
+        else { return mt_app_rebuild_netfilter(app, NULL); }
+    }
+    return MT_OK;
+}
+#endif

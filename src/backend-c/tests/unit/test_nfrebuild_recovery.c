@@ -113,6 +113,13 @@ static size_t find_transcript_command(const uint8_t *data, size_t len, const cha
 
 static mt_err_t gate_restore(mt_ipt_executable_t *self, const uint8_t *data, size_t len) {
     gate_t *g = (gate_t *)self;
+    /* The Keenetic target rejects this optional match at COMMIT. Enforce
+     * that constraint in fake AND real-kernel runs instead of relying on
+     * the CI host happening not to have the module. */
+    if (find_transcript_command(data, len, "-m addrtype") != SIZE_MAX) {
+        g->invalid_batches++;
+        return MT_ERR_IO;
+    }
     if (find_transcript_command(data, len, "-D USER_KEEP -j MT_CHILD\n") != SIZE_MAX &&
         find_transcript_command(data, len, ":USER_KEEP - [0:0]\n") != SIZE_MAX) {
         g->foreign_redeclarations++;
@@ -485,6 +492,46 @@ TEST event_burst_eventually_recovers(void) {
     return assert_recovered();
 }
 
+#ifdef MT_ENTWARE_KN
+TEST scoped_dns_rebuild_on_a_kernel_without_addrtype(void) {
+    setup(3, "MT_");
+    if (real_backend) {
+        /* main() has already verified a separate root network namespace. */
+        ASSERT_EQ(0, system("ip link set lo up && "
+            "ip addr replace 192.0.2.1/32 dev lo && "
+            "ip -6 addr replace 2001:db8::1/128 dev lo nodad"));
+    }
+    mt_kn_policy_config_t config = {.enabled = true, .policy_id = "Policy0"};
+    ASSERT_EQ(MT_OK, mt_app_policy_set(fx.app, &config, false, 0));
+    for (unsigned mode = 0; mode < 2; mode++) {
+        config.mode = mode ? MT_KN_POLICY_EXCLUDE : MT_KN_POLICY_INCLUDE;
+        ASSERT_EQ(MT_OK, mt_app_policy_set(fx.app, &config, true, 0xffffd00));
+        for (unsigned family = 0; family < 2; family++) {
+            mt_ipt_rules_snapshot_t *snap = NULL;
+            ASSERT_EQ(MT_OK, mt_ipt_get_current_rules(fx.ipt[family], &snap));
+            const mt_ipt_table_rules_t *mangle = mt_ipt_rules_snapshot_find_table(snap, "mangle");
+            const mt_ipt_chain_rules_t *gate = mt_ipt_table_rules_find_chain(mangle, "MT_POLICY");
+            ASSERT(gate != NULL);
+            if (real_backend) {
+                bool local = false;
+                for (size_t i = 0; i < gate->n_rules; i++) {
+                    local |= has_arg(gate->rules[i], family ? "2001:db8::1/128" : "192.0.2.1/32");
+                }
+                ASSERT(local);
+            }
+            const mt_ipt_table_rules_t *nat = mt_ipt_rules_snapshot_find_table(snap, "nat");
+            const mt_ipt_chain_rules_t *dns = mt_ipt_table_rules_find_chain(nat, "MT_DNSOR");
+            ASSERT(dns && dns->n_rules == 3);
+            ASSERT(has_arg(dns->rules[0], "mark") && has_arg(dns->rules[0], "RETURN"));
+            mt_ipt_rules_snapshot_free(snap);
+        }
+    }
+    config.enabled = false;
+    ASSERT_EQ(MT_OK, mt_app_policy_set(fx.app, &config, false, 0));
+    return assert_recovered(); /* Former DNS behavior and foreign rules survive. */
+}
+#endif
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -513,5 +560,8 @@ int main(int argc, char **argv) {
     RUN_TEST(foreign_user_chain_survives_owned_chain_cleanup);
     RUN_TEST(custom_prefix_recovery);
     RUN_TEST(event_burst_eventually_recovers);
+#ifdef MT_ENTWARE_KN
+    RUN_TEST(scoped_dns_rebuild_on_a_kernel_without_addrtype);
+#endif
     GREATEST_MAIN_END();
 }

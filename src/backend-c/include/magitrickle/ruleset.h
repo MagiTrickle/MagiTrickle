@@ -44,6 +44,9 @@ typedef struct mt_ruleset mt_ruleset_t;
  * cfg.app.netfilter.ipset.table_prefix / cfg.app.netfilter.iptables.chain_prefix
  * strings), matching Go's Helper.IpsetPrefix/ChainPrefix. */
 typedef struct mt_ruleset_deps {
+#ifdef MT_ENTWARE_KN
+    const mt_kn_policy_scope_t *policy;
+#endif
     const mt_config_t *config; /* live profile registry, borrowed; optional without profile refs */
     mt_ipt_t *ipt4;
     mt_ipt_t *ipt6;

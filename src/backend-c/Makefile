@@ -24,11 +24,9 @@ MT_VERSION ?= unattached
 MT_BUILD_TARGET ?=
 MT_PACKAGE_REVISION ?= 1
 
-# Set to any non-empty value to enable Keenetic (Entware `_kn`) platform
-# behavior -- currently just the ignored-interfaces list in api/app.c
-# (mirrors Go's constant.IgnoredInterfaces under its entware_kn build
-# tag). Root Makefile derives this from PLATFORM/TARGET the same way it
-# derives GO_TAGS' entware_kn tag.
+# Set to 1 for Keenetic (Entware `_kn`) behavior, including policy scope.
+# Root Makefile derives this solely from PLATFORM/TARGET. Keep separate
+# BUILD directories for native test variants, just as target builds do.
 ENTWARE_KN ?=
 
 # Target platform (entware|openwrt), passed through by the root Makefile.
@@ -51,7 +49,7 @@ CFLAGS   += $(CSTD) $(OPT) $(WARNINGS) -Iinclude -MMD -MP \
             -D_POSIX_C_SOURCE=200809L \
             -DMT_VERSION=\"$(MT_VERSION)\" -fno-common \
             -DMT_BUILD_TARGET=\"$(MT_BUILD_TARGET)\" -DMT_PACKAGE_REVISION=$(MT_PACKAGE_REVISION) \
-            $(if $(ENTWARE_KN),-DMT_ENTWARE_KN) \
+            $(if $(filter 1,$(ENTWARE_KN)),-DMT_ENTWARE_KN) \
             $(if $(filter entware,$(PLATFORM)),-DMT_PLATFORM_ENTWARE) \
             $(if $(filter openwrt,$(PLATFORM)),-DMT_PLATFORM_OPENWRT)
 # CI passes CFLAGS_EXTRA=-Werror; local builds stay warning-tolerant.
@@ -157,15 +155,19 @@ SUBSCRIPTIONS_SRCS := \
     src/subscriptions/fetch.c \
     src/subscriptions/fetch_async.c
 
-# Router-specific integrations. Keenetic's RCI interface-alias lookup
-# needs both libcurl and cJSON (same cross-build caveat as the groups
-# above); it is compiled everywhere but only talks to RCI when built
-# with -DMT_ENTWARE_KN, mirroring Go's entware_kn build tag.
-INTERFACES_SRCS := \
-    src/interfaces/keenetic_rci.c
+# Keenetic integrations are absent from generic/OpenWrt objects, not just
+# dormant at runtime. libcurl/cJSON remain required by the shared backend.
+KEENETIC_SRCS :=
+ifeq ($(strip $(ENTWARE_KN)),1)
+KEENETIC_SRCS := \
+    src/interfaces/keenetic_rci.c \
+    src/netfilter/keenetic_policy.c \
+    src/interfaces/keenetic_policy_rci.c \
+    src/api/keenetic_policy_api.c
+endif
 
 LIB_SRCS := $(CORE_SRCS) $(CONFIG_SRCS) $(NETFILTER_SRCS) $(API_SRCS) $(SUBSCRIPTIONS_SRCS) \
-            $(INTERFACES_SRCS)
+            $(KEENETIC_SRCS)
 
 MAIN_SRC := src/main/main.c
 CONFIGTOOL_SRC := src/tools/configtool.c
@@ -177,9 +179,9 @@ CONFIG_OBJS := $(CONFIG_SRCS:%.c=$(BUILDDIR)/%.o)
 NETFILTER_OBJS := $(NETFILTER_SRCS:%.c=$(BUILDDIR)/%.o)
 API_OBJS := $(API_SRCS:%.c=$(BUILDDIR)/%.o)
 SUBSCRIPTIONS_OBJS := $(SUBSCRIPTIONS_SRCS:%.c=$(BUILDDIR)/%.o)
-INTERFACES_OBJS := $(INTERFACES_SRCS:%.c=$(BUILDDIR)/%.o)
+KEENETIC_OBJS := $(KEENETIC_SRCS:%.c=$(BUILDDIR)/%.o)
 LIB_OBJS := $(CORE_OBJS) $(CONFIG_OBJS) $(NETFILTER_OBJS) $(API_OBJS) $(SUBSCRIPTIONS_OBJS) \
-            $(INTERFACES_OBJS)
+            $(KEENETIC_OBJS)
 MAIN_OBJ := $(MAIN_SRC:%.c=$(BUILDDIR)/%.o)
 CONFIGTOOL_OBJ := $(CONFIGTOOL_SRC:%.c=$(BUILDDIR)/%.o)
 DNSTOOL_OBJ := $(DNSTOOL_SRC:%.c=$(BUILDDIR)/%.o)
@@ -198,6 +200,9 @@ TEST_SUPPORT_SRCS := tests/unit/fake_iptables.c tests/unit/fake_ipset_nl.c
 TEST_SUPPORT_OBJS := $(TEST_SUPPORT_SRCS:tests/unit/%.c=$(BUILDDIR)/tests/support/%.o)
 
 TEST_SRCS := $(filter-out $(TEST_SUPPORT_SRCS), $(wildcard tests/unit/*.c))
+ifneq ($(strip $(ENTWARE_KN)),1)
+TEST_SRCS := $(filter-out tests/unit/test_keenetic_rci.c tests/unit/test_keenetic_policy_addresses.c,$(TEST_SRCS))
+endif
 TEST_BINS := $(TEST_SRCS:tests/unit/%.c=$(BUILDDIR)/tests/%)
 
 FUZZ_SRCS := $(wildcard tests/fuzz/*.c)
@@ -267,6 +272,18 @@ $(BUILDDIR)/tests/%: tests/unit/%.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
+# Exercise alias enrichment/failure via the real interface API without a router.
+ifeq ($(strip $(ENTWARE_KN)),1)
+$(BUILDDIR)/tests/test_system: tests/unit/test_system.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -Wl,--wrap=mt_kn_get_iface_aliases -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+endif
+
+# Local address snapshots/failures without a router or privileged namespaces.
+$(BUILDDIR)/tests/test_keenetic_policy_addresses: tests/unit/test_keenetic_policy_addresses.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -Wl,--wrap=getifaddrs -Wl,--wrap=freeifaddrs -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
 # Inject entropy errors into the real parser without production test hooks.
 $(BUILDDIR)/tests/test_large_subscriptions: tests/unit/test_large_subscriptions.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
 	@mkdir -p $(dir $@)
@@ -295,7 +312,7 @@ $(BUILDDIR)/tests/test_route_recovery: tests/unit/test_route_recovery.c $(MAIN_S
 	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) \
 	    -Wl,--wrap=mt_loop_add_timer -Wl,--wrap=mt_loop_del_timer \
 	    -Wl,--wrap=mt_loop_add_fd -Wl,--wrap=mt_loop_del_fd -Wl,--wrap=mt_loop_stop \
-	    -Wl,--wrap=mt_app_reconcile_routes -Wl,--wrap=mnl_socket_open -Wl,--wrap=mnl_socket_recvfrom \
+	    -Wl,--wrap=mt_app_reconcile_routes -Wl,--wrap=mt_app_force_commit_iptables -Wl,--wrap=mnl_socket_open -Wl,--wrap=mnl_socket_recvfrom \
 	    -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
 # Exercise production link staging with in-memory netfilter transports.
@@ -349,12 +366,13 @@ $(BUILDDIR)/bench-large-rules: ../../tools/bench/large-rules.c $(LIB_OBJS)
 static_analysis:
 	@if command -v clang-tidy >/dev/null; then \
 	    clang-tidy --quiet $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(TEST_SUPPORT_SRCS) -- $(CSTD) -Iinclude -Itests/unit \
-	        -D_POSIX_C_SOURCE=200809L -DMT_VERSION=\"$(MT_VERSION)\"; \
+	        -D_POSIX_C_SOURCE=200809L -DMT_VERSION=\"$(MT_VERSION)\" \
+	        $(if $(filter 1,$(ENTWARE_KN)),-DMT_ENTWARE_KN); \
 	else echo "clang-tidy not found (skipped)"; fi
 	@if command -v cppcheck >/dev/null; then \
 	    cppcheck --std=c11 --enable=warning,performance,portability \
 	        --error-exitcode=1 --inline-suppr -Iinclude -Itests/unit \
-	        -D_POSIX_C_SOURCE=200809L \
+	        -D_POSIX_C_SOURCE=200809L $(if $(filter 1,$(ENTWARE_KN)),-DMT_ENTWARE_KN) \
 	        $(LIB_SRCS) $(MAIN_SRC) $(CONFIGTOOL_SRC) $(DNSTOOL_SRC) $(CACHETOOL_SRC) $(TEST_SUPPORT_SRCS); \
 	else echo "cppcheck not found (skipped)"; fi
 

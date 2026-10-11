@@ -4,16 +4,28 @@ on:
   pull_request:
     paths:
       - 'src/backend-c/**'
+      - 'tools/tests/keenetic_policy_isolation.py'
       - '.github/workflows/check-c.yml'
   push:
     paths:
       - 'src/backend-c/**'
+      - 'tools/tests/keenetic_policy_isolation.py'
       - '.github/workflows/check-c.yml'
 
 jobs:
   build_test:
-    name: Build, test, sanitize (host)
+    name: Build, test, sanitize (${{ matrix.variant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: generic
+            entware_kn: '0'
+          - variant: keenetic
+            entware_kn: '1'
+    env:
+      ENTWARE_KN: ${{ matrix.entware_kn }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -26,6 +38,11 @@ jobs:
       - name: Build (warnings as errors)
         working-directory: src/backend-c
         run: make CFLAGS_EXTRA=-Werror
+
+      - name: Check platform payload isolation
+        run: |
+          python3 tools/tests/keenetic_policy_isolation.py \
+            --${{ matrix.variant }}-binary src/backend-c/build/host/magitrickled-c
 
       - name: Unit tests
         working-directory: src/backend-c

@@ -349,6 +349,27 @@ static mt_err_t load_app(yaml_document_t *doc, node_t *app,
         return MT_ERR_INVAL;
     }
 
+#ifdef MT_ENTWARE_KN
+    node_t *kp = map_get(doc, app, "keeneticPolicy");
+    if (kp && !node_is_null(kp)) {
+        if (kp->type != YAML_MAPPING_NODE) { return MT_ERR_INVAL; }
+        GET_OR_FAIL(get_bool(map_get(doc, kp, "enabled"), &c->keenetic_policy.enabled, &err));
+        char *id = NULL, *mode = NULL;
+        get_string(map_get(doc, kp, "policyId"), &id, &err);
+        if (err == MT_OK) { get_string(map_get(doc, kp, "mode"), &mode, &err); }
+        if (err == MT_OK && id) {
+            if (strlen(id) >= sizeof(c->keenetic_policy.policy_id)) { err = MT_ERR_INVAL; }
+            else { strcpy(c->keenetic_policy.policy_id, id); }
+        }
+        if (err == MT_OK && mode) {
+            if (strcmp(mode, "include") == 0) { c->keenetic_policy.mode = MT_KN_POLICY_INCLUDE; }
+            else if (strcmp(mode, "exclude") == 0) { c->keenetic_policy.mode = MT_KN_POLICY_EXCLUDE; }
+            else { err = MT_ERR_INVAL; }
+        }
+        free(id); free(mode);
+        if (err != MT_OK || !mt_kn_policy_config_valid(&c->keenetic_policy)) { return MT_ERR_INVAL; }
+    }
+#endif
     node_t *hw = map_get(doc, app, "httpWeb");
     if (hw != NULL && !node_is_null(hw)) {
         if (hw->type != YAML_MAPPING_NODE) {

@@ -230,19 +230,10 @@ TEST empty_list_yields_no_aliases(void)
     PASS();
 }
 
-/* Off Keenetic the lookup is a no-op that never touches the network,
- * matching Go's DummyRouterSpecificAPI under !entware_kn. On Keenetic
- * builds RCI is genuinely contacted; 127.0.0.1:79 is not listening in
- * the test environment, so only assert it stays well-behaved. */
-TEST platform_default_is_empty_and_safe(void)
+/* Deterministic lifecycle check; never assume port 79 is unused on the host. */
+TEST empty_aliases_lookup_and_free_are_safe(void)
 {
     mt_kn_aliases_t aliases = {0};
-    mt_err_t err = mt_kn_get_iface_aliases(&aliases);
-#ifdef MT_ENTWARE_KN
-    (void)err;
-#else
-    ASSERT_EQ(MT_OK, err);
-#endif
     ASSERT_EQ(0, aliases.n);
     ASSERT(aliases.items == NULL);
     ASSERT(mt_kn_aliases_lookup(&aliases, "br0") == NULL);
@@ -268,6 +259,6 @@ int main(int argc, char **argv)
     RUN_TEST(aliases_skip_empty_and_redundant);
     RUN_TEST(labels_and_system_names_are_trimmed);
     RUN_TEST(empty_list_yields_no_aliases);
-    RUN_TEST(platform_default_is_empty_and_safe);
+    RUN_TEST(empty_aliases_lookup_and_free_are_safe);
     GREATEST_MAIN_END();
 }
