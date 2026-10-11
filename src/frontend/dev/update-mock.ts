@@ -29,18 +29,10 @@ type MockJob = {
  *
  * An injectable clock keeps the staged transitions deterministic in tests.
  */
-export function registerMockUpdateRoutes(
-  app: Hono,
-  rootToken: string,
-  now: () => number = Date.now,
-) {
+export function registerMockUpdateRoutes(app: Hono, now: () => number = Date.now) {
   let installedVersion = MOCK_INSTALLED_VERSION;
   let installedRevision = 1;
   let job: MockJob | null = null;
-
-  function isRoot(authHeader: string | undefined): boolean {
-    return authHeader === "Bearer " + rootToken;
-  }
 
   function status(): UpdateStatus {
     if (!job) return { stage: "idle" };
@@ -66,14 +58,13 @@ export function registerMockUpdateRoutes(
 
   app.get(UPDATE_BASE, (c) => {
     status();
-    const allowed = isRoot(c.req.header("Authorization"));
     c.header("Cache-Control", "no-store");
     return c.json({
       installed_version: installedVersion,
       installed_revision: installedRevision,
       asset_suffix: MOCK_ASSET_SUFFIX,
-      can_install: allowed,
-      reason: allowed ? "" : "Sign in as root to install updates",
+      can_install: true,
+      reason: "",
     });
   });
 
@@ -83,12 +74,6 @@ export function registerMockUpdateRoutes(
   });
 
   app.post(UPDATE_BASE + "/install", async (c) => {
-    // Mirrors the production endpoint's separate root check even when the
-    // development backend's general auth middleware accepts other tokens.
-    if (!isRoot(c.req.header("Authorization"))) {
-      return c.json({ error: "Sign in as root to install updates" }, 403);
-    }
-
     const site = c.req.header("Sec-Fetch-Site");
     const type = c.req.header("Content-Type");
     if (site === "cross-site" || !type?.startsWith("application/json")) {

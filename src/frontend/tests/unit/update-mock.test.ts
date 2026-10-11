@@ -4,20 +4,18 @@ import { Hono } from "hono";
 import { registerMockUpdateRoutes } from "../../dev/update-mock.ts";
 
 const BASE = "/api/v1/system/update";
-const ROOT = "development-root-token";
-const AUTH = { Authorization: "Bearer " + ROOT };
 const INSTALL = { tag: "0.8.2.2", release_id: 123, preview: false };
 
 function fixture() {
   let clock = 1000;
   const app = new Hono();
-  registerMockUpdateRoutes(app, ROOT, () => clock);
+  registerMockUpdateRoutes(app, () => clock);
   return {
     app,
     advance: (ms: number) => {
       clock += ms;
     },
-    install: (body: unknown = INSTALL, headers: Record<string, string> = AUTH) =>
+    install: (body: unknown = INSTALL, headers: Record<string, string> = {}) =>
       app.request(BASE + "/install", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
@@ -35,33 +33,30 @@ Deno.test(
     assert.deepEqual(await status.json(), { stage: "idle" });
     assert.equal(status.headers.get("Cache-Control"), "no-store");
 
-    const unauthorized = await app.request(BASE);
-    assert.equal(unauthorized.status, 200);
-    const guestInfo = await unauthorized.json();
-    assert.equal(guestInfo.installed_version, "0.8.2.1");
-    assert.equal(guestInfo.installed_revision, 1);
-    assert.equal(guestInfo.asset_suffix, "entware_aarch64-3.10_kn.ipk");
-    assert.equal(guestInfo.can_install, false);
-    assert.equal(guestInfo.reason, "Sign in as root to install updates");
-    assert.equal(unauthorized.headers.get("Cache-Control"), "no-store");
-
-    const root = await app.request(BASE, { headers: AUTH });
-    assert.equal(root.status, 200);
-    const info = await root.json();
+    const guest = await app.request(BASE);
+    assert.equal(guest.status, 200);
+    const info = await guest.json();
+    assert.equal(info.installed_version, "0.8.2.1");
+    assert.equal(info.installed_revision, 1);
+    assert.equal(info.asset_suffix, "entware_aarch64-3.10_kn.ipk");
     assert.equal(info.can_install, true);
     assert.equal(info.reason, "");
+    assert.equal(guest.headers.get("Cache-Control"), "no-store");
+
+    const otherUser = await app.request(BASE, {
+      headers: { Authorization: "Bearer non-root-user" },
+    });
+    assert.equal((await otherUser.json()).can_install, true);
   },
 );
 
-Deno.test("mock update POST requires a root token and well-formed same-origin JSON", async () => {
+Deno.test("mock update POST requires same-origin JSON but no separate root token", async () => {
   const { app, install } = fixture();
-  assert.equal((await install(INSTALL, { Authorization: "Bearer disabled" })).status, 403);
-  assert.equal((await install(INSTALL, { Authorization: "Bearer wrong" })).status, 403);
   assert.equal(
     (
       await app.request(BASE + "/install", {
         method: "POST",
-        headers: AUTH,
+        headers: {},
         body: JSON.stringify(INSTALL),
       })
     ).status,
@@ -71,7 +66,7 @@ Deno.test("mock update POST requires a root token and well-formed same-origin JS
     (
       await app.request(BASE + "/install", {
         method: "POST",
-        headers: { ...AUTH, "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
+        headers: { "Content-Type": "application/json", "Sec-Fetch-Site": "cross-site" },
         body: JSON.stringify(INSTALL),
       })
     ).status,
@@ -94,13 +89,23 @@ Deno.test("mock update POST requires a root token and well-formed same-origin JS
     (
       await app.request(BASE + "/install", {
         method: "POST",
-        headers: { ...AUTH, "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: "{bad json",
       })
     ).status,
     400,
   );
   assert.deepEqual(await (await app.request(BASE + "/status")).json(), { stage: "idle" });
+
+  const withoutToken = fixture();
+  assert.equal((await withoutToken.install(INSTALL)).status, 202);
+  const withAnotherIdentity = fixture();
+  assert.equal(
+    (await withAnotherIdentity.install(INSTALL, {
+      Authorization: "Bearer non-root-user",
+    })).status,
+    202,
+  );
 });
 
 Deno.test("mock update simulates one job and later returns the new installed version", async () => {
@@ -127,7 +132,7 @@ Deno.test("mock update simulates one job and later returns the new installed ver
   const finished = await (await app.request(BASE + "/status")).json();
   assert.deepEqual(finished, { stage: "idle" });
 
-  const info = await (await app.request(BASE, { headers: AUTH })).json();
+  const info = await (await app.request(BASE)).json();
   assert.equal(info.installed_version, "0.8.2.2");
   assert.equal(info.installed_revision, 1);
   assert.equal((await install()).status, 400); // no downgrade/equal re-install

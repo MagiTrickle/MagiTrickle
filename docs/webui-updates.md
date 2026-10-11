@@ -2,11 +2,17 @@
 
 ## Flow
 
-WebUI loads `dan0102dan/mt-c/releases?per_page=100` once into a shared one-hour
-browser cache (ETag/backoff). Stable chooses the most recently published non-draft,
-non-prerelease entry; dev also includes prereleases. Channel switches stay local.
-Opening the version popover refreshes expired metadata; errors expose Retry.
-Router tokens are never sent to GitHub. Actions-only artifacts are not updates.
+WebUI fetches `dan0102dan/mt-c/releases?per_page=100` once on each page load.
+One GitHub response contains both stable and prerelease entries: stable selects
+the most recently published non-draft stable release, and dev selects the latest
+non-draft release including prereleases. These choices are retained **only in
+memory for the current page**. Opening the version popup and switching stable/dev
+do not issue another GitHub request. Reloading the page fetches the list again;
+an explicit Retry after an error can also fetch again. No release list is stored
+in localStorage, and no TTL or ETag is used. Simultaneous checks share an in-flight
+request, with GitHub rate-limit backoff; empty/error responses never display
+"Up to date". Router tokens are never sent to GitHub. Actions-only artifacts
+are not updates.
 
 On Update, **the existing daemon** prepares the package on a background thread.
 It independently re-fetches that same release list and verifies release ID/tag,
@@ -66,12 +72,13 @@ a manual page reload to display the new version.
 - `POST /api/v1/system/update/install`: exactly
   `{"tag":"0.9.0","release_id":123,"preview":false}`. 202 with `job_id` and
   `stage:"queued"` acknowledges an accepted preparation thread, not successful
-  download/exec/install. Bad/non-newer input: 400; root/target/manager unavailable:
+  download/exec/install. Bad/non-newer input: 400; unsupported target or unavailable installer:
   403; another job: 409; config save/lock/allocation/thread creation failure: 500.
 
-Both GET routes return `Cache-Control: no-store`. Installation requires a verified
-root JWT on TCP and Unix sockets, including when ordinary WebUI auth is disabled.
-Existing auth middleware may first return 401. Errors retain `{"error":"..."}`.
+Both GET routes return `Cache-Control: no-store`. No separate root-user
+JWT is required for an update; the existing WebUI authentication policy applies.
+The daemon still needs root privileges to run the package manager. Existing
+HTTP auth middleware may return 401. Errors retain `{"error":"..."}`.
 Numeric two-to-four-component tags and package revisions are compared numerically;
 installed `~git...` and APK `_pre...` versions sort before their matching release.
 Unknown formats, unavailable exact targets, missing digests and downgrades fail closed.

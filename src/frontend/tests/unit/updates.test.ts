@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 
 import {
-  CACHE_TTL,
   candidate,
   compareVersions,
   parseBuildInfo,
@@ -44,16 +43,6 @@ function release(tag = "0.8.3"): Release {
     ],
   };
 }
-function storage() {
-  const entries = new Map<string, string>();
-  return {
-    getItem: (key: string) => entries.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      entries.set(key, value);
-    },
-  };
-}
-
 Deno.test("numeric versions, package revisions and snapshots never imply a downgrade", () => {
   assert.equal(compareVersions("0.8.10", "0.8.9"), 1);
   assert.equal(compareVersions("0.8.3", "0.8.2.2"), 1);
@@ -129,9 +118,9 @@ Deno.test("installation capability is not inferred from finding a release", () =
     candidate(release(), {
       ...info,
       can_install: false,
-      reason: "Sign in as root to install updates",
+      reason: "Installer unavailable",
     }).reason,
-    "Sign in as root to install updates",
+    "Installer unavailable",
   );
   assert.equal(candidate(release(), { ...info, installed_version: "0.9.0" }).newer, false);
   assert.equal(candidate(release(), { ...info, asset_suffix: "" }).asset, null);
@@ -147,131 +136,121 @@ Deno.test("runtime responses are validated, not merely cast", () => {
   assert.throws(() => parseRelease({ ...release(), assets: null }));
 });
 
-Deno.test("browser checks cache for one hour and never sends router credentials", async () => {
-  const cache = storage();
-  let count = 0;
-  const request: typeof fetch = async (url, options) => {
-    count++;
-    assert.equal(String(url), `${RELEASE_API}?per_page=100`);
-    assert.equal(options?.credentials, "omit");
-    assert.equal(new Headers(options?.headers).has("Authorization"), false);
-    return new Response(JSON.stringify([release()]), { headers: { ETag: '"first"' } });
-  };
-  const client = new ReleaseClient(cache, request);
-  await client.latest(false, false);
-  await client.latest(false, false);
-  assert.equal(count, 1);
-  await client.latest(false, true);
-  assert.equal(count, 2);
-});
-
-Deno.test("expired cache uses ETag and accepts 304 without reading a JSON body", async () => {
-  const cache = storage();
-  cache.setItem(
-    "mt-c.releases.v2",
-    JSON.stringify({
-      releases: [release()],
-      checkedAt: Date.now() - CACHE_TTL - 1000,
-      etag: '"old"',
-    }),
-  );
-  const client = new ReleaseClient(cache, async (_url, options) => {
-    assert.equal(new Headers(options?.headers).get("If-None-Match"), '"old"');
-    return new Response(null, { status: 304 });
-  });
-  assert.equal((await client.latest(false, false)).release?.tag_name, "0.8.3");
-});
-
 Deno.test(
-  "404 clears stale release and ETag; manual checks cannot bypass rate backoff",
+  "page-load fetch is shared by both channels and never sends router credentials",
   async () => {
-    const cache = storage();
-    cache.setItem(
-      "mt-c.releases.v2",
-      JSON.stringify({ releases: [release()], checkedAt: 0, etag: '"old"' }),
-    );
-    const missing = new ReleaseClient(cache, async () => new Response(null, { status: 404 }));
-    const result = await missing.latest(false, true);
-    assert.equal(result.release, null);
-    assert.equal(result.etag, "");
     let calls = 0;
-    const limited = new ReleaseClient(null, async () => {
+    let tag = "0.8.3";
+    const client = new ReleaseClient(async (url, options) => {
       calls++;
-      return new Response(null, { status: 403, headers: { "Retry-After": "60" } });
+      assert.equal(String(url), `${RELEASE_API}?per_page=100`);
+      assert.equal(options?.credentials, "omit");
+      assert.equal(options?.cache, "no-store");
+      assert.equal(new Headers(options?.headers).has("Authorization"), false);
+      assert.equal(new Headers(options?.headers).has("If-None-Match"), false);
+      return new Response(JSON.stringify([release(tag)]));
     });
-    await assert.rejects(limited.latest(false, true), /rate limit/);
-    await assert.rejects(limited.latest(false, true), /rate limit/);
+    assert.equal((await client.latest(false)).release?.tag_name, "0.8.3");
+    assert.equal(client.cached(true)?.release?.tag_name, "0.8.3");
+    tag = "0.8.4";
+    assert.equal((await client.latest(false)).release?.tag_name, "0.8.3");
+    assert.equal((await client.latest(true)).release?.tag_name, "0.8.3");
     assert.equal(calls, 1);
+    // Explicit Retry is the only refresh within the current page.
+    assert.equal((await client.latest(false, true)).release?.tag_name, "0.8.4");
+    assert.equal(client.cached(true)?.release?.tag_name, "0.8.4");
+    assert.equal(calls, 2);
   },
 );
 
+Deno.test("new client does not reuse a previous tab's release metadata", async () => {
+  let requests = 0;
+  const request: typeof fetch = async () => {
+    requests++;
+    return new Response(JSON.stringify([release(requests === 1 ? "0.8.3" : "0.8.4")]));
+  };
+  const first = new ReleaseClient(request);
+  assert.equal((await first.latest(true)).release?.tag_name, "0.8.3");
+  const second = new ReleaseClient(request);
+  assert.equal((await second.latest(true)).release?.tag_name, "0.8.4");
+  assert.equal(requests, 2);
+});
+
+Deno.test("empty and failed release checks never reuse the previous selection", async () => {
+  let calls = 0;
+  const client = new ReleaseClient(async () => {
+    calls++;
+    if (calls === 1) return new Response(JSON.stringify([release()]));
+    if (calls === 2) return new Response(JSON.stringify([]));
+    if (calls === 3) throw new TypeError("offline");
+    return new Response(null, { status: 404 });
+  });
+  assert.equal((await client.latest(false)).release?.tag_name, "0.8.3");
+  assert.equal((await client.latest(false, true)).release, null);
+  assert.equal(client.cached(false)?.release, null);
+  await assert.rejects(client.latest(false, true), /offline/);
+  assert.equal(client.cached(false), null);
+  await assert.rejects(client.latest(false, true), /Cannot check GitHub releases/);
+  assert.equal(calls, 4);
+});
+
+Deno.test("rate-limit backoff prevents repeated blocked requests", async () => {
+  let calls = 0;
+  const client = new ReleaseClient(async () => {
+    calls++;
+    return new Response(null, { status: 403, headers: { "Retry-After": "60" } });
+  });
+  await assert.rejects(client.latest(false), /rate limit/);
+  await assert.rejects(client.latest(true), /rate limit/);
+  assert.equal(calls, 1);
+});
+
 Deno.test(
-  "overlapping channels share a request and toggling selects from one cached list",
+  "simultaneous stable/dev requests share a fetch; channel switching stays local",
   async () => {
-    const cache = storage();
-    let calls = 0;
     const stable = release("0.8.2.2");
     const preview = { ...release(), prerelease: true, published_at: "2026-10-11T12:00:00Z" };
-    const client = new ReleaseClient(cache, async () => {
+    let calls = 0;
+    const client = new ReleaseClient(async () => {
       calls++;
       await Promise.resolve();
       return new Response(JSON.stringify([stable, preview]));
     });
     const [stableResult, previewResult] = await Promise.all([
-      client.latest(false, false),
-      client.latest(true, false),
+      client.latest(false),
+      client.latest(true),
     ]);
     assert.equal(stableResult.release?.tag_name, "0.8.2.2");
     assert.equal(previewResult.release?.tag_name, "0.8.3");
-    assert.equal(client.cached(false)?.release?.tag_name, "0.8.2.2");
+    assert.equal(calls, 1);
     assert.equal(client.cached(true)?.release?.tag_name, "0.8.3");
-    await client.latest(true, false);
-    await client.latest(false, false);
+    assert.equal(client.cached(false)?.release?.tag_name, "0.8.2.2");
+    assert.equal((await client.latest(true)).release?.tag_name, "0.8.3");
+    assert.equal((await client.latest(false)).release?.tag_name, "0.8.2.2");
     assert.equal(calls, 1);
   },
 );
 
-Deno.test("blocked storage is optional and failed network does not become up-to-date", async () => {
-  const denied = {
-    getItem: () => {
-      throw new Error("blocked");
-    },
-    setItem: () => {
-      throw new Error("blocked");
-    },
+Deno.test("the shared fetch selects by published date beyond the first 20 entries", async () => {
+  const older = { ...release("2.0.0"), published_at: "2026-10-01T00:00:00Z" };
+  const later = { ...release("1.1.0"), published_at: "2026-10-03T00:00:00Z" };
+  const preview = {
+    ...release("3.0.0"),
+    prerelease: true,
+    published_at: "2026-10-04T00:00:00Z",
   };
-  const client = new ReleaseClient(denied, async () => new Response(JSON.stringify([release()])));
-  assert.equal((await client.latest(false, false)).release?.tag_name, "0.8.3");
-  assert.equal(client.cached(true)?.release?.tag_name, "0.8.3");
-  const offline = new ReleaseClient(null, async () => {
-    throw new TypeError("offline");
+  assert.equal(pickRelease([older, later, preview], false)?.tag_name, "1.1.0");
+  assert.equal(pickRelease([older, later, preview], true)?.tag_name, "3.0.0");
+
+  const list = Array.from({ length: 30 }, () => ({ ...older, prerelease: true }));
+  list.push(later);
+  let calls = 0;
+  const client = new ReleaseClient(async (url) => {
+    assert.equal(String(url), `${RELEASE_API}?per_page=100`);
+    calls++;
+    return new Response(JSON.stringify(list));
   });
-  await assert.rejects(offline.latest(false, false), /offline/);
+  assert.equal((await client.latest(false)).release?.tag_name, "1.1.0");
+  assert.equal((await client.latest(true)).release?.tag_name, "1.1.0");
+  assert.equal(calls, 1);
 });
-
-Deno.test(
-  "the shared list selects by publication date beyond the former 20-item window",
-  async () => {
-    const older = { ...release("2.0.0"), published_at: "2026-10-01T00:00:00Z" };
-    const later = { ...release("1.1.0"), published_at: "2026-10-03T00:00:00Z" };
-    const preview = {
-      ...release("3.0.0"),
-      prerelease: true,
-      published_at: "2026-10-04T00:00:00Z",
-    };
-    assert.equal(pickRelease([older, later, preview], false)?.tag_name, "1.1.0");
-    assert.equal(pickRelease([older, later, preview], true)?.tag_name, "3.0.0");
-
-    const list = Array.from({ length: 30 }, () => ({ ...older, prerelease: true }));
-    list.push(later);
-    let calls = 0;
-    const client = new ReleaseClient(null, async (url) => {
-      assert.equal(String(url), `${RELEASE_API}?per_page=100`);
-      calls++;
-      return new Response(JSON.stringify(list));
-    });
-    assert.equal((await client.latest(false, false)).release?.tag_name, "1.1.0");
-    assert.equal((await client.latest(true, false)).release?.tag_name, "1.1.0");
-    assert.equal(calls, 1);
-  },
-);

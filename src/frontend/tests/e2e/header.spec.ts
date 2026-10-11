@@ -41,7 +41,8 @@ test.describe("Header Settings", () => {
     await page.keyboard.press("Enter");
     const popup = page.getByRole("dialog", { name: "Software update", exact: true });
     await expect(popup).toBeVisible();
-    await expect(popup.getByRole("button", { name: "Up to date" })).toBeDisabled();
+    await expect(popup.getByText("No releases found for this channel")).toBeVisible();
+    await expect(popup.getByRole("button", { name: "Check for updates" })).toBeEnabled();
     await page.keyboard.press("Escape");
 
     await page.locator(".locale button").click();

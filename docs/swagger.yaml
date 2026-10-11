@@ -707,11 +707,11 @@ paths:
       - updates
   /api/v1/system/update/install:
     post:
-      summary: Queue a root-authorized GitHub release installation
+      summary: Queue an official GitHub release installation
       description: >-
-        Requires a verified root JWT on HTTP and Unix transports, even if
-        general WebUI authentication is disabled. Revalidates the official
-        release and device package. HTTP 202 means queued, not installed (D-74).
+        Follows the regular WebUI authentication policy, with no additional
+        updater-specific root-user JWT requirement. Revalidates the official
+        release and device package. HTTP 202 means queued, not installed (D-78).
       consumes:
       - application/json
       parameters:

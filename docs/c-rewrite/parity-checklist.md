@@ -236,7 +236,8 @@ regressed from the source contract.
 
 ### Additive update API (D-74/D-75; no historical Go counterpart)
 
-- Keep browser/server GitHub selection, root authorization and package checks.
+- Keep browser/server GitHub selection and package checks. D-78 removes the
+  updater-specific root JWT requirement; normal WebUI auth remains unchanged.
 - Volatile preparation status; external installer lock may have no job ID after
   restart. A free lock is not success; WebUI verifies the running version.
 - Package handoff survives the daemon's process-group termination; no inherited

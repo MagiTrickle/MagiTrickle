@@ -24,10 +24,8 @@
 #include <cjson/cJSON.h>
 #include <curl/curl.h>
 
-#include "magitrickle/auth.h"
 #include "magitrickle/hash.h"
 #include "magitrickle/httpd.h"
-#include "magitrickle/jwt.h"
 #include "magitrickle/log.h"
 #include "magitrickle/paths.h"
 #include "magitrickle/rand.h"
@@ -124,29 +122,19 @@ static bool identity(char *suffix, size_t cap, const char **manager) {
 #endif
 }
 
-static bool root_authorized(mt_http_req_t *req) {
-    const char *auth = mt_http_req_header(req, "Authorization");
-    if (!auth || strncmp(auth, "Bearer ", 7) || strlen(auth + 7) >= MT_JWT_MAX_TOKEN) { return false; }
-    mt_jwt_claims_t claims;
-    /* Parse the subject only AFTER full verification with the current password. */
-    return mt_auth_verify_token(MT_APP_STATE_DIR, auth + 7) == MT_OK &&
-           mt_jwt_parse_unverified(auth + 7, &claims) == MT_OK && strcmp(claims.sub, "root") == 0;
-}
-
-static const char *capability(mt_http_req_t *req, char *suffix, size_t cap) {
+static const char *capability(char *suffix, size_t cap) {
     const char *manager = NULL;
     mt_update_version_t version;
     if (!identity(suffix, cap, &manager)) { return "Unsupported build target"; }
     if (!mt_update_version_parse(MT_VERSION, MT_PACKAGE_REVISION, &version)) { return "Unknown installed version"; }
     if (geteuid() != 0 || access("/bin/sh", X_OK) || access(manager, X_OK)) { return "Installer unavailable"; }
-    if (!root_authorized(req)) { return "Sign in as root to install updates"; }
     return NULL;
 }
 
 static void handle_info(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
-    (void)ud;
+    (void)req; (void)ud;
     char suffix[192] = "";
-    const char *reason = capability(req, suffix, sizeof(suffix));
+    const char *reason = capability(suffix, sizeof(suffix));
     cJSON *obj = cJSON_CreateObject();
     if (!obj) { mt_http_res_write_error(res, 500, "Out of memory"); return; }
     cJSON_AddStringToObject(obj, "installed_version", MT_VERSION);
@@ -512,7 +500,7 @@ void mt_update_shutdown(void) {
 static void handle_install(mt_http_req_t *req, mt_http_res_t *res, void *ud) {
     mt_system_ctx_t *ctx = ud;
     char suffix[192] = "";
-    const char *error = capability(req, suffix, sizeof(suffix));
+    const char *error = capability(suffix, sizeof(suffix));
     if (error) { mt_http_res_write_error(res, 403, error); return; }
     const char *site = mt_http_req_header(req, "Sec-Fetch-Site");
     const char *type = mt_http_req_header(req, "Content-Type");

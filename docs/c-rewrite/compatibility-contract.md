@@ -46,7 +46,7 @@ netfilter absent — subnet rules verified via RuleSet.sync fake?, см. фай�
 
 Transports: TCP HTTP (`HTTPWeb.Host`, only when `HTTPWeb.Enabled`) and Unix
 socket `<SockPath>` (always on, without the general HTTP auth middleware).
-Same router; **D-74 requires root JWT verification for install even on Unix**.
+Same router; D-78 supersedes D-74's special root-JWT requirement for installing updates.
 
 Auth middleware (HTTP only): applies to paths starting `/api/` except
 `/api/v1/auth`; only active when `HTTPWeb.Auth.Enabled`. Non-`/api/` paths
@@ -75,7 +75,7 @@ Routes (all under `/api/v1`):
 | POST /system/hooks/netfilterd | body `{"type","table"}`; triggers iptables re-commit; 200 |
 | **GET /system/update (D-74)** | **200** `{"installed_version":string,"installed_revision":positive_integer,"asset_suffix":string,"can_install":bool,"reason":string}`; purely local, no GitHub request; capability failures are described in `reason`, allocation failure → **500** |
 | **GET /system/update/status (D-74)** | **200** volatile preparation/job JSON (D-75); `idle` with no active job, or `installing, external:true` without job ID while a detached system installer holds the lock after restart; lock access/allocation failure → **500** |
-| **POST /system/update/install (D-74)** | JSON `{"tag":string,"release_id":positive_safe_integer,"preview":bool}` (exact fields); accepted → **202** `{"job_id":"<32 hex>","stage":"queued"}`; invalid/non-newer/cross-site/wrong content type → **400**, missing verified root JWT/unavailable installer → **403**, active update → **409**, preparation failure → **500** |
+| **POST /system/update/install (D-74)** | JSON `{"tag":string,"release_id":positive_safe_integer,"preview":bool}` (exact fields); accepted → **202** `{"job_id":"<32 hex>","stage":"queued"}`; invalid/non-newer/cross-site/wrong content type → **400**, unavailable privileged installer or target → **403**, active update → **409**, preparation failure → **500** |
 
 D-74 routes are an **intentional additive C-only contract**, absent from the
 historical Go parity surface. Both new GET responses have
@@ -83,8 +83,9 @@ historical Go parity surface. Both new GET responses have
 includes `job_id`, `tag`, `target_version`, `target_revision` and optional transient
 `error`. A restarted daemon may return `{"stage":"installing","external":true}`
 without an ID; otherwise a free lock yields `idle`, not an inferred outcome.
-No update result/log is persisted. POST requires verified **root** JWT on both
-transports even with HTTP auth disabled; TCP middleware may return 401 first.
+No update result/log is persisted. D-78 removes the update-only root JWT gate:
+ordinary WebUI authentication still applies to HTTP requests when enabled,
+and the update handler does not require any particular account name.
 202 acknowledges queued preparation, not an executed/successful package command.
 The browser confirms the running version/revision after the system installer exits
 and never automatically retries an uncertain POST. Errors remain
@@ -315,7 +316,7 @@ Source: root Makefile, `files/**`, CI workflow.
   a detached system shell runs `opkg`/`apk`, restarts the standard service and
   cleans its temporary download. No second `magitrickled` is started. A lock
   serializes transactions; no application-owned status/log/backup is persisted.
-  Root authorization, exact package selection, HTTPS and SHA-256 remain required.
+  System privileges, exact package selection, HTTPS and SHA-256 remain required; D-78 supersedes the root-user JWT check.
   Conffile preservation remains; rollback is not promised. Test real devices.
 - Deps (must stay valid for the C build): Entware `libc, iptables`
   (+socat `_kn`); OpenWrt `libc, iptables-nft, iptables-mod-conntrack-extra,

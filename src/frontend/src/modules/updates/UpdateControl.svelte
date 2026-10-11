@@ -39,6 +39,7 @@
     completed ||
       (!!updates.info &&
         updates.checkedAt > 0 &&
+        !!updates.release &&
         !updates.checking &&
         !updates.error &&
         !choice.reason &&
@@ -111,11 +112,13 @@
             onclick={() => void (canRetry ? checkUpdates(true) : installUpdate())}
             >{busy
               ? t("Updating…")
-              : canRetry
-                ? t("Check for updates")
-                : upToDate
-                  ? t("Up to date")
-                  : t("Update")}</Button
+              : updates.checking
+                ? t("Checking for updates")
+                : canRetry
+                  ? t("Check for updates")
+                  : upToDate
+                    ? t("Up to date")
+                    : t("Update")}</Button
           >
         </div>
         <div role="status" aria-live="polite">

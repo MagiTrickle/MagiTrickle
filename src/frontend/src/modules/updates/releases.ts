@@ -1,7 +1,6 @@
 /** GitHub is contacted by the browser, never by the routing daemon's timers. */
 export const RELEASE_API = "https://api.github.com/repos/dan0102dan/mt-c/releases";
 export const RELEASE_WEB = "https://github.com/dan0102dan/mt-c/releases";
-export const CACHE_TTL = 60 * 60 * 1000;
 
 export type BuildInfo = {
   installed_version: string;
@@ -227,93 +226,58 @@ export function candidate(release: Release | null, info: BuildInfo | null) {
   return { newer: true, asset, reason: info.can_install ? "" : info.reason };
 }
 
-export type ReleaseCache = { release: Release | null; checkedAt: number; etag: string };
-type ReleaseListCache = { releases: Release[]; checkedAt: number; etag: string };
-type StorageLike = Pick<Storage, "getItem" | "setItem">;
-const RELEASE_CACHE_KEY = "mt-c.releases.v2";
+/** Both channels are selected from one release list loaded for this page. */
+export type ReleaseResult = { release: Release | null; checkedAt: number };
+type ReleaseList = { releases: Release[]; checkedAt: number };
 
-/** One shared list for both channels. A router JWT is NEVER sent to GitHub.
- * Memory keeps channel switching local even when browser storage is blocked. */
+/** One GitHub request loads stable and preview candidates for the current page.
+ * Completed data is kept in memory only; a reload starts a new request.
+ * Manual Retry may force a new request without an automatic timed refresh. */
 export class ReleaseClient {
-  private inFlight: Promise<ReleaseListCache> | null = null;
+  private inFlight: Promise<ReleaseList> | null = null;
+  private snapshot: ReleaseList | null = null;
   private blockedUntil = 0;
-  private snapshot: ReleaseListCache | null = null;
-  constructor(
-    private storage: StorageLike | null,
-    private request: typeof fetch = (...args) => fetch(...args),
-  ) {}
+  constructor(private request: typeof fetch = (...args) => fetch(...args)) {}
 
-  private readCache(): ReleaseListCache | null {
-    if (this.snapshot) return this.snapshot;
-    try {
-      const value: unknown = JSON.parse(this.storage?.getItem(RELEASE_CACHE_KEY) ?? "null");
-      if (
-        !record(value) ||
-        typeof value.checkedAt !== "number" ||
-        !Number.isFinite(value.checkedAt) ||
-        !text(value.etag, 256)
-      )
-        return null;
-      this.snapshot = {
-        checkedAt: value.checkedAt,
-        etag: value.etag,
-        releases: parseReleases(value.releases),
-      };
-      return this.snapshot;
-    } catch {
-      return null;
-    }
-  }
-
-  cached(preview: boolean): ReleaseCache | null {
-    const cached = this.readCache();
-    return cached
-      ? {
-          release: selectRelease(cached.releases, preview),
-          checkedAt: cached.checkedAt,
-          etag: cached.etag,
-        }
-      : null;
-  }
-
-  async latest(preview: boolean, force: boolean, signal?: AbortSignal): Promise<ReleaseCache> {
-    const cached = this.readCache();
-    const age = cached ? Date.now() - cached.checkedAt : Infinity;
-    let result: ReleaseListCache;
-    if (this.inFlight) result = await this.inFlight;
-    else if (!force && cached && age >= 0 && age < CACHE_TTL) result = cached;
-    else {
-      if (Date.now() < this.blockedUntil) throw new Error("GitHub rate limit; try again later");
-      const operation = this.load(cached, signal).finally(() => {
-        this.inFlight = null;
-      });
-      this.inFlight = operation;
-      result = await operation;
-    }
+  cached(preview: boolean): ReleaseResult | null {
+    if (!this.snapshot) return null;
     return {
-      release: selectRelease(result.releases, preview),
-      checkedAt: result.checkedAt,
-      etag: result.etag,
+      release: selectRelease(this.snapshot.releases, preview),
+      checkedAt: this.snapshot.checkedAt,
     };
   }
 
-  private async load(
-    cached: ReleaseListCache | null,
-    signal?: AbortSignal,
-  ): Promise<ReleaseListCache> {
+  async latest(preview: boolean, force = false, signal?: AbortSignal): Promise<ReleaseResult> {
+    if (!force && this.snapshot) return this.cached(preview)!;
+    if (!this.inFlight) {
+      if (Date.now() < this.blockedUntil) throw new Error("GitHub rate limit; try again later");
+      // A failed manual refresh must not leave the previous selection active.
+      this.snapshot = null;
+      this.inFlight = this.load(signal)
+        .then((result) => {
+          this.snapshot = result;
+          return result;
+        })
+        .finally(() => {
+          this.inFlight = null;
+        });
+    }
+    const result = await this.inFlight;
+    return { release: selectRelease(result.releases, preview), checkedAt: result.checkedAt };
+  }
+
+  private async load(signal?: AbortSignal): Promise<ReleaseList> {
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) controller.abort();
     const timeout = setTimeout(abort, 15000);
     try {
-      const headers: Record<string, string> = { Accept: "application/vnd.github+json" };
-      if (cached?.etag) headers["If-None-Match"] = cached.etag;
       const response = await this.request(`${RELEASE_API}?per_page=100`, {
         credentials: "omit",
-        headers,
+        headers: { Accept: "application/vnd.github+json" },
         signal: controller.signal,
-        cache: "no-cache",
+        cache: "no-store",
       });
       if (response.status === 403 || response.status === 429) {
         const reset = Number(response.headers.get("X-RateLimit-Reset")) * 1000;
@@ -325,27 +289,10 @@ export class ReleaseClient {
         );
         throw new Error("GitHub rate limit; try again later");
       }
-      let releases: Release[];
-      if (response.status === 304 && cached) releases = cached.releases;
-      else if (response.status === 404) releases = [];
-      else {
-        if (!response.ok) throw new Error("Cannot check GitHub releases");
-        const raw = await response.text();
-        if (raw.length > 4 * 1024 * 1024) throw new Error("Invalid release metadata");
-        releases = parseReleases(JSON.parse(raw));
-      }
-      const result = {
-        releases,
-        checkedAt: Date.now(),
-        etag: response.status === 404 ? "" : (response.headers.get("ETag") ?? cached?.etag ?? ""),
-      };
-      this.snapshot = result;
-      try {
-        this.storage?.setItem(RELEASE_CACHE_KEY, JSON.stringify(result));
-      } catch {
-        /* optional cache */
-      }
-      return result;
+      if (!response.ok) throw new Error("Cannot check GitHub releases");
+      const raw = await response.text();
+      if (raw.length > 4 * 1024 * 1024) throw new Error("Invalid release metadata");
+      return { releases: parseReleases(JSON.parse(raw)), checkedAt: Date.now() };
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", abort);

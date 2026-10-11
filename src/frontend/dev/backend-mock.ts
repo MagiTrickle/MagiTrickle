@@ -314,7 +314,7 @@ app.delete(`${API_BASE}/subscriptions/:id`, async (c) => {
 });
 
 // The on-device updater has no side effects in local development.
-registerMockUpdateRoutes(app, STATIC_TOKEN);
+registerMockUpdateRoutes(app);
 
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));
 app.get(`${API_BASE}/logs`, async (c) => {
