@@ -364,6 +364,15 @@ mt_err_t mt_config_save_buffer(const mt_config_t *cfg, const char *version,
     emit_u64(&ctx, a->netfilter.start_mark_table_index);
     map_end(&ctx);
 
+#ifdef MT_ENTWARE_KN
+    emit_plain(&ctx, "keeneticPolicy");
+    map_start(&ctx);
+    emit_plain(&ctx, "enabled"); emit_bool(&ctx, a->keenetic_policy.enabled);
+    emit_plain(&ctx, "policyId"); emit_string(&ctx, a->keenetic_policy.policy_id);
+    emit_plain(&ctx, "mode");
+    emit_string(&ctx, a->keenetic_policy.mode == MT_KN_POLICY_EXCLUDE ? "exclude" : "include");
+    map_end(&ctx);
+#endif
     emit_plain(&ctx, "link");
     seq_start(&ctx, a->n_link == 0);
     for (size_t i = 0; i < a->n_link; i++) {

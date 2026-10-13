@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import PageControls from "../../components/layout/PageControls.svelte";
   import Button from "../../components/ui/Button.svelte";
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import { t } from "../../data/locale.svelte";
@@ -10,7 +9,9 @@
 
   import { toast } from "../../utils/events";
   import { newProfileId, profileError } from "./profiles-data";
+  import { settingsSection } from "./section-controls";
 
+  const section = settingsSection();
   const dirty = $derived(profilesDirty());
   const validation = $derived(profileError(profiles.draft));
   const busy = $derived(profiles.saving || profiles.loading);
@@ -31,36 +32,35 @@
   async function save() {
     try {
       await saveProfiles();
-      toast.success(t("Profiles saved"));
-    } catch {
-      // Request failures already use the shared fetcher notification.
+    } catch (error) {
       if (profiles.persistencePending)
         toast.error(t("Changes are applied but not saved to disk. Retry saving."));
+      throw error;
     }
   }
 </script>
 
-<section class="profiles-settings" aria-label={t("Routing profiles")} aria-busy={busy}>
-  <PageControls
-    addLabel={t("Add profile")}
-    canAdd={!unavailable}
-    canSave={dirty && !unavailable && !validation}
-    onAdd={addProfile}
-    onSave={save}
-    saveButtonId="save-profiles"
-    saveLabel={profiles.saving
+<section
+  class="profiles-settings"
+  aria-label={t("Interface priority profiles")}
+  aria-busy={busy}
+  use:section={() => ({
+    title: t("Interface priority profiles"),
+    addLabel: t("Add profile"),
+    canAdd: !unavailable,
+    dirty,
+    canSave: dirty && !unavailable && !validation,
+    onAdd: addProfile,
+    onSave: save,
+    saveLabel: profiles.saving
       ? t("Saving...")
       : profiles.persistencePending
         ? t("Changes are applied but not saved to disk. Retry saving.")
         : dirty && validation
           ? t(validation)
-          : t("Save Changes")}
-  >
-    {#snippet search()}
-      <h2 id="interface-priority-profiles">{t("Interface priority profiles")}</h2>
-    {/snippet}
-  </PageControls>
-
+          : t("Save Changes"),
+  })}
+>
   {#if profiles.failed}
     <Placeholder variant="error" minHeight="auto">
       {t("Failed to load profiles")}
@@ -96,24 +96,10 @@
 </section>
 
 <style>
-  h2 {
-    margin: 0;
-    color: var(--text-2);
-    font: 600 1.3rem var(--font);
-  }
-
   fieldset {
     min-width: 0;
     border: 0;
     padding: 0;
     margin: 0;
-  }
-
-  @media (max-width: 570px) {
-    h2 {
-      display: flex;
-      align-items: center;
-      min-height: var(--row-h);
-    }
   }
 </style>

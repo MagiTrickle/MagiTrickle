@@ -148,8 +148,8 @@ async function create(page: Page, name = "VPN with fallback") {
   const card = page.locator(".profile").last();
   await card.getByLabel("Profile name", { exact: true }).fill(name);
   for (const name of ["tun0", "tun1", "tun2"]) await addInterface(card, name);
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
 }
 
 test("create profiles in Settings, select one in groups and subscriptions, save and reload", async ({
@@ -200,8 +200,8 @@ test("reorder profile changes compatibility primary; direct selection clears pro
     page.locator('[data-interface="tun0"]'),
   );
   await expect(page.locator(".interface-id")).toHaveText(["tun1", "tun0", "tun2"]);
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.groups[0].interface).toBe("tun1");
   expect(state.subscriptions[0].interface).toBe("tun1");
   await page.getByRole("tab", { name: "Groups", exact: true }).click();
@@ -228,13 +228,13 @@ test("draft survives tab navigation without a footer; invalid empty chain cannot
   expect(state.profiles[0].name).toBe("VPN with fallback");
   for (const name of ["tun2", "tun1", "tun0"])
     await page.getByRole("button", { name: `Remove interface: ${name}`, exact: true }).click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.profiles[0].interfaces).toHaveLength(3);
   await expect(page.getByText("Add at least one interface", { exact: true })).toHaveCount(0);
-  await expect(page.locator("#save-profiles")).toHaveAccessibleName("Add at least one interface");
+  await expect(page.locator("#save-settings")).toHaveAccessibleName("Add at least one interface");
   await addInterface(page.locator(".profile"), "tun1");
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.profiles[0].name).toBe("Unsaved rename");
   expect(state.profiles[0].interfaces).toEqual(["tun1"]);
 });
@@ -245,24 +245,24 @@ test("server rejection retains draft; applied disk failure remains retryable", a
   await create(page);
   state.failure = "reject";
   await page.getByLabel("Profile name", { exact: true }).fill("Updated VPN");
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeEnabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeEnabled();
   await expect(page.getByLabel("Profile name", { exact: true })).toHaveValue("Updated VPN");
   expect(state.profiles[0].name).toBe("VPN with fallback");
   await expect(page.locator(".toast").filter({ hasText: "Profile is in use" })).toContainText(
     "Profile is in use",
   );
   state.failure = "disk";
-  await page.locator("#save-profiles").click();
+  await page.locator("#save-settings").click();
   await expect(
     page
       .locator(".toast")
       .filter({ hasText: "Changes are applied but not saved to disk. Retry saving." }),
   ).toBeVisible();
-  await expect(page.locator("#save-profiles")).toBeEnabled();
+  await expect(page.locator("#save-settings")).toBeEnabled();
   state.failure = "";
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.profiles[0].name).toBe("Updated VPN");
 });
 
@@ -308,8 +308,8 @@ test("profile section uses a placeholder, plain interface rows and a fixed termi
   // Re-adding the same interface must remain possible after another removal.
   await card.getByRole("button", { name: "Remove interface: tun1", exact: true }).click();
   await addInterface(card, "tun1");
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.profiles[0].interfaces).toEqual(["tun0", "tun2", "tun1"]);
   await page.reload();
   await expect(card.locator(".interface-id")).toHaveText(["tun0", "tun2", "tun1"]);
@@ -350,8 +350,8 @@ test("dragging stays inside its profile and cannot move blackhole; keyboard reor
     .getByRole("button", { name: "Drag interface: tun2", exact: true })
     .press("Alt+ArrowUp");
   await expect(first.locator(".interface-id")).toHaveText(["tun2", "tun1", "tun0"]);
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.profiles.map((p) => p.interfaces)).toEqual([
     ["tun2", "tun1", "tun0"],
     ["tun0", "tun1", "tun2"],
@@ -368,12 +368,15 @@ test("mobile Settings keeps add controls visible and allows an empty draft to be
   await page.getByRole("button", { name: "Add profile", exact: true }).click();
   const card = page.locator(".profile");
   await card.getByPlaceholder("Profile name", { exact: true }).fill("Mobile profile");
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   await expect(card.locator(".add-interface [data-select-trigger]")).toBeVisible();
   await addInterface(card, "tun2");
   await expect(card.locator(".order").first()).toHaveText("1");
-  await page.locator("#save-profiles").click();
-  await expect(page.locator("#save-profiles")).toBeDisabled();
+  await expect(page.locator("#save-settings")).toBeEnabled();
+  await expect(page.locator("#save-settings")).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.locator("#save-settings").click();
+  await expect(page.locator("#save-settings")).toBeDisabled();
   expect(state.profiles[0].interfaces).toEqual(["tun2"]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
@@ -439,8 +442,8 @@ for (const width of [1280, 390]) {
     await addInterface(first, "tun2");
     await expect(first.locator(".interface-id")).toHaveText(["tun0", "tun2"]);
     await expect(second.locator(".interface-id")).toHaveText(["tun1"]);
-    await page.locator("#save-profiles").click();
-    await expect(page.locator("#save-profiles")).toBeDisabled();
+    await page.locator("#save-settings").click();
+    await expect(page.locator("#save-settings")).toBeDisabled();
     expect(state.profiles[0].interfaces).toEqual(["tun0", "tun2"]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,

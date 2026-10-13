@@ -14,6 +14,9 @@ struct mt_port_remap {
     uint16_t from, to;
     mt_ipt_t *ipt4, *ipt6; /* borrowed, nullable */
     bool enabled;
+#ifdef MT_ENTWARE_KN
+    const mt_kn_policy_scope_t *policy;
+#endif
 };
 
 mt_port_remap_t *mt_port_remap_new(const char *chain_prefix, uint16_t from, uint16_t to,
@@ -61,6 +64,12 @@ void mt_port_remap_free(mt_port_remap_t *p) {
     free(p);
 }
 
+#ifdef MT_ENTWARE_KN
+void mt_port_remap_set_policy(mt_port_remap_t *self, const mt_kn_policy_scope_t *scope) {
+    if (self) { self->policy = scope; }
+}
+#endif
+
 /* Stages the remap chain without writing it -- see
  * mt_ipset_to_link_prepare_iptables for why the write is separate. */
 static mt_err_t build_rules(mt_port_remap_t *p, mt_ipt_t *ipt) {
@@ -70,6 +79,10 @@ static mt_err_t build_rules(mt_port_remap_t *p, mt_ipt_t *ipt) {
     mt_err_t err = mt_ipt_register_chain_override(ipt, "nat", p->chain_name);
     if (err != MT_OK) { return err; }
 
+#ifdef MT_ENTWARE_KN
+    err = mt_kn_policy_guard(p->policy, ipt, "nat", p->chain_name);
+    if (err != MT_OK) { return err; }
+#endif
     char from_str[8];
     char to_dest[16];
     snprintf(from_str, sizeof(from_str), "%u", p->from);

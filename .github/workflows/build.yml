@@ -428,7 +428,7 @@ jobs:
           mkdir -p .build
           eval export $(make _return_export_dynamic_env);
           cp "${{ matrix.config }}" .config
-          make build_frontend
+          make build_frontend FRONTEND_OUT_DIR="${GITHUB_WORKSPACE}/src/frontend/dist"
           make _return_export_dynamic_env > .build/entware-package.env
 
           feed_dir="${RUNNER_TEMP}/mt-c-feed-${{ matrix.name }}"
@@ -504,7 +504,7 @@ jobs:
           mkdir -p .build
           eval export $(make _return_export_dynamic_env);
           cp "${{ matrix.config }}" .config
-          make build_frontend
+          make build_frontend FRONTEND_OUT_DIR="${GITHUB_WORKSPACE}/src/frontend/dist"
           make _return_export_dynamic_env > .build/openwrt-package.env
           . .build/openwrt-package.env
 

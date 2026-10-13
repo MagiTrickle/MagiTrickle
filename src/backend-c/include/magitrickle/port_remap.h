@@ -9,6 +9,9 @@
 
 #include "magitrickle/err.h"
 #include "magitrickle/iptables.h"
+#ifdef MT_ENTWARE_KN
+#include "magitrickle/keenetic_policy.h"
+#endif
 
 typedef struct mt_remap_addr {
     int family; /* AF_INET or AF_INET6 */
@@ -35,4 +38,7 @@ mt_err_t mt_port_remap_disable(mt_port_remap_t *p);
  * the remap is disabled (or p is NULL, i.e. remap53 turned off). */
 mt_err_t mt_port_remap_prepare_iptables(mt_port_remap_t *p);
 
+#ifdef MT_ENTWARE_KN
+void mt_port_remap_set_policy(mt_port_remap_t *self, const mt_kn_policy_scope_t *scope);
+#endif
 #endif /* MAGITRICKLE_PORT_REMAP_H */

@@ -34,6 +34,9 @@ struct mt_ipset_to_link {
     uint16_t priority;
 
     bool enabled;
+#ifdef MT_ENTWARE_KN
+    const mt_kn_policy_scope_t *policy;
+#endif
     uint32_t mark;
     uint32_t table;
     family_state_t v4, v6;
@@ -77,6 +80,12 @@ void mt_ipset_to_link_set_priority(mt_ipset_to_link_t *l, uint16_t priority) {
 
 /* ---- iptables chain rules ------------------------------------------------ */
 
+#ifdef MT_ENTWARE_KN
+void mt_ipset_to_link_set_policy(mt_ipset_to_link_t *self, const mt_kn_policy_scope_t *scope) {
+    if (self) { self->policy = scope; }
+}
+#endif
+
 /* Stages the group's chains and rules without writing them: a full table
  * rebuild stages every group first and writes the result in one commit.  */
 static mt_err_t build_iptables_rules(mt_ipset_to_link_t *l, mt_ipt_t *ipt, const char *ipset_name) {
@@ -85,6 +94,10 @@ static mt_err_t build_iptables_rules(mt_ipset_to_link_t *l, mt_ipt_t *ipt, const
     mt_err_t err = mt_ipt_register_chain_override(ipt, "filter", l->chain_name);
     if (err != MT_OK) { return err; }
 
+#ifdef MT_ENTWARE_KN
+    err = mt_kn_policy_route_guard(l->policy, ipt, "filter", l->chain_name, l->mark);
+    if (err != MT_OK) { return err; }
+#endif
     size_t count = l->n_interfaces ? l->n_interfaces : 1;
     for (size_t i = 0; i < count; i++) {
         const char *name = l->n_interfaces ? l->interfaces[i] : l->iface_name;
@@ -119,11 +132,19 @@ static mt_err_t build_iptables_rules(mt_ipset_to_link_t *l, mt_ipt_t *ipt, const
     /* MARK is non-terminating: the last matching jump supplies both the
      * packet and connection mark. Order all groups and subscriptions
      * together so the highest configured priority runs last. */
-    err = mt_ipt_append_ordered(ipt, "mangle", "PREROUTING", l->priority, pre_args, 2);
+    const char *parent = "PREROUTING";
+#ifdef MT_ENTWARE_KN
+    if (l->policy && l->policy->config.enabled) { parent = l->policy->dispatch; }
+#endif
+    err = mt_ipt_append_ordered(ipt, "mangle", parent, l->priority, pre_args, 2);
     if (err != MT_OK) { return err; }
 
     err = mt_ipt_register_chain_override(ipt, "nat", l->chain_name);
     if (err != MT_OK) { return err; }
+#ifdef MT_ENTWARE_KN
+    err = mt_kn_policy_route_guard(l->policy, ipt, "nat", l->chain_name, l->mark);
+    if (err != MT_OK) { return err; }
+#endif
     const char *nat1[] = {"-m", "set", "--match-set", ipset_name, "dst", "-j", "MASQUERADE"};
     err = mt_ipt_append(ipt, "nat", l->chain_name, nat1, 7);
     if (err != MT_OK) { return err; }
@@ -163,7 +184,11 @@ static mt_err_t delete_iptables_rules(mt_ipset_to_link_t *l, mt_ipt_t *ipt) {
     err = mt_ipt_register_chain_delete(ipt, "mangle", l->chain_name);
     if (err != MT_OK && first_err == MT_OK) { first_err = err; }
     const char *pre_args[] = {"-j", l->chain_name};
-    err = mt_ipt_delete(ipt, "mangle", "PREROUTING", pre_args, 2);
+    const char *parent = "PREROUTING";
+#ifdef MT_ENTWARE_KN
+    if (l->policy && l->policy->config.enabled) { parent = l->policy->dispatch; }
+#endif
+    err = mt_ipt_delete(ipt, "mangle", parent, pre_args, 2);
     if (err != MT_OK && err != MT_ERR_NOENT && first_err == MT_OK) { first_err = err; }
 
     err = mt_ipt_register_chain_delete(ipt, "nat", l->chain_name);

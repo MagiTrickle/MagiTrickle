@@ -6,6 +6,7 @@ on:
       - 'files/**'
       - 'tools/ci/**'
       - 'tools/tests/package_identity.py'
+      - 'tools/tests/frontend_variants.py'
       - '.github/workflows/check-packaging.yml'
   push:
     paths:
@@ -13,6 +14,7 @@ on:
       - 'files/**'
       - 'tools/ci/**'
       - 'tools/tests/package_identity.py'
+      - 'tools/tests/frontend_variants.py'
       - '.github/workflows/check-packaging.yml'
 permissions:
   contents: read
@@ -22,5 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: python3 tools/tests/package_identity.py
+      - name: Check frontend build cache isolation
+        run: python3 tools/tests/frontend_variants.py
       - name: Test SDK acquisition and source fallback
         run: python3 tools/ci/tests/test_openwrt_sdk.py

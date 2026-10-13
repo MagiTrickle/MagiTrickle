@@ -359,13 +359,5 @@ mt_err_t mt_kn_get_iface_aliases_from(const char *base_url, mt_kn_aliases_t *out
 }
 
 mt_err_t mt_kn_get_iface_aliases(mt_kn_aliases_t *out) {
-#ifdef MT_ENTWARE_KN
     return mt_kn_get_iface_aliases_from(MT_KN_RCI_BASE_URL, out);
-#else
-    /* Go's DummyRouterSpecificAPI: an empty map and no error, so
-     * interfaces.List simply reports no friendly names. */
-    out->items = NULL;
-    out->n = 0;
-    return MT_OK;
-#endif
 }

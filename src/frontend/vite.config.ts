@@ -1,9 +1,22 @@
+import { fileURLToPath } from "node:url";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 import { ViteMinifyPlugin } from "vite-plugin-minify";
 
 export default defineConfig(() => ({
   publicDir: "static",
+  resolve: {
+    alias: {
+      "#platform/settings": fileURLToPath(
+        new URL(
+          process.env.VITE_ENTWARE_KN === "1"
+            ? "./src/modules/settings/keenetic/PolicyPanel.svelte"
+            : "./src/modules/settings/PlatformSettings.empty.svelte",
+          import.meta.url,
+        ),
+      ),
+    },
+  },
   plugins: [
     svelte({
       onwarn(warning, defaultHandler) {

@@ -169,7 +169,7 @@ test("saved group unlink releases the profile without page reload", async ({ pag
   page.once("dialog", (dialog) => void dialog.accept());
   await deleteProfile(page).click();
   await expect(page.locator(".profile")).toHaveCount(0);
-  await page.locator("#save-profiles").click();
+  await page.locator("#save-settings").click();
   await expect.poll(() => state.profiles.length).toBe(0);
 });
 
@@ -192,7 +192,7 @@ test("usage refresh preserves an unsaved profile editor", async ({ page }) => {
   await unlink(page);
   await settings(page);
   await expect(page.getByLabel("Profile name", { exact: true })).toHaveValue("Unsaved name");
-  await expect(page.locator("#save-profiles")).toBeEnabled();
+  await expect(page.locator("#save-settings")).toBeEnabled();
   await expect(deleteProfile(page)).toBeEnabled();
   expect(state.profiles[0].name).toBe("Shared VPN");
 });

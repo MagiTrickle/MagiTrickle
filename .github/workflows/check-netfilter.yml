@@ -31,7 +31,7 @@ jobs:
       - name: Install build and network-test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libyaml-dev libpcre2-dev libmnl-dev libcjson-dev libcurl4-openssl-dev iptables ipset
+          sudo apt-get install -y libyaml-dev libpcre2-dev libmnl-dev libcjson-dev libcurl4-openssl-dev iptables ipset iproute2
           sudo update-alternatives --set iptables /usr/sbin/iptables-${{ matrix.frontend }}
           sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-${{ matrix.frontend }}
       - name: Build recovery tests with Keenetic code enabled

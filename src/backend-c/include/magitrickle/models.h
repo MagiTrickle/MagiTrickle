@@ -20,6 +20,9 @@
 #include "magitrickle/duration.h"
 #include "magitrickle/err.h"
 #include "magitrickle/id.h"
+#ifdef MT_ENTWARE_KN
+#include "magitrickle/keenetic_policy.h"
+#endif
 
 #define MT_RULE_DOMAIN    "domain"
 #define MT_RULE_NAMESPACE "namespace"
@@ -101,6 +104,9 @@ typedef struct mt_profile {
 
 /* AppConfig with the exact defaults from Go constant.DefaultAppConfig. */
 typedef struct mt_app_config {
+#ifdef MT_ENTWARE_KN
+    mt_kn_policy_config_t keenetic_policy;
+#endif
     struct {
         bool enabled;
         struct {

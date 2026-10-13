@@ -38,10 +38,10 @@ static void handle_list_interfaces(mt_http_req_t *req, mt_http_res_t *res, void 
     for (size_t i = 0; i < n; i++) {
         cJSON *item = cJSON_CreateObject();
         cJSON_AddStringToObject(item, "id", ifaces[i].id);
-        /* InterfaceRes.Name has `omitempty`; ifaces[i].name is always ""
-         * here (Keenetic-RCI friendly names are entware_kn-only, deferred
-         * to Phase 8), so it's simply never added -- matches Go. */
+#ifdef MT_ENTWARE_KN
+        /* Keep the kernel ID; the optional RCI alias only enriches KN responses. */
         if (ifaces[i].name[0] != '\0') { cJSON_AddStringToObject(item, "name", ifaces[i].name); }
+#endif
         cJSON_AddItemToArray(arr, item);
     }
     free(ifaces);

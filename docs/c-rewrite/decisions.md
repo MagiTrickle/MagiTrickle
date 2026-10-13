@@ -3653,3 +3653,34 @@ release identifiers, not arbitrary URLs or shell commands.
 
 This supersedes D-74's special update authorization rule. D-75 and D-77
 remain applicable to the update handoff and release discovery behaviors.
+
+## D-79 — Keenetic policy as an optional device scope (2026-10-11)
+
+Status: **implemented at the user's request; Keenetic hardware acceptance required**.
+Only `_kn` builds include a disabled-by-default selector for one existing
+Keenetic policy, with include/exclude semantics. It scopes existing MT rules,
+not their destination interfaces. Policy IDs are persisted; marks are resolved
+in a bounded asynchronous backend-only RCI worker. Missing/unavailable policies
+never silently broaden processing to every client; disabling always works
+without RCI. Existing conntrack flows are not globally flushed.
+
+A common gate reads the original policy mark before ordered MT group and
+subscription rules can overwrite it. DNS DNAT and downstream filter/NAT are
+scoped too. No new mark bits are claimed. Generic binaries/routes/config output
+and frontend payloads contain no policy feature; frontend output/stamps are
+build-target-specific, with a compile-time platform alias instead of runtime
+hiding. The KN YAML fixture intentionally gains `app.keeneticPolicy`; the
+ordinary golden configuration is unchanged. See `docs/keenetic-policy.md` for
+API, lifecycle/failure behavior, build isolation and hardware acceptance.
+
+The WebUI defaults an unset selection to the policy named `mt`, resolving its
+actual ID from the current policy list on save. Existing selections are retained.
+If `mt` is absent, it remains the default option; enabling cannot be saved until
+an available policy is selected. The list loads when the editor opens and is
+refetched on page reload, without a refresh button. A single switch selects
+include/exclude with a changing label; policy options have no ID descriptions.
+Backend defaults and the disabled-by-default behavior are unchanged.
+
+The policy editor highlights Save whenever its draft changes, independently of
+validation. An unavailable policy still disables submission and shows a concise
+inline explanation; switching the filter off remains saveable without RCI.

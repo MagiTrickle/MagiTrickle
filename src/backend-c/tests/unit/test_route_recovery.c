@@ -20,6 +20,7 @@ mt_err_t __wrap_mt_loop_add_fd(mt_loop_t *loop, int fd, uint32_t events, mt_fd_c
 mt_err_t __wrap_mt_loop_del_fd(mt_loop_t *loop, int fd);
 void __wrap_mt_loop_stop(mt_loop_t *loop);
 mt_err_t __wrap_mt_app_reconcile_routes(mt_app_t *app, const char *name);
+mt_err_t __wrap_mt_app_force_commit_iptables(mt_app_t *app);
 struct mnl_socket *__real_mnl_socket_open(int bus);
 struct mnl_socket *__wrap_mnl_socket_open(int bus);
 ssize_t __wrap_mnl_socket_recvfrom(const struct mnl_socket *nl, void *data, size_t len);
@@ -34,7 +35,7 @@ static struct {
     test_timer_t timers[4];
     uint64_t now;
     int serial, fd, recv_error;
-    unsigned opens, registrations, removals, reconciles, open_failures;
+    unsigned opens, registrations, removals, reconciles, open_failures, policy_refreshes;
     mt_fd_cb readable;
     void *read_ud;
     mt_err_t result;
@@ -85,6 +86,12 @@ mt_err_t __wrap_mt_app_reconcile_routes(mt_app_t *app, const char *name)
     (void)app;
     fx.reconciles++;
     return name ? MT_ERR_INVAL : fx.result;
+}
+mt_err_t __wrap_mt_app_force_commit_iptables(mt_app_t *app)
+{
+    (void)app;
+    fx.policy_refreshes++;
+    return MT_OK;
 }
 struct mnl_socket *__wrap_mnl_socket_open(int bus)
 {
@@ -242,10 +249,37 @@ TEST watcher_scheduler_failure_stops_instead_of_losing_recovery(void)
     PASS();
 }
 
+#ifdef MT_ENTWARE_KN
+TEST policy_local_addresses_refresh_only_on_topology_events(void)
+{
+    ASSERT(setup());
+    mt_config_t cfg = {0};
+    d.cfg = &cfg;
+    /* Only the wrapped commit boundary observes this sentinel. */
+    d.app = (mt_app_t *)&cfg;
+    on_addr_change("br0", &d);
+    ASSERT_EQ(0u, fx.policy_refreshes);
+    cfg.app.keenetic_policy.enabled = true;
+    on_addr_change("br0", &d);
+    on_link_up("tun0", false, &d);
+    on_netlink_resync(&d);
+    ASSERT_EQ(3u, fx.policy_refreshes);
+    on_route_change(&d); /* Avoid self-triggered rebuild loops. */
+    ASSERT_EQ(3u, fx.policy_refreshes);
+    ASSERT_EQ(1u, timer_count());
+    d.app = NULL; d.cfg = NULL;
+    daemon_teardown(&d);
+    PASS();
+}
+#endif
+
 GREATEST_MAIN_DEFS();
 int main(int argc, char **argv)
 {
     GREATEST_MAIN_BEGIN();
+#ifdef MT_ENTWARE_KN
+    RUN_TEST(policy_local_addresses_refresh_only_on_topology_events);
+#endif
     RUN_TEST(lost_and_malformed_events_coalesce_without_periodic_polling);
     RUN_TEST(contention_and_apply_error_retry_then_stop_on_success);
     RUN_TEST(reconnect_backoff_is_bounded_and_success_resynchronizes);

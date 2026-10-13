@@ -4,8 +4,6 @@ import { serveStatic } from "hono/deno";
 import { logger } from "hono/logger";
 import { streamSSE } from "hono/streaming";
 
-import { registerMockUpdateRoutes } from "./update-mock.ts";
-
 import { cleanProfiles, profileError } from "../src/modules/settings/profiles-data.ts";
 import type { RuleChange } from "../src/modules/subscriptions/subscription-payload.ts";
 import type { Group, Interfaces, Profile, Subscription } from "../src/types.ts";
@@ -15,6 +13,8 @@ import {
   isValidPriority,
   withPriorityDefault,
 } from "../src/utils/priority.ts";
+import { registerMockPolicyRoutes } from "./keenetic-policy-mock.ts";
+import { registerMockUpdateRoutes } from "./update-mock.ts";
 
 const API_BASE = "/api/v1";
 
@@ -315,6 +315,7 @@ app.delete(`${API_BASE}/subscriptions/:id`, async (c) => {
 
 // The on-device updater has no side effects in local development.
 registerMockUpdateRoutes(app);
+registerMockPolicyRoutes(app);
 
 app.get(`${API_BASE}/system/interfaces`, (c) => c.json(INTERFACES));
 app.get(`${API_BASE}/logs`, async (c) => {

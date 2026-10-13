@@ -18,6 +18,26 @@
 #include "magitrickle/loop.h"
 #include "magitrickle/system.h"
 
+#ifdef MT_ENTWARE_KN
+#include "magitrickle/keenetic_rci.h"
+static mt_err_t alias_result = MT_OK;
+
+mt_err_t __wrap_mt_kn_get_iface_aliases(mt_kn_aliases_t *out);
+mt_err_t __wrap_mt_kn_get_iface_aliases(mt_kn_aliases_t *out) {
+    out->items = NULL;
+    out->n = 0;
+    if (alias_result != MT_OK) { return alias_result; }
+    out->items = calloc(1, sizeof(*out->items));
+    if (!out->items) { return MT_ERR_NOMEM; }
+    out->n = 1;
+    snprintf(out->items[0].system_name, sizeof(out->items[0].system_name), "lo");
+    snprintf(out->items[0].alias, sizeof(out->items[0].alias), "Router loopback");
+    return MT_OK;
+}
+#else
+_Static_assert(sizeof(mt_iface_info_t) == 16, "generic interfaces must not retain alias storage");
+#endif
+
 typedef struct harness {
     mt_loop_t *loop;
     mt_httpd_t *tcp;
@@ -170,10 +190,54 @@ TEST list_interfaces_includes_blackhole_first(void) {
     ASSERT_STR_EQ("blackhole", cJSON_GetObjectItemCaseSensitive(first, "id")->valuestring);
     /* blackhole has no friendly name -> "name" key omitted (omitempty) */
     ASSERT(cJSON_GetObjectItemCaseSensitive(first, "name") == NULL);
+    bool found_lo = false;
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, ifaces) {
+        const cJSON *id = cJSON_GetObjectItemCaseSensitive(item, "id");
+        const cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
+        ASSERT(cJSON_IsString(id));
+        if (strcmp(id->valuestring, "lo") == 0) {
+            found_lo = true;
+#ifdef MT_ENTWARE_KN
+            ASSERT(cJSON_IsString(name));
+            ASSERT_STR_EQ("Router loopback", name->valuestring);
+#endif
+        }
+#ifndef MT_ENTWARE_KN
+        ASSERT(name == NULL);
+#endif
+    }
+    ASSERT(found_lo);
     cJSON_Delete(out);
     harness_stop(h);
     PASS();
 }
+
+#ifdef MT_ENTWARE_KN
+TEST interface_alias_failure_keeps_kernel_ids(void) {
+    alias_result = MT_ERR_UPSTREAM;
+    harness_t *h = harness_start(false);
+    ASSERT(h != NULL);
+    h->cfg.app.show_all_interfaces = true;
+    cJSON *out = NULL;
+    ASSERT_EQ(200, do_request("GET", "/api/v1/system/interfaces", NULL, &out));
+    const cJSON *ifaces = cJSON_GetObjectItemCaseSensitive(out, "interfaces");
+    ASSERT(cJSON_IsArray(ifaces));
+    bool found_lo = false;
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, ifaces) {
+        const cJSON *id = cJSON_GetObjectItemCaseSensitive(item, "id");
+        ASSERT(cJSON_IsString(id));
+        if (strcmp(id->valuestring, "lo") == 0) { found_lo = true; }
+        ASSERT(cJSON_GetObjectItemCaseSensitive(item, "name") == NULL);
+    }
+    ASSERT(found_lo);
+    cJSON_Delete(out);
+    harness_stop(h);
+    alias_result = MT_OK;
+    PASS();
+}
+#endif
 
 TEST save_config_writes_file(void) {
     harness_t *h = harness_start(true);
@@ -233,6 +297,9 @@ GREATEST_MAIN_DEFS();
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
     RUN_TEST(list_interfaces_includes_blackhole_first);
+#ifdef MT_ENTWARE_KN
+    RUN_TEST(interface_alias_failure_keeps_kernel_ids);
+#endif
     RUN_TEST(save_config_writes_file);
     RUN_TEST(save_config_noop_without_path);
     RUN_TEST(netfilterd_hook_ok_and_bad_json);

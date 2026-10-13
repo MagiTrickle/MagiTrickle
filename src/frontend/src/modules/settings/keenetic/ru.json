@@ -1,0 +1,14 @@
+{
+  "Keenetic policy": "Политика Keenetic",
+  "Use policy based filter": "Использовать фильтр по политике",
+  "Router policy": "Политика роутера",
+  "Policy unavailable": "Политика недоступна",
+  "Processing mode": "Режим обработки",
+  "Failed to load policy settings": "Не удалось загрузить настройки политики",
+  "Policy settings saved": "Настройки политики сохранены",
+  "Include: MT processes only devices in the selected policy": "Include: MT обрабатывает только устройства выбранной политики",
+  "Exclude: MT processes all devices except those in the selected policy": "Exclude: MT обрабатывает все устройства, кроме устройств выбранной политики",
+  "Could not load policies. Reload the page to retry.": "Не удалось загрузить политики. Перезагрузите страницу для повтора.",
+  "Create the \"mt\" policy in Keenetic, then reload this page.": "Создайте политику «mt» в Keenetic и перезагрузите страницу.",
+  "Select an available policy to save.": "Для сохранения выберите доступную политику."
+}

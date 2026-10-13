@@ -243,6 +243,12 @@ TEST save_shape_matches_committed_fixture(void)
         "    disableIPv4: false\n"
         "    disableIPv6: false\n"
         "    startMarkTableIndex: 1298229097\n"
+#ifdef MT_ENTWARE_KN
+        "  keeneticPolicy:\n"
+        "    enabled: false\n"
+        "    policyId: \"\"\n"
+        "    mode: include\n"
+#endif
         "  link:\n"
         "  - br0\n"
         "  showAllInterfaces: false\n"

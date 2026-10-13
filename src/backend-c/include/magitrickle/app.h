@@ -113,7 +113,7 @@ mt_ruleset_t *mt_app_find_group_by_id(const mt_app_t *app, mt_id_t id);
 /* Takes ownership of `group` on any outcome: appends it to cfg->groups
  * (mt_config_add_group) and wraps it in a new mt_ruleset_t on success;
  * frees it and returns an error otherwise. Errors: MT_ERR_EXIST (group ID
- * already present, matches Go's ErrGroupIDConflict), MT_ERR_INVAL
+ * already present, matches ErrGroupIDConflict), MT_ERR_INVAL
  * (duplicate rule ID within the group, matches ErrRuleIDConflict), or
  * whatever mt_ruleset_enable/mt_ruleset_sync returns when the app is
  * already running (the partially-added group is rolled back: disabled,
@@ -283,11 +283,9 @@ mt_err_t mt_app_sync_due_subscriptions(mt_app_t *app, int64_t now_unix, bool *ou
 
 typedef struct mt_iface_info {
     char id[16];   /* IFNAMSIZ */
-    char name[64]; /* friendly alias, or empty when the platform has no
-                    * router-specific source for one. Filled from the
-                    * Keenetic RCI lookup under -DMT_ENTWARE_KN (see
-                    * keenetic_rci.h); empty elsewhere, matching Go's
-                    * DummyRouterSpecificAPI. */
+#ifdef MT_ENTWARE_KN
+    char name[64]; /* RCI alias; empty on missing metadata or lookup failure. */
+#endif
 } mt_iface_info_t;
 
 /* Enumerates system network interfaces (getifaddrs, deduped by name),
@@ -345,4 +343,12 @@ mt_err_t mt_app_start_netfilter_committer(mt_app_t *app);
  * down. */
 void mt_app_stop_netfilter_committer(mt_app_t *app);
 
+#ifdef MT_ENTWARE_KN
+void mt_app_policy_get(const mt_app_t *app, mt_kn_policy_config_t *config,
+                        bool *ready, bool *applied, mt_err_t *apply_error);
+/* Validation and model publication on the loop; netfilter I/O stays on the
+ * existing committer. Config is saved separately, with existing retry semantics. */
+mt_err_t mt_app_policy_set(mt_app_t *app, const mt_kn_policy_config_t *config,
+                            bool ready, uint32_t mark);
+#endif
 #endif /* MAGITRICKLE_APP_H */

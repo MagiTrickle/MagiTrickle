@@ -244,6 +244,9 @@ static mt_err_t ruleset_enable_locked(mt_ruleset_t *rs) {
         mt_ipset_free(ipset);
         return MT_ERR_NOMEM;
     }
+#ifdef MT_ENTWARE_KN
+    mt_ipset_to_link_set_policy(link, rs->deps.policy);
+#endif
     mt_ipset_to_link_set_priority(link, mt_group_routing_order(rs->group));
 
     mt_err_t err = MT_OK;
