@@ -1,14 +1,13 @@
 #!/bin/sh
-# C DNS proxy baseline — same methodology as run_baseline.sh (same dnsstub,
-# same dnsload, same cells) so the numbers line up against the Go baseline in
-# docs/c-rewrite/baseline-raw/. Results -> docs/c-rewrite/baseline-raw-c/.
+# Historical C DNS proxy baseline using the same tools and cells as the frozen
+# Go run in docs/c-rewrite/baseline-raw/. Results -> baseline-raw-c/.
 #
-# As of Phase 9 this is a full-pipeline comparison: transport + DNS parse +
-# hooks + rule matching + cache (Phase 4) all run on every query, same as
-# the Go baseline (whose group is also disabled here, so both sides skip
-# ipset writes but both run real rule matching). The Phase 3-era "transport
-# only" caveat that used to live here no longer applies — see
-# docs/c-rewrite/phase-9-report.md for the current numbers.
+# Historical host runner, not an enabled-rule comparison. With group.enable
+# false, C omits the group from its matching snapshot while Go still traverses
+# its rules. The frozen results remain historical evidence, but the former
+# "same full pipeline" interpretation was incorrect (decisions.md D-80).
+# For paired package measurements with active matching and real ipset writes,
+# use tools/bench/router_dns.py and router-benchmark.md.
 set -u
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 BIN="$REPO/.build/bench"
@@ -34,7 +33,7 @@ RESULTS="$RESULTS_DIR/results.jsonl"
   echo "libc: $(ldd --version 2>/dev/null | head -1)"
   echo "git_commit: $(cd "$REPO" && git rev-parse HEAD)"
   echo "binary_size_bytes: $(stat -c %s "$DAEMON")"
-  echo "note: full pipeline (transport+parse+hooks+rule matching+cache; group disabled so ipset writes are skipped, same as the Go baseline)"
+  echo "note: historical disabled-group scenario; C omits the group from matching while Go still traverses its rules; not an active-matcher comparison (D-80)"
 } > "$RESULTS_DIR/environment.txt"
 
 rss_kb()   { awk '/VmRSS/{print $2}' "/proc/$1/status" 2>/dev/null; }

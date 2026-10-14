@@ -3684,3 +3684,35 @@ Backend defaults and the disabled-by-default behavior are unchanged.
 The policy editor highlights Save whenever its draft changes, independently of
 validation. An unavailable policy still disables submission and shows a concise
 inline explanation; switching the filter off remains saveable without RCI.
+
+## D-80 — Correct the benchmark's disabled-group bias (2026-10-14)
+
+Status: **accepted; benchmark methodology correction, no backend change**.
+The old host runners use `group.enable: false` and describe the run as a
+full DNS/matching pipeline on both sides. That description is incorrect:
+the original Go `processARecord`/CNAME handlers still traverse the group's
+rules, but C's `mt_ruleset_snapshot_build` excludes disabled groups. This
+is an observable-workload asymmetry even though disabling a group correctly
+prevents routing actions in either implementation. The frozen host results
+remain historical artifacts; they do not substantiate claims about relative
+performance of enabled rule matching. In particular, near-flat C throughput
+in those runs does not prove scaling of its active matcher.
+
+The on-router package comparison enables the group and uses real public
+DNS answers, with actual writes to private `mtb_` ipsets. Both iptables
+families are disabled (`netfilter.disableIPv4/disableIPv6: true`) and DNS
+remap is disabled. In both implementations this leaves the sets detached
+from iptables, policy rules and routes; production traffic is not directed
+to the benchmark's blackhole interface. This measures DNS, active matching,
+cache processing and ipset updates, but not packet forwarding or rule
+installation under a normal routing configuration. Packages run unchanged
+in the same private chroot; production services remain running.
+
+The independent bench Go module no longer imports the removed backend;
+historical `configbench` has its own module requiring an original checkout.
+The loader now rejects DNS error/empty responses, uses actual elapsed time
+for successful-query RPS, includes TCP setup in client latency, and records
+its own CPU. Three alternating paired repeats and a fixed offered-load
+scenario supplement capacity measurements. Old raw snapshots and backend
+goldens are not rewritten. See `tools/bench/router-benchmark.md` and
+`docs/c-rewrite/router-raw/2026-10-14/` for protocol and package identities.

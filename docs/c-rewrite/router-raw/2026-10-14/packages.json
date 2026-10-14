@@ -1,0 +1,116 @@
+{
+  "original": {
+    "version": "0.8.2-rev2",
+    "url": "https://github.com/MagiTrickle/MagiTrickle/releases/download/0.8.2-rev2/magitrickle_0.8.2-2_entware_mipsel-3.4_kn.ipk",
+    "digest": "sha256:ad2732a4ab3d25abbf38a65ab8306d22138a959173234f6b2deb5326923fcd93",
+    "binary_sha256": "e2c7796d7423331b10ffe65ae9981dcd3682bc2343e9b16e41dc058ca7141445"
+  },
+  "mt_c": {
+    "version": "0.8.5~git20261013213732.65c7b01",
+    "source_commit": "65c7b01",
+    "note": "installed package; not rebuilt from current checkout",
+    "binary_sha256": "c1c5156d0f85809fbf1d56e31152b67014ce587e4d7bd92a2a6adb3eb490856b"
+  },
+  "checkout_commit": "b09bd9432ddb5a459db8c7bbe8ad325b8ba3ed7a",
+  "clk_tck": 100,
+  "loader": {
+    "go_version": "go1.23.1 linux/amd64",
+    "target": "GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0",
+    "build_flags": "-trimpath -ldflags=-s -w",
+    "sha256": "fd3bd49bcade0ddb8152c35588d1dfa8e93006bdc8aa029b37e94fcbd143d015"
+  },
+  "run": {
+    "date_utc": "2026-10-14T14:47:41.401748+00:00",
+    "command": "python3 tools/bench/router_dns.py --clk-tck 100 --control-path /tmp/mt-router-bench/ssh.sock --output docs/c-rewrite/router-raw/2026-10-14",
+    "rules": [
+      100,
+      1000,
+      10000
+    ],
+    "repeats": 3,
+    "concurrency": 10,
+    "load_sec": 20,
+    "paced_sec": 30,
+    "paced_qps": 20,
+    "group_enable": true,
+    "disable_ipv4": true,
+    "disable_ipv6": true,
+    "dns_remap": false,
+    "production_pid": 19034,
+    "production_config_sha256": "d480673678c7c4e26e7b5646c6beb32e80b529b28956512d16bd4ebcf512211b",
+    "completed_utc": "2026-10-14T15:23:15.738955+00:00",
+    "load_runs": 42,
+    "successful_queries": 224864,
+    "dns_errors": 1,
+    "timeouts": 1
+  },
+  "plotting": {
+    "library": "matplotlib",
+    "version": "3.11.2"
+  },
+  "live_rules_run": {
+    "source_config_sha256": "d480673678c7c4e26e7b5646c6beb32e80b529b28956512d16bd4ebcf512211b",
+    "command": "python3 tools/bench/router_dns.py --clk-tck 100 --control-path /tmp/mt-router-bench/ssh.sock --live-rules /tmp/mt-router-bench/production-config.yaml --output docs/c-rewrite/router-raw/2026-10-14/live-rules",
+    "repeats": 3,
+    "offered_qps": 20,
+    "duration_sec": 30,
+    "note": "actual enabled rules and cached subscription; URLs, profiles, credentials excluded; private values not published",
+    "completed": true
+  },
+  "curve_run": {
+    "rules": [
+      200,
+      500,
+      2000,
+      5000,
+      20000,
+      50000,
+      100000
+    ],
+    "successful_rule_sizes": [
+      200,
+      500,
+      2000,
+      5000,
+      20000
+    ],
+    "failed_rule_sizes": [
+      50000,
+      100000
+    ],
+    "repeats": 3,
+    "proto": "udp",
+    "concurrency": 10,
+    "duration_sec": 20,
+    "memory_guard": {
+      "oom_score_adj": 1000,
+      "min_available_kb": 16384,
+      "min_swap_free_kb": 65536,
+      "poll_sec": 1
+    },
+    "note": "five extra sizes have measured results; large sizes each stopped at startup in three guarded attempts per package; one additional initial Go 50000 attempt retained"
+  },
+  "completed_utc": "2026-10-14T16:26:43.977655+00:00",
+  "tool_source_sha256": {
+    "tools/bench/dnsload/main.go": "fdccfd741d43f33bd890a3e9a6458473ce541cb326b2c7f29528fb7b1a1823d6",
+    "tools/bench/router_dns.py": "1be8b1b058cc87c955780d667bf91b86514d6eccc3240501d4fa6b676157416b",
+    "tools/bench/router_plot.py": "a5fc65ac64980bcd1c9130abcfe3ebfc6eac870a8c89f81af50d5569369f8ca0",
+    "tools/bench/router_summary.py": "e30bb5ac124fb79ae3e9199e03d3bc5e6ac07c82f7dd769788d5fb01bfd03257"
+  },
+  "validation": {
+    "measured_load_runs": 78,
+    "successful_capacity_and_fixture_paced_queries": 491916,
+    "successful_live_rule_queries": 3600,
+    "dns_errors_measured_matrix_and_curve": 3,
+    "formal_guarded_startup_stops": 12,
+    "additional_initial_guard_stop": 1,
+    "production_pid_alive": 19034,
+    "production_config_sha256_after": "d480673678c7c4e26e7b5646c6beb32e80b529b28956512d16bd4ebcf512211b",
+    "production_mt_iptables_mentions": 171,
+    "test_iptables_mentions": 0,
+    "test_ipsets_remaining": 0,
+    "test_policy_rules_remaining": 0,
+    "test_mounts_removed": true,
+    "test_scratch_removed": true
+  }
+}

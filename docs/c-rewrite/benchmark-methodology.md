@@ -1,5 +1,33 @@
 # Benchmark methodology — comparing C vs Go fairly
 
+## Real-router package comparison (2026-10-14)
+
+The historical host baseline below is retained as rewrite evidence. Current
+on-device measurements use [the router protocol](../../tools/bench/router-benchmark.md)
+and [raw package results](router-raw/2026-10-14/): unmodified binaries in the
+same private chroot on a running Keenetic MT7621, real public DNS queries via
+the device's normal upstream, alternating paired runs, and a paced workload
+alongside capacity runs. There is no dnsstub. Query names are real; rule-list
+size is a controlled fixture, not a capture of user traffic.
+
+The loader runs on the router because external access in this session has
+100–300 ms RTT. Its CPU is recorded separately and can constrain capacity.
+The production service remains running. The test group is enabled and writes real answers to private ipsets. Both
+iptables families and DNS remap are disabled, leaving the sets detached from
+production routing. Disabled groups would bias the comparison: Go still scans
+their rules, while C omits them from its matching snapshot.
+These results therefore do not establish full netfilter performance. PSS is
+unavailable on this kernel. Exact package identities, configuration hashes,
+repeat spreads and errors are attached to the raw run.
+
+`dnsload` now validates NOERROR A answers, counts invalid replies as errors,
+and divides successful queries by actual elapsed time. The historical host
+loader did not check RCODE/answer presence and used the requested duration;
+do not combine old host numbers with new device results in a single series.
+Client latency now includes TCP connection setup and response validation;
+throughput includes setup too. `configbench` is isolated in a nested historical module so
+the current load tools build without the removed Go backend.
+
 ## Tooling (in-repo, reproducible)
 
 `tools/bench/` (Go module, independent of the backend except a `replace`
@@ -42,9 +70,9 @@ for configbench):
 7. On-device runs (Keenetic/OpenWrt): same scripts (POSIX sh; Go tools
    cross-compiled or replaced by `dnsperf` if Go tools can't run there —
    in that case use the same replacement for both backends), plus
-   `GROUP_ENABLE=1` to exercise real ipset/iptables. Device measurements
-   pending until hardware is available; host numbers never substitute for
-   device claims.
+   `GROUP_ENABLE=1` to exercise real ipset/iptables. This historical
+   full-netfilter protocol differs from the non-routing device run above;
+   host numbers never substitute for device claims.
 
 ## Load matrix (host baseline v1)
 

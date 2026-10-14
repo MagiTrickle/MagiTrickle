@@ -1,0 +1,25 @@
+{
+  "date_utc": "2026-10-14T14:51:21.693995+00:00",
+  "backend": "mt-c",
+  "phase": "diagnostic snapshot during early 100-rule mt-c run (normal background activity retained in measurements)",
+  "method": "netlink.IpsetListAll, github.com/vishvananda/netlink v1.3.1",
+  "sets": [
+    {
+      "SetName": "mtb_aa000001_4",
+      "TypeName": "hash:net",
+      "References": 0,
+      "SizeInMemory": 6292,
+      "decoded_entry_count": 86
+    },
+    {
+      "SetName": "mtb_aa000001_6",
+      "TypeName": "hash:net",
+      "References": 0,
+      "SizeInMemory": 1084,
+      "decoded_entry_count": 0
+    }
+  ],
+  "test_iptables_chains": 0,
+  "test_policy_rules": 0,
+  "note": "Actual private ipset has answer addresses; References=0 confirms no iptables attachment."
+}

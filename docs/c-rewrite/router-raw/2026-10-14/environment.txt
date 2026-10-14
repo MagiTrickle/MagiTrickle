@@ -1,0 +1,190 @@
+date_utc: 2026-10-14T14:33:45.384670+00:00
+Linux Keenetic 4.9-ndm-5 #0 SMP Fri Sep 25 14:17:04 2026 mips GNU/Linux
+system type		: MediaTek MT7621 SoC
+machine			: Unknown
+processor		: 0
+cpu model		: MIPS 1004Kc V2.15
+BogoMIPS		: 583.68
+wait instruction	: yes
+microsecond timers	: yes
+tlb_entries		: 32
+extra interrupt vector	: yes
+hardware watchpoint	: yes, count: 4, address/irw mask: [0x0ffc, 0x0ffc, 0x0ffb, 0x0ffb]
+isa			: mips1 mips2 mips32r1 mips32r2
+ASEs implemented	: mips16 dsp mt
+shadow register sets	: 1
+kscratch registers	: 0
+package			: 0
+core			: 0
+VPE			: 0
+VCED exceptions		: not available
+VCEI exceptions		: not available
+
+processor		: 1
+cpu model		: MIPS 1004Kc V2.15
+BogoMIPS		: 583.68
+wait instruction	: yes
+microsecond timers	: yes
+tlb_entries		: 32
+extra interrupt vector	: yes
+hardware watchpoint	: yes, count: 4, address/irw mask: [0x0ffc, 0x0ffc, 0x0ffb, 0x0ffb]
+isa			: mips1 mips2 mips32r1 mips32r2
+ASEs implemented	: mips16 dsp mt
+shadow register sets	: 1
+kscratch registers	: 0
+package			: 0
+core			: 0
+VPE			: 1
+VCED exceptions		: not available
+VCEI exceptions		: not available
+
+processor		: 2
+cpu model		: MIPS 1004Kc V2.15
+BogoMIPS		: 583.68
+wait instruction	: yes
+microsecond timers	: yes
+tlb_entries		: 32
+extra interrupt vector	: yes
+hardware watchpoint	: yes, count: 4, address/irw mask: [0x0ffc, 0x0ffc, 0x0ffb, 0x0ffb]
+isa			: mips1 mips2 mips32r1 mips32r2
+ASEs implemented	: mips16 dsp mt
+shadow register sets	: 1
+kscratch registers	: 0
+package			: 0
+core			: 1
+VPE			: 0
+VCED exceptions		: not available
+VCEI exceptions		: not available
+
+processor		: 3
+cpu model		: MIPS 1004Kc V2.15
+BogoMIPS		: 583.68
+wait instruction	: yes
+microsecond timers	: yes
+tlb_entries		: 32
+extra interrupt vector	: yes
+hardware watchpoint	: yes, count: 4, address/irw mask: [0x0ffc, 0x0ffc, 0x0ffb, 0x0ffb]
+isa			: mips1 mips2 mips32r1 mips32r2
+ASEs implemented	: mips16 dsp mt
+shadow register sets	: 1
+kscratch registers	: 0
+package			: 0
+core			: 1
+VPE			: 1
+VCED exceptions		: not available
+VCEI exceptions		: not available
+
+MemTotal:         254640 kB
+MemFree:           19920 kB
+MemAvailable:      70764 kB
+Buffers:            9864 kB
+Cached:            83008 kB
+SwapCached:         1072 kB
+Active:            85724 kB
+Inactive:          88728 kB
+Active(anon):      49280 kB
+Inactive(anon):    63064 kB
+Active(file):      36444 kB
+Inactive(file):    25664 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:        262140 kB
+SwapFree:         254732 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:         81324 kB
+Mapped:            47336 kB
+Shmem:             30764 kB
+Slab:              25580 kB
+SReclaimable:       1816 kB
+SUnreclaim:        23764 kB
+KernelStack:        1344 kB
+PageTables:          944 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:      389460 kB
+Committed_AS:     265856 kB
+VmallocTotal:    1048372 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+PRETTY_NAME="Entware 2025.05"
+NAME="Entware"
+VERSION_ID="2025.05"
+VERSION="2025.05 (sync with OpenWrt)"
+ID=entware
+HOME_URL="https://entware.net/"
+SUPPORT_URL="https://github.com/Entware/Entware/discussions/"
+BUG_REPORT_URL="https://github.com/Entware/Entware/issues/"
+
+Build summary:
+Linux Kernel 3.4.112
+arch=mipsel
+cpu_type=mips32r2
+cpu_subtype=unknown
+float=soft
+binutils_version="2.34"
+gcc_version="8.4.0"
+gcc_flags="-O2 -pipe -mno-branch-likely -mips32r2 -mtune=mips32r2 -fno-caller-saves -msoft-float"
+libc_type=glibc
+libc_version="2.27"
+0.45 0.25 0.20 2/165 27878
+491764.47 1861238.96
+Name:	magitrickled
+Umask:	0022
+State:	R (running)
+Tgid:	19034
+Ngid:	0
+Pid:	19034
+PPid:	1
+TracerPid:	0
+Uid:	0	0	0	0
+Gid:	0	0	0	0
+FDSize:	256
+Groups:	 
+VmPeak:	   69240 kB
+VmSize:	   63092 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   16500 kB
+VmRSS:	   13048 kB
+RssAnon:	    9208 kB
+RssFile:	    3840 kB
+RssShmem:	       0 kB
+VmData:	   50456 kB
+VmStk:	     132 kB
+VmExe:	     284 kB
+VmLib:	    9516 kB
+VmPTE:	      56 kB
+VmPMD:	       0 kB
+VmSwap:	       0 kB
+Threads:	6
+SigQ:	0/1987
+SigPnd:	00000000000000000000000000000000
+ShdPnd:	00000000000000000000000000000000
+SigBlk:	00000000000000000000000000004003
+SigIgn:	00000000000000000000000200000000
+SigCgt:	00000000000000000000000180000000
+CapInh:	0000000000000000
+CapPrm:	0000003fffffffff
+CapEff:	0000003fffffffff
+CapBnd:	0000003fffffffff
+CapAmb:	0000000000000000
+Speculation_Store_Bypass:	unknown
+Cpus_allowed:	f
+Cpus_allowed_list:	0-3
+voluntary_ctxt_switches:	218786
+nonvoluntary_ctxt_switches:	43185
+e2c7796d7423331b10ffe65ae9981dcd3682bc2343e9b16e41dc058ca7141445  /tmp/mt-router-bench/root/opt/bin/original
+c1c5156d0f85809fbf1d56e31152b67014ce587e4d7bd92a2a6adb3eb490856b  /tmp/mt-router-bench/root/opt/bin/mt-c
+0.8.5~git20261013213732.65c7b01
+0000000          33  2012987392          16           0
+0000020           6        4096          17         100
+0000040           3     4194356           4          32
+0000060           5           9           7  2012782592
+0000100           8           0           9     4208992
+0000120          11           0          12           0
+0000140          13           0          14           0
+0000160          23           0          25  2143329488
+0000200          31  2143330288           0           0
+0000220

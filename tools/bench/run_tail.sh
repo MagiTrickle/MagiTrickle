@@ -22,7 +22,7 @@ hwm_kb() { awk '/VmHWM/ {print $2}' "/proc/$1/status"; }
 
 VERSION_LDFLAG="-X 'magitrickle/constant.Version=0.99.0'"
 ( cd "$REPO_DIR/src/backend" && go build -trimpath -ldflags="-w -s $VERSION_LDFLAG" -o "$BIN_DIR/magitrickled" ./cmd/magitrickled )
-( cd "$BENCH_DIR" && go build -ldflags="$VERSION_LDFLAG" -o "$BIN_DIR/configbench" ./configbench )
+( cd "$BENCH_DIR/configbench" && go build -ldflags="$VERSION_LDFLAG" -o "$BIN_DIR/configbench" . )
 
 STUB_PID=""; DAEMON_PID=""
 cleanup() {

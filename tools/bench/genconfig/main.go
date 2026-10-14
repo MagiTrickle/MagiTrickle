@@ -1,10 +1,12 @@
 // genconfig generates a MagiTrickle config.yaml for benchmark runs.
 //
 // The generated group is disabled by default (enable: false) so that the
-// daemon exercises the full DNS proxy + rule matching path without needing
+// Go daemon exercises the DNS proxy + rule matching path without needing
 // ipset/iptables privileges (RuleSet.AddIPv*Subnet returns early for a
 // disabled group, and no ipset is created). Pass -group-enable on a real
-// router to measure the full netfilter path.
+// router to measure the full netfilter path. C omits disabled groups from its
+// matching snapshot: disabled-group runs are not a fair active-matcher
+// comparison. See router-benchmark.md and decisions.md D-80.
 package main
 
 import (

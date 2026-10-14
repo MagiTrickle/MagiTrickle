@@ -1,5 +1,8 @@
 #!/bin/sh
 # run_baseline.sh — reproducible Go-backend baseline for the C rewrite.
+# Historical: requires the removed src/backend checkout. Disabled groups are
+# not a fair active-matcher comparison with C (decisions.md D-80); use
+# router_dns.py for current paired package measurements.
 #
 # Runs the *unmodified* Go daemon (host build, no platform tags, no UPX)
 # against a local fixed-answer upstream (dnsstub) and measures:
@@ -47,7 +50,8 @@ VERSION_LDFLAG="-X 'magitrickle/constant.Version=0.99.0'"
 log "building daemon (host, no tags, no upx)"
 ( cd "$REPO_DIR/src/backend" && go build -trimpath -ldflags="-w -s $VERSION_LDFLAG" -o "$BIN_DIR/magitrickled" ./cmd/magitrickled )
 log "building bench tools"
-( cd "$BENCH_DIR" && go build -o "$BIN_DIR/dnsstub" ./dnsstub && go build -o "$BIN_DIR/dnsload" ./dnsload && go build -ldflags="$VERSION_LDFLAG" -o "$BIN_DIR/configbench" ./configbench )
+( cd "$BENCH_DIR" && go build -o "$BIN_DIR/dnsstub" ./dnsstub && go build -o "$BIN_DIR/dnsload" ./dnsload )
+( cd "$BENCH_DIR/configbench" && go build -ldflags="$VERSION_LDFLAG" -o "$BIN_DIR/configbench" . )
 
 # ---------------------------------------------------------------- env info
 {
