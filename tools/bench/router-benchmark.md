@@ -125,7 +125,7 @@ Governor, affinity и фоновые службы не меняются. Ген�
 обновление ipset, но нет измерения полного пути маршрутизации через iptables,
 холодной рекурсии DNS, смешанных/regex-правил, пиков памяти при обновлении подписок или длительного soak.
 
-Графики README воспроизводятся отдельно (нужен `matplotlib`):
+Графики README воспроизводятся отдельно (достаточно Python 3, сторонние библиотеки не нужны):
 
 ```sh
 python3 tools/bench/router_plot.py /tmp/router-results/results.jsonl --output img

@@ -1,64 +1,39 @@
 #!/usr/bin/env python3
-"""Render the real-router README benchmarks as self-contained, dark SVG charts.
+"""Regenerate self-contained dark SVG charts for real-router benchmarks.
 
-Requires matplotlib to regenerate the published assets; benchmark execution
-itself remains dependency-free. Source data and median/min-max semantics are
-unchanged by visual presentation.
+Reads the original JSONL measurements and plots the median/min–max of three
+UDP capacity repeats. Uses only the Python standard library. Never plots a
+RAM-guarded (unmeasured) run as a zero.
 """
 
 import argparse
 import json
 import math
-import statistics
 from pathlib import Path
-
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-from matplotlib.patches import FancyBboxPatch
-from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
+from xml.sax.saxutils import escape
 
 
-# OpenAI-inspired editorial chart treatment. Do not use the OpenAI wordmark:
-# these benchmarks are an independent comparison of MagiTrickle and mt-c.
-BACKGROUND = "#080A0D"
-BORDER = "#393D45"
-TEXT = "#F7F8FA"
-SECONDARY = "#AEB4BF"
+CHARTS = (
+    ("rps", "Пропускная способность DNS", "Успешных запросов / с", "benchmark-throughput.svg", 22, 1200, (30, 50, 100, 200, 500, 1000)),
+    ("cost", "CPU на один DNS-запрос", "CPU демона, мс / запрос", "benchmark-cpu.svg", .75, 125, (1, 2, 5, 10, 20, 50, 100)),
+    ("rss", "Потребление памяти (RSS)", "RSS демона, MiB", "benchmark-memory.svg", 2.4, 32, (3, 5, 10, 20, 30)),
+)
+
+BLUE = "#4A90FF"
+GOLD = "#FFE18A"
+WHITE = "#F7F8FA"
+SOFT = "#AEB4BF"
 AXIS = "#D8DCE3"
-FAINT = "#777E89"
-PALETTE = {
-    "mt-c": ("mt-c · C", "#4A90FF", "D"),
-    "original": ("MagiTrickle · Go 0.8.2", "#FFE18A", "o"),
-}
-CHARTS = {
-    "rps": {
-        "title": "Пропускная способность DNS",
-        "ylabel": "Успешных запросов / с",
-        "filename": "benchmark-throughput.svg",
-        "limits": (22, 1200),
-        "ticks": (30, 50, 100, 200, 500, 1000),
-    },
-    "cost": {
-        "title": "CPU на один DNS-запрос",
-        "ylabel": "CPU демона, мс / запрос",
-        "filename": "benchmark-cpu.svg",
-        "limits": (0.75, 125),
-        "ticks": (1, 2, 5, 10, 20, 50, 100),
-    },
-    "rss": {
-        "title": "Потребление памяти (RSS)",
-        "ylabel": "RSS демона, MiB",
-        "filename": "benchmark-memory.svg",
-        "limits": (2.4, 32),
-        "ticks": (3, 5, 10, 20, 30),
-    },
-}
+DIM = "#777E89"
+LEFT, RIGHT, TOP, BOTTOM = 171.6, 1125.6, 215.76, 633.36
 
 
-def metric_value(row, kind):
+def fmt(number):
+    """Stable compact three-decimal SVG coordinates."""
+    return f"{number:.3f}".rstrip("0").rstrip(".")
+
+
+def metric(row, kind):
     if kind == "rps":
         return row["rps"]
     if kind == "rss":
@@ -66,141 +41,129 @@ def metric_value(row, kind):
     return row["cpu_pct"] / 100 * row["cpu_interval_sec"] / row["ok"] * 1000
 
 
-def add_header(fig, title):
-    # Rounded card border, same for all three charts; black plot interior.
-    fig.patches.append(FancyBboxPatch(
-        (0.015, 0.018), 0.97, 0.963,
-        transform=fig.transFigure,
-        boxstyle="round,pad=0.002,rounding_size=0.03",
-        linewidth=1.05, edgecolor=BORDER, facecolor="none",
-        clip_on=False, zorder=20,
-    ))
-    fig.text(0.055, 0.925, title, color=TEXT, fontsize=25, fontweight="bold",
-             ha="left", va="center")
-    fig.text(0.055, 0.868, "MT7621 · UDP · 10 клиентов · реальные DNS-ответы и ipset",
-             color=SECONDARY, fontsize=12.2, ha="left", va="center")
-    fig.text(0.942, 0.924, "mt-c / bench", color=SECONDARY,
-             fontsize=11, ha="right", va="center", fontweight="medium")
-
-    for x, backend in [(0.058, "mt-c"), (0.36, "original")]:
-        label, color, marker = PALETTE[backend]
-        fig.lines.append(Line2D([x, x + .035], [.811, .811],
-                                color=color, linewidth=2.25,
-                                solid_capstyle="round", transform=fig.transFigure))
-        fig.lines.append(Line2D([x + .0175], [.811], color=color,
-                                marker=marker, markersize=8, linestyle="None",
-                                markeredgewidth=0, transform=fig.transFigure))
-        fig.text(x + .047, .811, label, color=TEXT, fontsize=13.4,
-                 ha="left", va="center")
+def text(x, y, content, css_class="", extra=""):
+    return (f'<text x="{fmt(x)}" y="{fmt(y)}" class="{css_class}" {extra}>'
+            f'{escape(content)}</text>')
 
 
-def setup_axes(fig, config):
-    ax = fig.add_axes((0.143, 0.272, 0.795, 0.480), facecolor="none")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlim(85, 130000)
-    ax.set_ylim(*config["limits"])
-    ax.xaxis.set_major_locator(FixedLocator([100, 1000, 10000, 100000]))
-    ax.xaxis.set_major_formatter(FuncFormatter(
-        lambda value, _: {100: "100", 1000: "1k", 10000: "10k", 100000: "100k"}.get(value, "")))
-    ax.yaxis.set_major_locator(FixedLocator(config["ticks"]))
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
-    ax.xaxis.set_minor_locator(NullLocator())
-    ax.yaxis.set_minor_locator(NullLocator())
-    for side in ["top", "right"]:
-        ax.spines[side].set_visible(False)
-    for side in ["left", "bottom"]:
-        ax.spines[side].set_color(AXIS)
-        ax.spines[side].set_linewidth(1.15)
-    ax.tick_params(axis="both", which="major", length=6, width=1.15,
-                   color=AXIS, labelcolor=AXIS, labelsize=11.5, pad=11)
-    ax.set_xlabel("Число включённых namespace-правил · log",
-                  color=TEXT, fontsize=12.5, labelpad=22)
-    ax.set_ylabel(config["ylabel"] + " · log", color=TEXT,
-                  fontsize=12.5, labelpad=25)
-    ax.grid(False)
-    ax.set_axisbelow(True)
-    return ax
+def render_chart(rows, failures, kind, title, ylabel, lo, hi, ticks):
+    x = lambda n: LEFT + math.log(n / 85) / math.log(130000 / 85) * (RIGHT - LEFT)
+    y = lambda n: BOTTOM - math.log(n / lo) / math.log(hi / lo) * (BOTTOM - TOP)
+    output = []
+    add = output.append
+
+    add('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="870" '
+        'viewBox="0 0 1200 870" role="img" aria-labelledby="chart-title chart-desc">')
+    add(f'<title id="chart-title">{escape(title)} — mt-c против MagiTrickle</title>')
+    add('<desc id="chart-desc">Производительность на MT7621, UDP, 10 клиентов. '
+        'Логарифмические шкалы. Медиана и min–max трёх запусков по 20 секунд. '
+        'Провалы по памяти при 50 и 100 тысячах правил не являются нулевыми значениями.</desc>')
+    add(f'''<style>
+.title {{ font: 700 34px Inter, Arial, sans-serif; fill: {WHITE} }}
+.sub {{ font: 16px Inter, Arial, sans-serif; fill: {SOFT} }}
+.legend {{ font: 18px Inter, Arial, sans-serif; fill: {WHITE} }}
+.tick {{ font: 16px Inter, Arial, sans-serif; fill: {AXIS} }}
+.axis-label {{ font: 17px Inter, Arial, sans-serif; fill: {WHITE} }}
+.foot {{ font: italic 15px Inter, Arial, sans-serif; fill: {WHITE} }}
+.note {{ font: 14px Inter, Arial, sans-serif; fill: {SOFT} }}
+.tiny {{ font: 12px Inter, Arial, sans-serif; fill: {SOFT} }}
+.line {{ stroke-linejoin: round; stroke-linecap: round; fill: none; stroke-width: 3.5 }}
+</style>''')
+    add('<rect width="1200" height="870" fill="#080A0D"/><rect x="18" y="17" '
+        'width="1164" height="837" rx="28" stroke="#393D45" '
+        'stroke-width="1.45" fill="none"/>')
+    add(text(66, 78, title, "title"))
+    add(text(66, 121, "MT7621 · UDP · 10 клиентов · реальные DNS-ответы и ipset", "sub"))
+    add(text(1130, 78, "mt-c / bench", "note", 'text-anchor="end"'))
+    add(f'<path d="M 66 164 H 108" stroke="{BLUE}" stroke-width="3" stroke-linecap="round"/>')
+    add(f'<path d="M 87 156 L 95 164 L 87 172 L 79 164 Z" fill="{BLUE}" '
+        'stroke="#080A0D" stroke-width="1"/>')
+    add(text(122, 170, "mt-c · C", "legend"))
+    add(f'<path d="M 432 164 H 474" stroke="{GOLD}" stroke-width="3" stroke-linecap="round"/>')
+    add(f'<circle cx="453" cy="164" r="7" fill="{GOLD}" stroke="#080A0D" stroke-width="1"/>')
+    add(text(488, 170, "MagiTrickle · Go 0.8.2", "legend"))
+    add(f'<path d="M {fmt(LEFT)} {fmt(TOP)} V {fmt(BOTTOM)} H {fmt(RIGHT)}" '
+        f'stroke="{AXIS}" stroke-width="1.5" fill="none"/>')
+    for value in ticks:
+        yy = y(value)
+        add(f'<path d="M {fmt(LEFT-9)} {fmt(yy)} H {fmt(LEFT)}" '
+            f'stroke="{AXIS}" stroke-width="1.4"/>')
+        add(text(LEFT-20, yy+5, str(value), "tick", 'text-anchor="end"'))
+    for value, label in ((100, "100"), (1000, "1k"), (10000, "10k"), (100000, "100k")):
+        xx = x(value)
+        add(f'<path d="M {fmt(xx)} {fmt(BOTTOM)} V {fmt(BOTTOM+9)}" '
+            f'stroke="{AXIS}" stroke-width="1.4"/>')
+        add(text(xx, BOTTOM+38, label, "tick", 'text-anchor="middle"'))
+    add(text((LEFT+RIGHT)/2, BOTTOM+86,
+             "Число включённых namespace-правил · log", "axis-label",
+             'text-anchor="middle"'))
+    add(text(79, (TOP+BOTTOM)/2, f"{ylabel} · log", "axis-label",
+             f'text-anchor="middle" transform="rotate(-90 79 {fmt((TOP+BOTTOM)/2)})"'))
+
+    for backend in ("original", "mt-c"):
+        color = GOLD if backend == "original" else BLUE
+        points = []
+        sizes = sorted({r["rules"] for r in rows if r["backend"] == backend})
+        for size in sizes:
+            trials = [r for r in rows if r["backend"] == backend and r["rules"] == size]
+            if len(trials) != 3:
+                raise ValueError(f"expected three repeats for {backend}, {size}")
+            values = sorted(metric(r, kind) for r in trials)
+            points.append((size, values[0], values[1], values[2]))
+
+        for size, minimum, _, maximum in points:
+            xx, yy1, yy2 = fmt(x(size)), fmt(y(minimum)), fmt(y(maximum))
+            xx0, xx1 = fmt(x(size)-4), fmt(x(size)+4)
+            add(f'<g stroke="{color}" stroke-width="1.5" opacity="0.69">'
+                f'<path d="M {xx} {yy1} V {yy2}"/>'
+                f'<path d="M {xx0} {yy1} H {xx1} M {xx0} {yy2} H {xx1}"/></g>')
+        path = " ".join(("M" if i == 0 else "L") + f" {fmt(x(size))} {fmt(y(mid))}"
+                        for i, (size, _, mid, _) in enumerate(points))
+        add(f'<path d="{path}" stroke="{color}" class="line"/>')
+        for size, _, median, _ in points:
+            xx, yy = x(size), y(median)
+            if backend == "mt-c":
+                add(f'<path d="M {fmt(xx)} {fmt(yy-6)} L {fmt(xx+6)} {fmt(yy)} '
+                    f'L {fmt(xx)} {fmt(yy+6)} L {fmt(xx-6)} {fmt(yy)} Z" '
+                    f'fill="{color}" stroke="#080A0D" stroke-width="1.25"/>')
+            else:
+                add(f'<circle cx="{fmt(xx)}" cy="{fmt(yy)}" r="5" '
+                    f'fill="{color}" stroke="#080A0D" stroke-width="1.25"/>')
+
+    failed_sizes = sorted({r["rules"] for r in failures})
+    for size in failed_sizes:
+        xx, yy = x(size), BOTTOM-23
+        add(f'<path d="M {fmt(xx-5)} {fmt(yy-5)} l 10 10 m -10 0 l 10 -10" '
+            f'stroke="{DIM}" stroke-width="2.0" fill="none"/>')
+        add(text(xx, yy-16, "RAM", "tiny", 'text-anchor="middle"'))
+    add(text(66, 776, "Медиана и min–max · 3 × 20 с · генератор на роутере · 14.10.2026", "foot"))
+    if failed_sizes:
+        add(text(66, 816, "× 50k / 100k: оба запуска остановлены резервом памяти; "
+                 "значение метрики не измерено", "note"))
+    add("</svg>")
+    return "\n".join(output) + "\n"
 
 
-def add_footer(fig, has_memory_failures):
-    fig.text(0.055, 0.108,
-             "Медиана и min–max · 3 × 20 с · генератор на роутере · 14.10.2026",
-             color=TEXT, fontsize=11.1, fontstyle="italic", ha="left")
-    if has_memory_failures:
-        fig.text(0.055, 0.067,
-                 "× 50k / 100k: оба запуска остановлены резервом памяти; значение метрики не измерено",
-                 color=SECONDARY, fontsize=10.5, ha="left")
-
-
-def plot(results, output):
-    paths = [results] if isinstance(results, Path) else results
-    rows = [json.loads(line) for path in paths
+def plot(sources, output):
+    rows = [json.loads(line) for path in sources
             for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     failures = [r for r in rows if r["metric"] == "failure"
                 and r["scenario"] == "capacity" and r["proto"] == "udp"]
-    rows = [r for r in rows if r["metric"] == "load"
-            and r["scenario"] == "capacity" and r["proto"] == "udp"]
-    sizes = sorted({r["rules"] for r in rows + failures})
-    plt.rcParams.update({
-        "font.family": ["Inter", "DejaVu Sans", "sans-serif"],
-        "svg.fonttype": "none", "svg.hashsalt": "mt-c-router-benchmark",
-        "font.size": 12,
-    })
-
-    for kind, cfg in CHARTS.items():
-        fig = plt.figure(figsize=(12, 8.7), dpi=100, facecolor=BACKGROUND)
-        add_header(fig, cfg["title"])
-        ax = setup_axes(fig, cfg)
-
-        for backend in ("original", "mt-c"):
-            _, color, marker = PALETTE[backend]
-            xs, medians, lo, hi = [], [], [], []
-            for size in sizes:
-                cell = [r for r in rows if r["backend"] == backend and r["rules"] == size]
-                if not cell:
-                    if any(r["backend"] == backend and r["rules"] == size for r in failures):
-                        continue  # RAM guard is not a measured zero.
-                    raise ValueError(f"missing benchmark results: {backend}, {size}")
-                if len(cell) != 3:
-                    raise ValueError(f"expected three repeats for {backend}, {size}")
-                values = [metric_value(r, kind) for r in cell]
-                xs.append(size)
-                medians.append(statistics.median(values))
-                lo.append(min(values))
-                hi.append(max(values))
-
-            # Smaller, semi-transparent uncertainty whiskers don't compete with
-            # the prominent median trajectory; the values are still min–max.
-            ax.errorbar(xs, medians,
-                        yerr=[[m - a for m, a in zip(medians, lo)],
-                              [b - m for m, b in zip(medians, hi)]],
-                        color=color, marker=marker, markersize=6.7,
-                        markeredgecolor=BACKGROUND, markeredgewidth=1.0,
-                        linewidth=2.7, capsize=3.2, capthick=1.25,
-                        elinewidth=1.1, solid_capstyle="round", zorder=5)
-
-        if failures:
-            # Compact crosses near the baseline, clearly labeled as RAM guard,
-            # never joined to a performance line or plotted as zero.
-            affected = sorted({f["rules"] for f in failures})
-            for size in affected:
-                ax.plot(size, .055, marker="x", markersize=8,
-                        markeredgewidth=1.5, color=FAINT, linestyle="None",
-                        transform=ax.get_xaxis_transform(), clip_on=False)
-                ax.annotate("RAM", xy=(size, .055), xycoords=ax.get_xaxis_transform(),
-                            xytext=(0, 10), textcoords="offset points", ha="center",
-                            fontsize=8.6, color=SECONDARY)
-
-        add_footer(fig, bool(failures))
-        destination = output / cfg["filename"]
-        fig.savefig(destination, format="svg", facecolor=BACKGROUND,
-                    metadata={"Date": None})
-        # Matplotlib sometimes emits trailing spaces before line breaks.
-        destination.write_text("\n".join(line.rstrip() for line in
-                                    destination.read_text(encoding="utf-8").splitlines()) + "\n",
-                               encoding="utf-8")
-        plt.close(fig)
+    loads = [r for r in rows if r["metric"] == "load"
+             and r["scenario"] == "capacity" and r["proto"] == "udp"]
+    sizes = sorted({r["rules"] for r in loads + failures})
+    for backend in ("original", "mt-c"):
+        for size in sizes:
+            count = sum(r["backend"] == backend and r["rules"] == size for r in loads)
+            stopped = any(r["backend"] == backend and r["rules"] == size for r in failures)
+            if count != 3 and not (count == 0 and stopped):
+                raise ValueError(f"missing/incomplete samples for {backend}, {size}: {count}")
+    output.mkdir(parents=True, exist_ok=True)
+    for kind, title, ylabel, filename, minimum, maximum, ticks in CHARTS:
+        (output / filename).write_text(
+            render_chart(loads, failures, kind, title, ylabel, minimum, maximum, ticks),
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":
@@ -208,5 +171,4 @@ if __name__ == "__main__":
     parser.add_argument("results", type=Path, nargs="+")
     parser.add_argument("--output", type=Path, default=Path("img"))
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
     plot(args.results, args.output)
