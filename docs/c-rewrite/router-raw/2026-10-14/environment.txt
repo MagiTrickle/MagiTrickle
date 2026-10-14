@@ -141,7 +141,7 @@ TracerPid:	0
 Uid:	0	0	0	0
 Gid:	0	0	0	0
 FDSize:	256
-Groups:	 
+Groups:
 VmPeak:	   69240 kB
 VmSize:	   63092 kB
 VmLck:	       0 kB
