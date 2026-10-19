@@ -44,15 +44,16 @@ type App struct {
 	subscriptions        []*models.Subscription
 }
 
-// New создаёт новый экземпляр App
-func New() *App {
+// New создаёт новый экземпляр App. Если конфиг существует, но не читается, не разбирается или имеет неподдерживаемую
+// версию, возвращается ошибка: запуск с настройками по умолчанию затёр бы пользовательский конфиг при первом сохранении.
+func New() (*App, error) {
 	a := &App{
 		config: constant.DefaultAppConfig,
 	}
 	if err := a.LoadConfig(); err != nil {
-		log.Error().Err(err).Msg("failed to load config file")
+		return nil, fmt.Errorf("failed to load config file: %w", err)
 	}
-	return a
+	return a, nil
 }
 
 // Config возвращает конфигурацию

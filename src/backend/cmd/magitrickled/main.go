@@ -76,7 +76,12 @@ func main() {
 	}
 	defer removePIDFile()
 
-	app := magitrickle.New()
+	app, err := magitrickle.New()
+	if err != nil {
+		log.Error().Err(err).Msg("refusing to start")
+		removePIDFile()
+		os.Exit(1)
+	}
 
 	log.Info().Msg("starting service")
 
