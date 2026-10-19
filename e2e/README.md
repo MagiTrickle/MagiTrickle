@@ -18,10 +18,10 @@ Credentials baked into the image: web/RCI `admin:E2ETests`, Entware SSH (host po
 ## Running
 
     cd e2e
-    go test -count=1 -v .                 # boots a throw-away emulator in /dev/shm, builds and installs the package
+    go test -count=1 -timeout 30m -v .                 # boots a throw-away emulator in /dev/shm, builds and installs the package
     E2E_REUSE=1 go test -run Hook -v .    # use an emulator started with ./emulator.sh start
     E2E_REUSE=1 E2E_SKIP_INSTALL=1 ...    # ... and keep the package already installed there
 
 `magitrickled` is started by the tests themselves (not by the package), so its stdout/stderr are captured and
 printed when a test fails. A scripted upstream DNS server and a list server (`helper/`, cross-compiled to arm64)
-run on the router, which keeps everything offline. A full run takes about ten minutes.
+run on the router, which keeps everything offline. A full run takes 10-12 minutes, so pass `-timeout 30m` (the default 10m is not enough).
