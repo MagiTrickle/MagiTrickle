@@ -6,6 +6,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/miekg/dns"
 )
 
 // ipsetName is the name MagiTrickle gives to the set of a group ("mt_<id>_4" / "_6").
@@ -88,31 +91,64 @@ func containsLine(lines []string, sub string) bool {
 	return false
 }
 
-// dig asks the MagiTrickle DNS proxy and returns the short answers.
-func dig(t testing.TB, name, qtype string) []string {
-	t.Helper()
-	out, err := rt.Run(fmt.Sprintf("dig +short +time=3 +tries=1 -p 3553 @127.0.0.1 %s %s", shq(name), qtype))
-	if err != nil {
-		t.Fatalf("dig %s %s: %v\n%s", name, qtype, err, out)
+// exchange sends a query the way a LAN client does: from this machine to 127.0.0.1:8053, which the emulator
+// forwards (UDP and TCP) from its virtual LAN host to 192.168.1.1:53. The packet crosses the router's nat
+// PREROUTING, where MT_DNSOR redirects it to the MagiTrickle proxy.
+func exchange(network, name, qtype string) (*dns.Msg, error) {
+	qt, ok := dns.StringToType[strings.ToUpper(qtype)]
+	if !ok {
+		return nil, fmt.Errorf("unknown query type %q", qtype)
 	}
-	var res []string
-	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-		if l != "" {
-			res = append(res, l)
-		}
+	m := new(dns.Msg)
+	if qt == dns.TypePTR {
+		m.SetQuestion(dns.Fqdn(name), qt)
+	} else {
+		m.SetQuestion(dns.Fqdn(name), qt)
 	}
-	return res
+	c := &dns.Client{Net: network, Timeout: 10 * time.Second}
+	r, _, err := c.Exchange(m, "127.0.0.1:8053")
+	return r, err
 }
 
-// digStatus returns the rcode string from a full dig output (NOERROR, NXDOMAIN, ...).
-func digStatus(t testing.TB, name, qtype string) string {
-	t.Helper()
-	out, _ := rt.Run(fmt.Sprintf("dig +time=3 +tries=1 -p 3553 @127.0.0.1 %s %s", shq(name), qtype))
-	m := regexp.MustCompile(`status: (\w+)`).FindStringSubmatch(out)
-	if m == nil {
-		t.Fatalf("no status in dig output:\n%s", out)
+// answers renders an answer section like `dig +short`.
+func answers(r *dns.Msg) []string {
+	var out []string
+	for _, rr := range r.Answer {
+		switch v := rr.(type) {
+		case *dns.A:
+			out = append(out, v.A.String())
+		case *dns.AAAA:
+			out = append(out, v.AAAA.String())
+		case *dns.CNAME:
+			out = append(out, v.Target)
+		}
 	}
-	return m[1]
+	return out
+}
+
+// query asks the MagiTrickle DNS proxy over UDP from the client side and returns the answers.
+func query(t testing.TB, name, qtype string) []string {
+	t.Helper()
+	return queryNet(t, "udp", name, qtype)
+}
+
+func queryNet(t testing.TB, network, name, qtype string) []string {
+	t.Helper()
+	r, err := exchange(network, name, qtype)
+	if err != nil {
+		t.Fatalf("%s query %s %s: %v", network, name, qtype, err)
+	}
+	return answers(r)
+}
+
+// queryRcode returns the rcode name (NOERROR, NXDOMAIN, ...) of the response.
+func queryRcode(t testing.TB, name, qtype string) string {
+	t.Helper()
+	r, err := exchange("udp", name, qtype)
+	if err != nil {
+		t.Fatalf("query %s %s: %v", name, qtype, err)
+	}
+	return dns.RcodeToString[r.Rcode]
 }
 
 // ZoneRecord mirrors helper.Record.

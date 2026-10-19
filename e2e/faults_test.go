@@ -157,7 +157,7 @@ func TestLegacyConfigUnits(t *testing.T) {
 	g := api.CreateGroup(t, Group{Name: "legacy", Interface: "eth3", Enable: ptr(true),
 		Rules: &[]Rule{{Name: "r", Type: "domain", Rule: "legacy.test", Enable: true}}})
 	SetZone(t, ZoneRecord{Name: "legacy.test", Type: "A", Value: "203.0.113.97", TTL: 100})
-	dig(t, "legacy.test", "A")
+	query(t, "legacy.test", "A")
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.97")
 	if got := ipsetTimeout(t, ipsetName(g.ID, false), "203.0.113.97"); got < 3600 || got > 3700 {
 		t.Errorf("timeout = %ds, want ttl 100 + 3600s (additionalTTL: 3600 means seconds)", got)

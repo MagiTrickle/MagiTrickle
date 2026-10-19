@@ -1,27 +1,12 @@
 package e2e
 
 import (
-	"net"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 )
-
-// queryLAN asks the router's port 53 the way a LAN client does. The emulator forwards 127.0.0.1:8053 (UDP and
-// TCP) from its virtual LAN host to 192.168.1.1:53, so the packets traverse nat PREROUTING and MT_DNSOR.
-func queryLAN(t testing.TB, network, name string, qtype uint16) *dns.Msg {
-	t.Helper()
-	c := &dns.Client{Net: network, Timeout: 5 * time.Second}
-	m := new(dns.Msg)
-	m.SetQuestion(dns.Fqdn(name), qtype)
-	r, _, err := c.Exchange(m, net.JoinHostPort("127.0.0.1", "8053"))
-	if err != nil {
-		t.Fatalf("%s query %s: %v", network, name, err)
-	}
-	return r
-}
 
 // A query to port 53 from a LAN client is redirected to MagiTrickle, which feeds the group's ipset.
 func TestLANClientDNSIsRedirectedToProxy(t *testing.T) {
@@ -34,7 +19,10 @@ func TestLANClientDNSIsRedirectedToProxy(t *testing.T) {
 			SetZone(t, ZoneRecord{Name: name, Type: "A", Value: "203.0.113.120"})
 			WaitFor(t, 5*time.Second, "DNSOR", func() bool { return jumpPresent(t, "iptables", "nat", "PREROUTING", "MT_DNSOR") })
 
-			r := queryLAN(t, network, name, dns.TypeA)
+			r, err := exchange(network, name, "A")
+			if err != nil {
+				t.Fatal(err)
+			}
 			if len(r.Answer) != 1 || r.Answer[0].(*dns.A).A.String() != "203.0.113.120" {
 				t.Fatalf("answer: %v", r.Answer)
 			}
@@ -68,7 +56,10 @@ func TestLANClientDNSWorksAfterDaemonStops(t *testing.T) {
 	if err := d.Stop(15 * time.Second); err != nil {
 		t.Fatal(err)
 	}
-	r := queryLAN(t, "tcp", "ndm-own.test", dns.TypeA)
+	r, err := exchange("tcp", "ndm-own.test", "A")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(r.Answer) != 1 {
 		t.Errorf("ndm did not answer after the daemon stopped: %v", r.Answer)
 	}

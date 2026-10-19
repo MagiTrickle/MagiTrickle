@@ -321,7 +321,7 @@ func TestIPSetMembersExpire(t *testing.T) {
 	g := api.CreateGroup(t, Group{Name: "exp", Interface: "eth3", Enable: ptr(true),
 		Rules: &[]Rule{{Name: "r", Type: "domain", Rule: "exp.nf.test", Enable: true}}})
 	SetZone(t, ZoneRecord{Name: "exp.nf.test", Type: "A", Value: "203.0.113.70", TTL: 1})
-	dig(t, "exp.nf.test", "A")
+	query(t, "exp.nf.test", "A")
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.70")
 	WaitFor(t, 10*time.Second, "member to expire", func() bool { return len(ipsetMembers(t, ipsetName(g.ID, false))) == 0 })
 }

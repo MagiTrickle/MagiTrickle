@@ -67,7 +67,7 @@ func TestRuleTypesMatching(t *testing.T) {
 		"host.wc.rt.test", "wc.rt.test", "qzx.rt.test", "qzzx.rt.test", "re42.rt.test", "reab.rt.test",
 		"off.rt.test", "other.test",
 	} {
-		if len(dig(t, n, "A")) != 1 {
+		if len(query(t, n, "A")) != 1 {
 			t.Fatalf("no answer for %s", n)
 		}
 	}
@@ -134,8 +134,8 @@ func TestRegexRuleWithBrokenPatternDoesNotCrash(t *testing.T) {
 	SetZone(t,
 		ZoneRecord{Name: "ok.rt.test", Type: "A", Value: "203.0.113.20"},
 		ZoneRecord{Name: "x.rt.test", Type: "A", Value: "203.0.113.21"})
-	dig(t, "x.rt.test", "A")
-	dig(t, "ok.rt.test", "A")
+	query(t, "x.rt.test", "A")
+	query(t, "ok.rt.test", "A")
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.20")
 	if d.Exited() {
 		t.Fatal("daemon died")
@@ -149,7 +149,7 @@ func TestSameNameInTwoGroups(t *testing.T) {
 	g1 := api.CreateGroup(t, Group{Name: "one", Interface: "eth3", Enable: ptr(true), Rules: rules})
 	g2 := api.CreateGroup(t, Group{Name: "two", Interface: "br0", Enable: ptr(true), Rules: rules})
 	SetZone(t, ZoneRecord{Name: "www.both.rt.test", Type: "A", Value: "203.0.113.30"})
-	dig(t, "www.both.rt.test", "A")
+	query(t, "www.both.rt.test", "A")
 	waitMembers(t, ipsetName(g1.ID, false), "203.0.113.30")
 	waitMembers(t, ipsetName(g2.ID, false), "203.0.113.30")
 }
@@ -159,7 +159,7 @@ func TestDisabledGroupGetsNothing(t *testing.T) {
 	g := api.CreateGroup(t, Group{Name: "off", Interface: "eth3", Enable: ptr(false), Rules: &[]Rule{
 		{Name: "r", Type: "namespace", Rule: "off.rt.test", Enable: true}}})
 	SetZone(t, ZoneRecord{Name: "www.off.rt.test", Type: "A", Value: "203.0.113.31"})
-	dig(t, "www.off.rt.test", "A")
+	query(t, "www.off.rt.test", "A")
 	time.Sleep(time.Second)
 	if ipsetExists(t, ipsetName(g.ID, false)) {
 		t.Errorf("ipset created for a disabled group")

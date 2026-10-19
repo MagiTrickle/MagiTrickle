@@ -85,9 +85,9 @@ func TestSubscriptionSyncParsesAndRoutes(t *testing.T) {
 		ZoneRecord{Name: "x.sub.example.org", Type: "A", Value: "198.51.100.77"},
 		ZoneRecord{Name: "a.wild.example.org", Type: "A", Value: "198.51.100.78"},
 		ZoneRecord{Name: "no.example.org", Type: "A", Value: "198.51.100.79"})
-	dig(t, "x.sub.example.org", "A")
-	dig(t, "a.wild.example.org", "A")
-	dig(t, "no.example.org", "A")
+	query(t, "x.sub.example.org", "A")
+	query(t, "a.wild.example.org", "A")
+	query(t, "no.example.org", "A")
 	waitMembers(t, subSet(sub.ID, false), "203.0.113.0/24", "198.51.100.77", "198.51.100.78")
 
 	// Netfilter plumbing exists for the subscription as for a user group.

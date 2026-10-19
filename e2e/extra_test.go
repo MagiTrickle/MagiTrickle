@@ -2,11 +2,14 @@ package e2e
 
 import (
 	"fmt"
+	"net"
 	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 // The Entware passwd may carry any crypt(3) flavour; MagiTrickle verifies $1$, $5$ and $6$.
@@ -86,7 +89,7 @@ func TestLogLevels(t *testing.T) {
 			d := StartDaemonRaw(t, cfg)
 			api.CreateGroup(t, Group{Name: "lvl", Interface: "eth3", Enable: ptr(true),
 				Rules: &[]Rule{{Name: "r", Type: "domain", Rule: "lvl.test", Enable: true}}})
-			dig(t, "lvl.test", "A")
+			query(t, "lvl.test", "A")
 			time.Sleep(time.Second)
 			out := d.Output()
 			// "starting MagiTrickle daemon" is printed before the level is applied.
@@ -118,20 +121,42 @@ func TestDNSOverTCPKeepsConnectionOpen(t *testing.T) {
 		ZoneRecord{Name: "a.tcpk.test", Type: "A", Value: "203.0.113.91"},
 		ZoneRecord{Name: "b.tcpk.test", Type: "A", Value: "203.0.113.92"},
 		ZoneRecord{Name: "c.tcpk.test", Type: "A", Value: "203.0.113.93"})
-	// Three queries pipelined over one TCP connection.
-	out := rt.MustRun(t, "dig +tcp +keepopen +short +time=3 +tries=1 -p 3553 @127.0.0.1 a.tcpk.test A b.tcpk.test A c.tcpk.test A")
-	if got := strings.Fields(out); len(got) != 3 {
-		t.Fatalf("answers = %v", got)
+	// Three queries over one TCP connection, as a resolver that reuses its connection would send them.
+	conn, err := dns.Dial("tcp", "127.0.0.1:8053")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	for i, name := range []string{"a.tcpk.test", "b.tcpk.test", "c.tcpk.test"} {
+		m := new(dns.Msg)
+		m.SetQuestion(dns.Fqdn(name), dns.TypeA)
+		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.WriteMsg(m); err != nil {
+			t.Fatalf("query %d: %v", i, err)
+		}
+		r, err := conn.ReadMsg()
+		if err != nil || len(r.Answer) != 1 {
+			t.Fatalf("query %d on the shared connection: %v %v", i, r, err)
+		}
 	}
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.91", "203.0.113.92", "203.0.113.93")
 
 	// A TCP client that connects and hangs up, or sends garbage, must not take the listener down.
-	rt.Run("echo -n garbage | nc -w 1 127.0.0.1 3553; nc -w 1 127.0.0.1 3553 < /dev/null")
-	if got := dig(t, "a.tcpk.test", "A"); len(got) != 1 {
+	if c, err := net.Dial("tcp", "127.0.0.1:8053"); err == nil {
+		_, _ = c.Write([]byte("garbage that is not a DNS message"))
+		c.Close()
+	}
+	if c, err := net.Dial("tcp", "127.0.0.1:8053"); err == nil {
+		c.Close()
+	}
+	if got := queryNet(t, "tcp", "a.tcpk.test", "A"); len(got) != 1 {
 		t.Errorf("proxy unhealthy after bad TCP clients: %v", got)
 	}
-	rt.Run("echo -n garbage | nc -u -w 1 127.0.0.1 3553")
-	if got := dig(t, "a.tcpk.test", "A"); len(got) != 1 {
+	if c, err := net.Dial("udp", "127.0.0.1:8053"); err == nil {
+		_, _ = c.Write([]byte("garbage"))
+		c.Close()
+	}
+	if got := query(t, "a.tcpk.test", "A"); len(got) != 1 {
 		t.Errorf("proxy unhealthy after bad UDP datagram: %v", got)
 	}
 }
@@ -274,14 +299,14 @@ func TestCacheExpiryAndReResolve(t *testing.T) {
 	SetZone(t,
 		ZoneRecord{Name: "www.cache.test", Type: "CNAME", Value: "old.cdn.test", TTL: 2},
 		ZoneRecord{Name: "old.cdn.test", Type: "A", Value: "203.0.113.95", TTL: 2})
-	dig(t, "www.cache.test", "A")
+	query(t, "www.cache.test", "A")
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.95")
 	WaitFor(t, 15*time.Second, "old address to expire", func() bool { return len(ipsetMembers(t, ipsetName(g.ID, false))) == 0 })
 
 	// The records cache sweeps every 30s; after that, the alias must be gone, so an unrelated A answer is not routed.
 	time.Sleep(32 * time.Second)
 	SetZone(t, ZoneRecord{Name: "old.cdn.test", Type: "A", Value: "203.0.113.96", TTL: 60})
-	dig(t, "old.cdn.test", "A")
+	query(t, "old.cdn.test", "A")
 	time.Sleep(time.Second)
 	if m := ipsetMembers(t, ipsetName(g.ID, false)); len(m) != 0 {
 		t.Errorf("expired alias still routes: %v", m)
