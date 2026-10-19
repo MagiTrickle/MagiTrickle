@@ -2,8 +2,8 @@ package e2e
 
 import (
 	"fmt"
-	"regexp"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
