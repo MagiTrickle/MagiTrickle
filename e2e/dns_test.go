@@ -69,7 +69,10 @@ func TestIPv6AndDropAAAA(t *testing.T) {
 		}
 		query(t, "v6.dns.test", "A")
 		waitMembers(t, ipsetName(g.ID, false), "203.0.113.53")
-		t.Logf("v6 set after dropped AAAA: %v", ipsetMembers(t, ipsetName(g.ID, true)))
+		// What the client does not receive must not be routed either.
+		if m := ipsetMembers(t, ipsetName(g.ID, true)); len(m) != 0 {
+			t.Errorf("dropped AAAA reached the v6 ipset: %v", m)
+		}
 	})
 
 	t.Run("AAAA kept when disableDropAAAA", func(t *testing.T) {

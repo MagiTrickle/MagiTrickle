@@ -119,13 +119,37 @@ func TestMissingConfigStartsWithDefaults(t *testing.T) {
 	rt.MustRun(t, "test -s "+configPath)
 }
 
-// An unparsable config must be reported, and the daemon falls back to defaults instead of crashing the router service.
-func TestBrokenConfigIsReported(t *testing.T) {
-	StopAll(t)
-	rt.MustPut(t, configPath, []byte("app: [this is: not valid\n  yaml"), 0o644)
-	d := spawnDaemon(t)
-	d.WaitLog(`failed to load config file`, 5*time.Second)
-	if got := api.Groups(t, false); len(got) != 0 {
-		t.Errorf("groups from a broken config: %+v", got)
+// A config that cannot be used makes the daemon exit with an error and leave the file alone: starting on defaults
+// would let the next save overwrite the user's groups.
+func TestUnusableConfigStopsTheDaemon(t *testing.T) {
+	for name, content := range map[string]string{
+		"unparsable":          "app: [this is: not valid\n  yaml",
+		"unsupported version": "configVersion: 9.9.9\napp:\n  showAllInterfaces: true\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			StopAll(t)
+			rt.MustPut(t, configPath, []byte(content), 0o644)
+			p, err := rt.Spawn("magitrickled-bad-config", daemonBin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { p.Stop(5 * time.Second); StopAll(t) })
+			WaitFor(t, 10*time.Second, "daemon to give up", p.Exited)
+			if p.exitErr == nil {
+				t.Error("daemon exited with status 0")
+			}
+			if out := stripANSI(p.Log.String()); !strings.Contains(out, "failed to load config file") {
+				t.Errorf("no explanation in the output:\n%s", out)
+			}
+			if got := rt.MustRun(t, "cat "+configPath); got != content {
+				t.Errorf("config.yaml was modified: %q", got)
+			}
+			if running(t) {
+				t.Error("daemon keeps running")
+			}
+			if _, err := rt.Run("test -e " + pidFile); err == nil {
+				t.Error("stale pid file left behind")
+			}
+		})
 	}
 }
