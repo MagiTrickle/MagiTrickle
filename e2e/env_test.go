@@ -333,10 +333,19 @@ func Restart(t testing.TB) *Daemon {
 
 func spawnDaemon(t testing.TB) *Daemon {
 	t.Helper()
+	return spawnDaemonWith(t, "")
+}
+
+// spawnDaemonWith starts the daemon with extra `env` arguments (e.g. "PATH=...").
+func spawnDaemonWith(t testing.TB, envArgs string) *Daemon {
+	t.Helper()
 	cmd := daemonBin
 	if os.Getenv("E2E_COVER_BIN") != "" {
 		// Coverage build uploaded by provision; counters are flushed on a clean exit into /opt/tmp/cov.
 		cmd = "env GOCOVERDIR=/opt/tmp/cov /opt/tmp/covbin/magitrickled"
+	}
+	if envArgs != "" {
+		cmd = "env " + envArgs + " " + cmd
 	}
 	p, err := rt.Spawn("magitrickled", cmd)
 	if err != nil {
