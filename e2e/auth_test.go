@@ -54,7 +54,7 @@ func TestHTTPAuth(t *testing.T) {
 	}
 	for name, creds := range map[string]map[string]string{
 		"wrong password": {"login": "root", "password": "nope"},
-		"unknown user":   {"login": "ghost", "password": "keenetic"},
+		"unknown user":   {"login": "ghost", "password": sshPass},
 	} {
 		if code, _ := rawDo(t, "POST", "/auth", "", creds); code != 403 {
 			t.Errorf("%s: %d", name, code)
@@ -64,7 +64,7 @@ func TestHTTPAuth(t *testing.T) {
 		t.Errorf("missing password: %d", code)
 	}
 
-	code, body = rawDo(t, "POST", "/auth", "", map[string]string{"login": "root", "password": "keenetic"})
+	code, body = rawDo(t, "POST", "/auth", "", map[string]string{"login": sshUser, "password": sshPass})
 	if code != 200 {
 		t.Fatalf("login = %d %s", code, body)
 	}
@@ -96,7 +96,7 @@ func TestAuthDisabledRejectsLogin(t *testing.T) {
 	if code != 200 || !strings.Contains(string(body), `"enabled":false`) {
 		t.Errorf("GET /auth = %d %s", code, body)
 	}
-	if code, _ := rawDo(t, "POST", "/auth", "", map[string]string{"login": "root", "password": "keenetic"}); code != 404 {
+	if code, _ := rawDo(t, "POST", "/auth", "", map[string]string{"login": sshUser, "password": sshPass}); code != 404 {
 		t.Errorf("login with auth disabled: %d", code)
 	}
 }

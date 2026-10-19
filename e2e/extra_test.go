@@ -21,7 +21,7 @@ func TestAuthWithShaCryptPasswords(t *testing.T) {
 	for _, algo := range []struct{ flag, user string }{{"-5", "e2esha256"}, {"-6", "e2esha512"}} {
 		out, err := exec.Command("openssl", "passwd", algo.flag, "-salt", "e2esalt1", "s3cretpass").Output()
 		if err != nil {
-			t.Skipf("openssl passwd: %v", err)
+			t.Fatalf("openssl is required on the host to make sha-crypt hashes: %v", err)
 		}
 		rt.MustRun(t, fmt.Sprintf("echo '%s:%s:1000:1000::/tmp:/bin/false' >> %s", algo.user, strings.TrimSpace(string(out)), passwd))
 	}
@@ -46,7 +46,7 @@ func TestAuthWithShaCryptPasswords(t *testing.T) {
 func TestAuthTokenSurvivesRestart(t *testing.T) {
 	rt.MustRun(t, "rm -f /opt/var/lib/magitrickle/auth_secret")
 	StartDaemonRaw(t, authedConfig())
-	_, body := rawDo(t, "POST", "/auth", "", map[string]string{"login": "root", "password": "keenetic"})
+	_, body := rawDo(t, "POST", "/auth", "", map[string]string{"login": sshUser, "password": sshPass})
 	token := strings.Split(strings.Split(string(body), `"token":"`)[1], `"`)[0]
 	rt.MustRun(t, "test -s /opt/var/lib/magitrickle/auth_secret")
 
@@ -57,7 +57,7 @@ func TestAuthTokenSurvivesRestart(t *testing.T) {
 
 	rt.MustRun(t, "echo '!!!not base64!!!' > /opt/var/lib/magitrickle/auth_secret")
 	Restart(t)
-	if code, _ := rawDo(t, "POST", "/auth", "", map[string]string{"login": "root", "password": "keenetic"}); code == 200 {
+	if code, _ := rawDo(t, "POST", "/auth", "", map[string]string{"login": sshUser, "password": sshPass}); code == 200 {
 		t.Errorf("login succeeded with a corrupt secret")
 	}
 	rt.MustRun(t, "rm -f /opt/var/lib/magitrickle/auth_secret")
@@ -304,6 +304,7 @@ func TestCacheExpiryAndReResolve(t *testing.T) {
 	WaitFor(t, 15*time.Second, "old address to expire", func() bool { return len(ipsetMembers(t, ipsetName(g.ID, false))) == 0 })
 
 	// The records cache sweeps every 30s; after that, the alias must be gone, so an unrelated A answer is not routed.
+	// There is nothing to poll for a record that must have disappeared, hence the fixed wait (one sweep period plus margin).
 	time.Sleep(32 * time.Second)
 	SetZone(t, ZoneRecord{Name: "old.cdn.test", Type: "A", Value: "203.0.113.96", TTL: 60})
 	query(t, "old.cdn.test", "A")

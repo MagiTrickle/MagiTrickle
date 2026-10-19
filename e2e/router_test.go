@@ -19,8 +19,8 @@ type Router struct {
 
 func dialRouter(addr string) (*Router, error) {
 	cfg := &ssh.ClientConfig{
-		User:            "root",
-		Auth:            []ssh.AuthMethod{ssh.Password("keenetic")},
+		User:            sshUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}

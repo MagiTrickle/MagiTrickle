@@ -25,3 +25,12 @@ Credentials baked into the image: web/RCI `admin:E2ETests`, Entware SSH (host po
 `magitrickled` is started by the tests themselves (not by the package), so its stdout/stderr are captured and
 printed when a test fails. A scripted upstream DNS server and a list server (`helper/`, cross-compiled to arm64)
 run on the router, which keeps everything offline. A full run takes 10-12 minutes, so pass `-timeout 30m` (the default 10m is not enough).
+
+## Coverage
+
+`./cover.sh` builds an instrumented `magitrickled`, runs the suite with it and prints the total (profile in `/tmp/e2e-cov.txt`).
+
+## CI
+
+These tests are not run in CI: they need QEMU, a KeeneticOS NAND image and an Entware USB image that live outside
+this repository. Run them locally before merging changes to the netfilter, DNS proxy, API or packaging code.

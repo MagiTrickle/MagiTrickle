@@ -18,6 +18,9 @@ const (
 	webBase  = "http://127.0.0.1:8080"
 	rciLogin = "admin"
 	rciPass  = "E2ETests"
+	// Entware root account baked into the emulator image.
+	sshUser = "root"
+	sshPass = "keenetic"
 )
 
 // RCI talks to the Keenetic web API (/rci) through the emulator's forwarded web port.
