@@ -268,12 +268,12 @@ func TestPIDFileWithGarbageIsReplaced(t *testing.T) {
 
 // Cached DNS data is dropped after its TTL, so a name that now resolves elsewhere is routed to the new address only.
 func TestCacheExpiryAndReResolve(t *testing.T) {
-	StartDaemon(t, DaemonConfig{ShowAll: true, AdditionalTTL: "1s"})
+	StartDaemon(t, DaemonConfig{ShowAll: true, AdditionalTTL: "5s"})
 	g := api.CreateGroup(t, Group{Name: "exp", Interface: "eth3", Enable: ptr(true),
 		Rules: &[]Rule{{Name: "r", Type: "namespace", Rule: "cache.test", Enable: true}}})
 	SetZone(t,
-		ZoneRecord{Name: "www.cache.test", Type: "CNAME", Value: "old.cdn.test", TTL: 1},
-		ZoneRecord{Name: "old.cdn.test", Type: "A", Value: "203.0.113.95", TTL: 1})
+		ZoneRecord{Name: "www.cache.test", Type: "CNAME", Value: "old.cdn.test", TTL: 2},
+		ZoneRecord{Name: "old.cdn.test", Type: "A", Value: "203.0.113.95", TTL: 2})
 	dig(t, "www.cache.test", "A")
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.95")
 	WaitFor(t, 15*time.Second, "old address to expire", func() bool { return len(ipsetMembers(t, ipsetName(g.ID, false))) == 0 })

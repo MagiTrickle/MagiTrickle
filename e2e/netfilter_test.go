@@ -346,6 +346,9 @@ func TestRestartRemovesStaleIPTablesEntries(t *testing.T) {
 			rt.MustRun(t, fmt.Sprintf("%[1]s -t %[2]s -N MT_deadbeef && %[1]s -t %[2]s -A MT_deadbeef -j RETURN && %[1]s -t %[2]s -A %[3]s -j MT_deadbeef", tool, table, parent))
 		}
 	}
+	// ...and an orphaned set from a group that no longer exists.
+	rt.MustRun(t, "ipset create mt_deadbeef_4 hash:net && ipset create mt_deadbeef_6 hash:net family inet6 && ipset create other_keep hash:ip")
+	t.Cleanup(func() { rt.Run("ipset destroy other_keep") })
 	before := snapshot(t)
 	for _, c := range []string{chain, "MT_deadbeef"} {
 		if count(before.mangle4, c) == 0 || count(before.nat6, c) == 0 {
@@ -363,6 +366,12 @@ func TestRestartRemovesStaleIPTablesEntries(t *testing.T) {
 		}
 		return true
 	})
+	WaitFor(t, 10*time.Second, "orphan ipsets destroyed", func() bool {
+		return !ipsetExists(t, "mt_deadbeef_4") && !ipsetExists(t, "mt_deadbeef_6") && !ipsetExists(t, ipsetName(g.ID, false))
+	})
+	if !ipsetExists(t, "other_keep") {
+		t.Error("the sweep destroyed a set that is not ours")
+	}
 	// Only the daemon's own redirect remains, and ndm's chains are untouched.
 	s := snapshot(t)
 	if n := jumps(s.nat4, "PREROUTING", "MT_DNSOR"); n != 1 {
