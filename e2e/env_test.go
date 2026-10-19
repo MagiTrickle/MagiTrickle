@@ -332,6 +332,8 @@ func (d *Daemon) CountLog(pattern string) int {
 // StopAll stops any running daemon (including ones started by init.d).
 func StopAll(t testing.TB) {
 	t.Helper()
+	// The init script's boot-time loop (uptime < 300s) would respawn the daemon behind our back.
+	rt.Run("for p in $(ps | grep '[S]99magitrickle' | awk '{print $1}'); do kill $p; done")
 	if _, err := rt.Run("killall magitrickled 2>/dev/null; for i in 1 2 3 4 5 6 7 8 9 10; do pidof magitrickled >/dev/null || exit 0; sleep 1; done; killall -9 magitrickled"); err != nil {
 		t.Logf("stopAll: %v", err)
 	}

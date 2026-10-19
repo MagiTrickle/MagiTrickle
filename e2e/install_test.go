@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -71,9 +72,19 @@ func TestDefaultConfigIsValid(t *testing.T) {
 	}
 }
 
+// initScript returns a copy of the packaged init script with the boot-loop uptime border replaced, so that the
+// behaviour does not depend on how long the emulator has been up.
+func initScript(t testing.TB, border int) string {
+	t.Helper()
+	path := fmt.Sprintf("/opt/tmp/S99magitrickle.%d", border)
+	rt.MustRun(t, fmt.Sprintf("sed 's/^UPTIME_MAX_BORDER=.*/UPTIME_MAX_BORDER=%d/' %s > %s && chmod +x %s", border, initd, path, path))
+	return path
+}
+
 func TestInitScript(t *testing.T) {
 	StopAll(t)
 	rt.MustPut(t, configPath, []byte(DaemonConfig{}.YAML()), 0o644)
+	initd := initScript(t, 0)
 
 	out := rt.MustRun(t, initd+" start")
 	if !strings.Contains(stripANSI(out), "done") {
@@ -115,6 +126,25 @@ func TestInitScript(t *testing.T) {
 	if _, err := rt.Run("test -e " + sockFile); err == nil {
 		t.Errorf("socket left after stop")
 	}
+}
+
+// Right after boot (uptime < 300s) the script keeps starting the daemon until ndm has brought the network up.
+func TestInitScriptBootLoopRespawnsDaemon(t *testing.T) {
+	StopAll(t)
+	rt.MustPut(t, configPath, []byte(DaemonConfig{}.YAML()), 0o644)
+	t.Cleanup(func() { StopAll(t) })
+
+	out := rt.MustRun(t, initScript(t, 100000)+" start")
+	if !strings.Contains(stripANSI(out), "in loop") {
+		t.Errorf("start output: %q", out)
+	}
+	WaitFor(t, 15*time.Second, "daemon started by the loop", func() bool { return running(t) })
+	first := strings.TrimSpace(rt.MustRun(t, "pidof magitrickled"))
+	rt.MustRun(t, "kill -9 "+first)
+	WaitFor(t, 20*time.Second, "daemon respawned", func() bool {
+		out, err := rt.Run("pidof magitrickled")
+		return err == nil && strings.TrimSpace(out) != first
+	})
 }
 
 func TestSecondInstanceRefused(t *testing.T) {

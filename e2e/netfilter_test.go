@@ -325,3 +325,50 @@ func TestIPSetMembersExpire(t *testing.T) {
 	waitMembers(t, ipsetName(g.ID, false), "203.0.113.70")
 	WaitFor(t, 10*time.Second, "member to expire", func() bool { return len(ipsetMembers(t, ipsetName(g.ID, false))) == 0 })
 }
+
+// A restarted daemon must remove iptables entries it no longer owns: leftovers of a killed instance,
+// of a group that is gone from the config, and hand-made chains under its prefix.
+func TestRestartRemovesStaleIPTablesEntries(t *testing.T) {
+	d := StartDaemon(t, DaemonConfig{})
+	g := api.CreateGroup(t, Group{Name: "doomed", Interface: "eth3", Enable: ptr(true)})
+	chain := "MT_" + g.ID
+	WaitFor(t, 5*time.Second, "chains", func() bool { return jumps(snapshot(t).mangle4, "PREROUTING", chain) == 1 })
+
+	// Config on disk has no groups, so after the crash nobody will ever clean "doomed" except the startup sweep.
+	d.Signal("KILL")
+	WaitFor(t, 5*time.Second, "daemon killed", d.Exited)
+	rt.MustRun(t, "rm -f "+pidFile+" "+sockFile)
+
+	// Plus a foreign leftover under the prefix, in every table of both families.
+	for _, tool := range []string{"iptables", "ip6tables"} {
+		for _, table := range []string{"filter", "mangle", "nat"} {
+			parent := map[string]string{"filter": "FORWARD", "mangle": "PREROUTING", "nat": "POSTROUTING"}[table]
+			rt.MustRun(t, fmt.Sprintf("%[1]s -t %[2]s -N MT_deadbeef && %[1]s -t %[2]s -A MT_deadbeef -j RETURN && %[1]s -t %[2]s -A %[3]s -j MT_deadbeef", tool, table, parent))
+		}
+	}
+	before := snapshot(t)
+	for _, c := range []string{chain, "MT_deadbeef"} {
+		if count(before.mangle4, c) == 0 || count(before.nat6, c) == 0 {
+			t.Fatalf("setup failed, %s not present:\n%s", c, before)
+		}
+	}
+
+	spawnDaemon(t)
+	WaitFor(t, 10*time.Second, "stale entries swept", func() bool {
+		s := snapshot(t)
+		for _, c := range []string{chain, "MT_deadbeef"} {
+			if count(s.filter4, c)+count(s.mangle4, c)+count(s.nat4, c)+count(s.filter6, c)+count(s.mangle6, c)+count(s.nat6, c) != 0 {
+				return false
+			}
+		}
+		return true
+	})
+	// Only the daemon's own redirect remains, and ndm's chains are untouched.
+	s := snapshot(t)
+	if n := jumps(s.nat4, "PREROUTING", "MT_DNSOR"); n != 1 {
+		t.Errorf("DNSOR jumps = %d", n)
+	}
+	if !strings.Contains(iptSave(t, "nat", false), "_NDM_DNAT") {
+		t.Error("ndm chains damaged by the sweep")
+	}
+}
