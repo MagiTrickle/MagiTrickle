@@ -64,7 +64,8 @@ func TestUnsavedChangesAreLostOnRestart(t *testing.T) {
 	}
 }
 
-func TestConfigEnableDefaultsToTrue(t *testing.T) {
+// A group or rule without an "enable" key in config.yaml is loaded disabled.
+func TestConfigEnableDefaultsToFalse(t *testing.T) {
 	StartDaemonRaw(t, DaemonConfig{ShowAll: true, Groups: `  - id: aabbccdd
     name: legacy
     interface: eth3
@@ -73,17 +74,33 @@ func TestConfigEnableDefaultsToTrue(t *testing.T) {
         name: r
         type: domain
         rule: legacy.test
+  - id: aabbccde
+    name: explicit
+    interface: eth3
+    enable: true
+    rules:
+      - id: 11223345
+        name: r
+        type: domain
+        rule: explicit.test
+        enable: true
 `}.YAML())
 	g := api.Group(t, "aabbccdd")
-	if g.Enable == nil || !*g.Enable {
-		t.Errorf("group enable default: %+v", g)
+	if g.Enable == nil || *g.Enable {
+		t.Errorf("group without enable must be disabled: %+v", g)
 	}
 	var rules struct{ Rules []Rule }
 	api.OK(t, "GET", "/groups/aabbccdd/rules", nil, &rules)
-	if len(rules.Rules) != 1 || !rules.Rules[0].Enable {
-		t.Errorf("rule enable default: %+v", rules.Rules)
+	if len(rules.Rules) != 1 || rules.Rules[0].Enable {
+		t.Errorf("rule without enable must be disabled: %+v", rules.Rules)
 	}
-	WaitFor(t, 5*time.Second, "ipset", func() bool { return ipsetExists(t, ipsetName("aabbccdd", false)) })
+	if e := api.Group(t, "aabbccde"); e.Enable == nil || !*e.Enable {
+		t.Errorf("explicit enable: true lost: %+v", e)
+	}
+	WaitFor(t, 5*time.Second, "ipset of the enabled group", func() bool { return ipsetExists(t, ipsetName("aabbccde", false)) })
+	if ipsetExists(t, ipsetName("aabbccdd", false)) {
+		t.Error("disabled group got an ipset")
+	}
 }
 
 func TestMissingConfigStartsWithDefaults(t *testing.T) {
