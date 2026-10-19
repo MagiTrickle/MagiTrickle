@@ -7,7 +7,9 @@ EMU_DIR=${EMU_DIR:-$HOME/Projects/router-emulator}
 T=${E2E_TMP:-/dev/shm/router-e2e}
 FORWARDS=${E2E_FORWARDS:-8080:80;8022:22;2222:2222;8081:8080;8053:53}
 # UDP DNS from the emulated LAN "PC": the packets cross PREROUTING like those of a real client.
-export LAN_EXTRA=${LAN_EXTRA:-,hostfwd=udp:127.0.0.1:8053-192.168.1.1:53}
+# restrict=off is required for UDP: with restrict=on slirp drops the router's UDP replies (it takes them for
+# guest-initiated traffic). The LAN side still has no route to the outside; WAN stays offline.
+export LAN_EXTRA=${LAN_EXTRA:-,restrict=off,hostfwd=udp:127.0.0.1:8053-192.168.1.1:53}
 
 stop() {
 	if [ -S "$T/monitor.sock" ]; then

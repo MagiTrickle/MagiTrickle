@@ -34,18 +34,9 @@ func TestLANClientDNSIsRedirectedToProxy(t *testing.T) {
 			SetZone(t, ZoneRecord{Name: name, Type: "A", Value: "203.0.113.120"})
 			WaitFor(t, 5*time.Second, "DNSOR", func() bool { return jumpPresent(t, "iptables", "nat", "PREROUTING", "MT_DNSOR") })
 
-			if network == "tcp" {
-				r := queryLAN(t, network, name, dns.TypeA)
-				if len(r.Answer) != 1 || r.Answer[0].(*dns.A).A.String() != "203.0.113.120" {
-					t.Fatalf("answer: %v", r.Answer)
-				}
-			} else {
-				// QEMU's user-mode network does not hand the router's UDP reply back to the host socket (the
-				// reply leaves the router correctly, see tcpdump), so only the router side can be checked.
-				c := &dns.Client{Net: "udp", Timeout: 2 * time.Second}
-				m := new(dns.Msg)
-				m.SetQuestion(dns.Fqdn(name), dns.TypeA)
-				_, _, _ = c.Exchange(m, "127.0.0.1:8053")
+			r := queryLAN(t, network, name, dns.TypeA)
+			if len(r.Answer) != 1 || r.Answer[0].(*dns.A).A.String() != "203.0.113.120" {
+				t.Fatalf("answer: %v", r.Answer)
 			}
 			waitMembers(t, ipsetName(g.ID, false), "203.0.113.120")
 			// The client address the proxy saw is the emulated LAN host, not loopback: the packet really
