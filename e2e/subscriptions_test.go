@@ -256,7 +256,11 @@ func TestSubscriptionAutoUpdateOnStartup(t *testing.T) {
 	publishList(t, "auto.txt", "auto.example.org\nlater.example.org\n")
 	Restart(t)
 	time.Sleep(3 * time.Second)
-	if s := api.Subscriptions(t); s[0].Rules == nil || len(*s[0].Rules) != 1 {
+	s := api.Subscriptions(t)
+	if len(s) != 1 {
+		t.Fatalf("subscriptions after restart: %+v", s)
+	}
+	if s[0].Rules == nil || len(*s[0].Rules) != 1 {
 		t.Errorf("subscription refreshed before its interval elapsed: %+v", s[0].Rules)
 	}
 }
@@ -272,7 +276,11 @@ func TestSubscriptionWithoutIntervalIsNeverAutoUpdated(t *testing.T) {
     rules: []
 `, url)})
 	time.Sleep(4 * time.Second)
-	if s := api.Subscriptions(t); s[0].Rules != nil && len(*s[0].Rules) != 0 {
+	s := api.Subscriptions(t)
+	if len(s) != 1 {
+		t.Fatalf("subscriptions: %+v", s)
+	}
+	if s[0].Rules != nil && len(*s[0].Rules) != 0 {
 		t.Errorf("interval 0 subscription was fetched: %+v", s[0].Rules)
 	}
 }

@@ -62,7 +62,11 @@ func TestBlackholeGroup(t *testing.T) {
 }
 
 func TestGatewayRouteOnEthernetInterface(t *testing.T) {
-	rt.MustRun(t, "ip route replace default via 10.0.2.2 dev eth3 metric 500")
+	// ndm may still be re-applying the WAN after an earlier link toggle.
+	WaitFor(t, 30*time.Second, "WAN subnet route", func() bool {
+		_, err := rt.Run("ip route replace default via 10.0.2.2 dev eth3 metric 500")
+		return err == nil
+	})
 	t.Cleanup(func() { rt.Run("ip route del default via 10.0.2.2 dev eth3 metric 500") })
 
 	StartDaemon(t, DaemonConfig{ShowAll: true})

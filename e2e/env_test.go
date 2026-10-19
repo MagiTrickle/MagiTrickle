@@ -79,7 +79,43 @@ func run(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, "provision:", err)
 		return 1
 	}
-	return m.Run()
+	code := m.Run()
+	if out := os.Getenv("E2E_COVER_OUT"); out != "" {
+		fetchCoverage(out)
+	}
+	return code
+}
+
+// fetchCoverage downloads the GOCOVERDIR counters of the instrumented daemon (go tool covdata textfmt -i=<dir>).
+func fetchCoverage(dir string) {
+	StopAllQuiet()
+	// busybox tar cannot create archives, so move the files one by one.
+	list, err := rt.Run("ls /opt/tmp/cov")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "coverage fetch:", err)
+		return
+	}
+	_ = os.MkdirAll(dir, 0o755)
+	for _, name := range strings.Fields(list) {
+		b64, err := rt.Run("base64 /opt/tmp/cov/" + name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "coverage fetch:", name, err)
+			continue
+		}
+		cmd := exec.Command("base64", "-d")
+		cmd.Stdin = strings.NewReader(b64)
+		data, err := cmd.Output()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "coverage decode:", name, err)
+			continue
+		}
+		_ = os.WriteFile(filepath.Join(dir, name), data, 0o644)
+	}
+}
+
+// StopAllQuiet stops the daemon with SIGTERM so that it flushes its coverage counters.
+func StopAllQuiet() {
+	rt.Run("for p in $(ps | grep '[S]99magitrickle' | awk '{print $1}'); do kill $p; done; killall magitrickled; sleep 3")
 }
 
 func dialWithRetry(addr string, d time.Duration) (*Router, error) {
@@ -141,6 +177,16 @@ func provision(ipkPath, helperPath string) error {
 	}
 	if err := rt.Put("/opt/tmp/helper", helper, 0o755); err != nil {
 		return err
+	}
+	if cov := os.Getenv("E2E_COVER_BIN"); cov != "" {
+		b, err := os.ReadFile(cov)
+		if err != nil {
+			return err
+		}
+		rt.Run("rm -rf /opt/tmp/cov; mkdir -p /opt/tmp/cov /opt/tmp/covbin")
+		if err := rt.Put("/opt/tmp/covbin/magitrickled", b, 0o755); err != nil {
+			return err
+		}
 	}
 	if ipkPath != "" {
 		ipk, err := os.ReadFile(ipkPath)
@@ -287,7 +333,12 @@ func Restart(t testing.TB) *Daemon {
 
 func spawnDaemon(t testing.TB) *Daemon {
 	t.Helper()
-	p, err := rt.Spawn("magitrickled", daemonBin)
+	cmd := daemonBin
+	if os.Getenv("E2E_COVER_BIN") != "" {
+		// Coverage build uploaded by provision; counters are flushed on a clean exit into /opt/tmp/cov.
+		cmd = "env GOCOVERDIR=/opt/tmp/cov /opt/tmp/covbin/magitrickled"
+	}
+	p, err := rt.Spawn("magitrickled", cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
