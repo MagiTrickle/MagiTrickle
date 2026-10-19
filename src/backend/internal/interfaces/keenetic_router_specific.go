@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -64,6 +65,7 @@ func (a *KeeneticRouterSpecificAPI) GetIfaceAliases() (map[string]string, error)
 	for interfaceID := range interfaces {
 		interfaceIDs = append(interfaceIDs, interfaceID)
 	}
+	sort.Strings(interfaceIDs) // map order would make the choice between duplicate system names random
 
 	systemNames, err := a.interfaceSystemNames(client, baseURL, interfaceIDs)
 	if err != nil {
@@ -71,21 +73,30 @@ func (a *KeeneticRouterSpecificAPI) GetIfaceAliases() (map[string]string, error)
 	}
 
 	aliases := make(map[string]string, len(systemNames))
-	for interfaceID, systemName := range systemNames {
+	fromDescription := make(map[string]bool, len(systemNames))
+	for _, interfaceID := range interfaceIDs {
+		systemName := systemNames[interfaceID]
 		if systemName == "" {
 			continue
 		}
 
 		meta := interfaces[interfaceID]
 		alias := strings.TrimSpace(meta.Description)
-		if alias == "" {
+		described := alias != ""
+		if !described {
 			alias = strings.TrimSpace(meta.InterfaceName)
 		}
 		if alias == "" || alias == systemName {
 			continue
 		}
 
+		// Several Keenetic interfaces can share one system name (a Port "0" is the same eth3 as
+		// GigabitEthernet1); a user-visible description must beat a bare port label.
+		if _, taken := aliases[systemName]; taken && (fromDescription[systemName] || !described) {
+			continue
+		}
 		aliases[systemName] = alias
+		fromDescription[systemName] = described
 	}
 
 	return aliases, nil
