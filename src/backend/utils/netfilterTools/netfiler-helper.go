@@ -1,6 +1,8 @@
 package netfilterTools
 
 import (
+	"fmt"
+
 	"magitrickle/utils/iptables"
 )
 
@@ -10,6 +12,10 @@ const (
 	deviceRouteMetric    = 10
 	blackholeRouteMetric = 20
 )
+
+// minPrefixLen is the shortest chain and ipset prefix accepted. The startup cleanup deletes everything that starts
+// with the prefix, so an empty or very short one would take foreign chains and sets with it.
+const minPrefixLen = 3
 
 type Helper struct {
 	ChainPrefix string
@@ -21,6 +27,13 @@ type Helper struct {
 }
 
 func New(chainPrefix, ipsetPrefix string, disableIPv4, disableIPv6 bool, startIdx uint32) (*Helper, error) {
+	if len(chainPrefix) < minPrefixLen {
+		return nil, fmt.Errorf("chain prefix %q is too short: at least %d characters required", chainPrefix, minPrefixLen)
+	}
+	if len(ipsetPrefix) < minPrefixLen {
+		return nil, fmt.Errorf("ipset prefix %q is too short: at least %d characters required", ipsetPrefix, minPrefixLen)
+	}
+
 	var ipt4, ipt6 *iptables.IPTables
 
 	if !disableIPv4 {
