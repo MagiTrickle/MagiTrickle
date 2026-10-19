@@ -17,6 +17,7 @@ import (
 	"magitrickle/utils/recordsCache"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
 )
@@ -72,6 +73,14 @@ func (a *App) Start(ctx context.Context) (err error) {
 
 	if err := a.nfHelper.CleanIPTables(); err != nil {
 		return fmt.Errorf("failed to clear iptables: %w", err)
+	}
+	if err := a.nfHelper.CleanIPSets(); err != nil {
+		// Not fatal: groups recreate their own sets, a stale one is only clutter.
+		log.Warn().Err(err).Msg("failed to clear stale ipsets")
+	}
+	if err := a.nfHelper.CleanIPRules(); err != nil {
+		// Not fatal either: new groups skip the indexes that are still taken, a leftover rule is only clutter.
+		log.Warn().Err(err).Msg("failed to clear stale ip rules")
 	}
 
 	linkUpdateChannel, linkUpdateDone, err := subscribeLinkUpdates()
