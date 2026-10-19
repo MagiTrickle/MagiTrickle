@@ -214,7 +214,27 @@ func provision(ipkPath, helperPath string) error {
 			return fmt.Errorf("helper exited: %s", p.Log.String())
 		}
 	}
-	return nil
+	return waitNDMSettled(60 * time.Second)
+}
+
+// waitNDMSettled waits until ndm stops rewriting netfilter rules and interface addresses after boot. A test that
+// starts the daemon in the middle of that races with ndm's own iptables-restore and fails spuriously.
+func waitNDMSettled(timeout time.Duration) error {
+	const snapshot = `(iptables-save; ip6tables-save; ip -o addr | awk '{print $2, $3, $4}') 2>&1 | grep -v '^#' | sed 's/\[[0-9:]*\]//' | md5sum`
+	deadline := time.Now().Add(timeout)
+	last, stable := "", 0
+	for time.Now().Before(deadline) {
+		out, err := rt.Run(snapshot)
+		if err == nil && out == last {
+			if stable++; stable >= 5 {
+				return nil
+			}
+		} else {
+			last, stable = out, 0
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("ndm did not settle within %v", timeout)
 }
 
 // DaemonConfig is rendered into config.yaml. Zero values pick test-friendly defaults.
