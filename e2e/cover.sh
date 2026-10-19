@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Runs the suite with a coverage-instrumented magitrickled and prints per-function coverage.
 # Usage: ./cover.sh [go test args...]   (output in $E2E_COVER_OUT, default /tmp/e2e-cov)
 set -e
