@@ -22,6 +22,8 @@ type Record struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`
 	TTL   uint32 `json:"ttl"`
+	// NoFollow keeps the server from chasing a CNAME to its target.
+	NoFollow bool `json:"nofollow"`
 }
 
 func loadZone(path string) []Record {
@@ -72,7 +74,9 @@ func answer(zone []Record, name string, qtype uint16, m *dns.Msg) {
 			t := rec.Header().Rrtype
 			if t == dns.TypeCNAME {
 				m.Answer = append(m.Answer, rec)
-				next = strings.ToLower(dns.Fqdn(r.Value))
+				if !r.NoFollow {
+					next = strings.ToLower(dns.Fqdn(r.Value))
+				}
 			} else if t == qtype {
 				m.Answer = append(m.Answer, rec)
 			}

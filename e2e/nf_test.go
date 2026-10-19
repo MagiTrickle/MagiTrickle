@@ -121,6 +121,8 @@ type ZoneRecord struct {
 	Type  string `json:"type"`
 	Value string `json:"value,omitempty"`
 	TTL   uint32 `json:"ttl,omitempty"`
+
+	NoFollow bool `json:"nofollow,omitempty"`
 }
 
 // SetZone replaces the zone served by the scripted upstream DNS.

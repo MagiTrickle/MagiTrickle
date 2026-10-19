@@ -16,6 +16,7 @@ import (
 //	E2E_REUSE=1   use an already running emulator (see emulator.sh start) instead of booting one
 //	E2E_KEEP=1    leave the emulator running after the tests
 //	E2E_IPK=path  install this package instead of building one
+//	E2E_SKIP_INSTALL=1  keep the package already installed on the router
 const (
 	sshAddr       = "127.0.0.1:8022"
 	daemonBin     = "/opt/bin/magitrickled"
@@ -43,7 +44,7 @@ func run(m *testing.M) int {
 	repoRoot = filepath.Dir(wd)
 
 	ipk := os.Getenv("E2E_IPK")
-	if ipk == "" {
+	if ipk == "" && os.Getenv("E2E_SKIP_INSTALL") == "" {
 		var err error
 		if ipk, err = buildPackage(); err != nil {
 			fmt.Fprintln(os.Stderr, "build package:", err)
@@ -123,10 +124,6 @@ func buildHelper() (string, error) {
 
 // provision installs the package without starting the service and starts the helper processes.
 func provision(ipkPath, helperPath string) error {
-	ipk, err := os.ReadFile(ipkPath)
-	if err != nil {
-		return err
-	}
 	helper, err := os.ReadFile(helperPath)
 	if err != nil {
 		return err
@@ -142,14 +139,20 @@ func provision(ipkPath, helperPath string) error {
 			return fmt.Errorf("%s: %v\n%s", c, err, out)
 		}
 	}
-	if err := rt.Put("/opt/tmp/magitrickle.ipk", ipk, 0o644); err != nil {
-		return err
-	}
 	if err := rt.Put("/opt/tmp/helper", helper, 0o755); err != nil {
 		return err
 	}
-	if out, err := rt.Run("opkg install --force-reinstall /opt/tmp/magitrickle.ipk"); err != nil {
-		return fmt.Errorf("opkg install: %v\n%s", err, out)
+	if ipkPath != "" {
+		ipk, err := os.ReadFile(ipkPath)
+		if err != nil {
+			return err
+		}
+		if err := rt.Put("/opt/tmp/magitrickle.ipk", ipk, 0o644); err != nil {
+			return err
+		}
+		if out, err := rt.Run("opkg install --force-reinstall /opt/tmp/magitrickle.ipk"); err != nil {
+			return fmt.Errorf("opkg install: %v\n%s", err, out)
+		}
 	}
 	rt.MustPut(nil, "/opt/tmp/zone.json", []byte("[]"), 0o644)
 	var err2 error
@@ -302,7 +305,7 @@ func spawnDaemon(t testing.TB) *Daemon {
 			t.Fatalf("daemon exited early:\n%s", stripANSI(p.Log.String()))
 		}
 		code, _, err := api.Do("GET", "/groups", nil)
-		return err == nil && code == 200
+		return err == nil && (code == 200 || code == 401) // 401: auth enabled
 	})
 	return d
 }
