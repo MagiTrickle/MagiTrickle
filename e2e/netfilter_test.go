@@ -316,6 +316,41 @@ func TestStartupCleansStaleState(t *testing.T) {
 	}
 }
 
+// Marks are allocated as the first free index, so a foreign rule between ours leaves a gap and must stay untouched:
+// only rules whose table holds our blackhole route are removed on start.
+func TestStartupLeavesForeignIPRulesAlone(t *testing.T) {
+	foreign := firstTable + 1 // sits between the two groups below, so one of ours is allocated after the gap
+	rt.MustRun(t, fmt.Sprintf("ip rule add fwmark %d lookup %d && ip route add default dev eth3 table %d", foreign, foreign, foreign))
+	t.Cleanup(func() {
+		rt.Run(fmt.Sprintf("ip rule del fwmark %d lookup %d; ip route flush table %d", foreign, foreign, foreign))
+	})
+
+	d := StartDaemon(t, DaemonConfig{})
+	api.CreateGroup(t, Group{Name: "before-gap", Interface: "eth3", Enable: ptr(true)})
+	api.CreateGroup(t, Group{Name: "after-gap", Interface: "eth3", Enable: ptr(true)})
+	WaitFor(t, 5*time.Second, "both groups routed", func() bool {
+		return strings.Contains(routeTable(t, false, firstTable), "blackhole") && strings.Contains(routeTable(t, false, firstTable+2), "blackhole")
+	})
+	d.Signal("KILL")
+	WaitFor(t, 5*time.Second, "daemon killed", d.Exited)
+	rt.MustRun(t, "rm -f "+pidFile+" "+sockFile)
+
+	// The next instance has no groups: everything of ours must go, the foreign rule and its table must stay.
+	rt.MustPut(t, configPath, []byte(DaemonConfig{}.YAML()), 0o644)
+	spawnDaemon(t)
+
+	WaitFor(t, 5*time.Second, "ours removed", func() bool {
+		return routeTable(t, false, firstTable) == "" && routeTable(t, false, firstTable+2) == ""
+	})
+	rules := rt.MustRun(t, "ip rule | grep fwmark || true")
+	if n := strings.Count(rules, "fwmark"); n != 1 || !strings.Contains(rules, fmt.Sprintf("lookup %d", foreign)) {
+		t.Errorf("ip rules after restart: %q, want only the foreign one", rules)
+	}
+	if table := routeTable(t, false, foreign); !strings.Contains(table, "default dev eth3") {
+		t.Errorf("foreign routing table was flushed: %q", table)
+	}
+}
+
 func TestIPSetMembersExpire(t *testing.T) {
 	StartDaemon(t, DaemonConfig{AdditionalTTL: "1s"})
 	g := api.CreateGroup(t, Group{Name: "exp", Interface: "eth3", Enable: ptr(true),
