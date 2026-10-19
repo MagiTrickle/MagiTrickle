@@ -63,9 +63,12 @@ func (r *RCI) login() error {
 	return nil
 }
 
-// Do sends a request, re-authenticating when the session has expired.
+// Do sends a request, re-authenticating when the session has expired and retrying when ndm's web server drops the
+// connection (it does that now and then, e.g. while it reconfigures an interface). All commands the tests send are
+// idempotent.
 func (r *RCI) Do(method, path string, payload any) ([]byte, error) {
-	for attempt := 0; attempt < 2; attempt++ {
+	reauthed := false
+	for attempt := 0; attempt < 4; attempt++ {
 		var body io.Reader
 		if payload != nil {
 			b, _ := json.Marshal(payload)
@@ -77,11 +80,16 @@ func (r *RCI) Do(method, path string, payload any) ([]byte, error) {
 		}
 		resp, err := r.c.Do(req)
 		if err != nil {
-			return nil, err
+			if attempt == 3 {
+				return nil, err
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
 		data, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+		if resp.StatusCode == http.StatusUnauthorized && !reauthed {
+			reauthed = true
 			if err := r.login(); err != nil {
 				return nil, err
 			}
