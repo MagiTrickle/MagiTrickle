@@ -217,6 +217,18 @@ func provision(ipkPath, helperPath string) error {
 	return waitNDMSettled(60 * time.Second)
 }
 
+// settleNDMAfter makes the test wait, when it is over and everything it started has been torn down, until ndm
+// has finished reacting to what the test did to the interfaces. Otherwise the next test starts its daemon while
+// ndm is still rewriting netfilter rules, and its iptables-restore loses the race. Call it first in the test:
+// cleanups run in reverse order, so this one runs last.
+func settleNDMAfter(t *testing.T) {
+	t.Cleanup(func() {
+		if err := waitNDMSettled(60 * time.Second); err != nil {
+			t.Logf("%v", err)
+		}
+	})
+}
+
 // waitNDMSettled waits until ndm stops rewriting netfilter rules and interface addresses after boot. A test that
 // starts the daemon in the middle of that races with ndm's own iptables-restore and fails spuriously.
 func waitNDMSettled(timeout time.Duration) error {

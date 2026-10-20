@@ -178,6 +178,7 @@ func TestHookEndpointValidation(t *testing.T) {
 
 // ndm hands the hook to us for real when the Internet connection is switched in the Keenetic UI.
 func TestNDMFiresHookOnConnectionToggle(t *testing.T) {
+	settleNDMAfter(t)
 	d := StartDaemon(t, DaemonConfig{})
 	g := api.CreateGroup(t, Group{Name: "ndm", Interface: "eth3", Enable: ptr(true)})
 	chain := "MT_" + g.ID
@@ -207,6 +208,7 @@ func TestNDMFiresHookOnConnectionToggle(t *testing.T) {
 }
 
 func TestNDMHookStorm(t *testing.T) {
+	settleNDMAfter(t)
 	d := StartDaemon(t, DaemonConfig{})
 	g := api.CreateGroup(t, Group{Name: "storm", Interface: "eth3", Enable: ptr(true)})
 	chain := "MT_" + g.ID
@@ -232,6 +234,7 @@ func TestNDMHookStorm(t *testing.T) {
 
 // Another trigger that touches the nat table: the guest network coming up.
 func TestNDMFiresNATHookOnGuestNetworkToggle(t *testing.T) {
+	settleNDMAfter(t)
 	d := StartDaemon(t, DaemonConfig{})
 	g := api.CreateGroup(t, Group{Name: "guest", Interface: "eth3", Enable: ptr(true)})
 	chain := "MT_" + g.ID

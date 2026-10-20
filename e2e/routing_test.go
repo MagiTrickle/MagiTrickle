@@ -92,6 +92,7 @@ func TestRouteAppearsWhenInterfaceComesUp(t *testing.T) {
 }
 
 func TestRouteRestoredAfterInterfaceFlap(t *testing.T) {
+	settleNDMAfter(t)
 	newVPN(t, "Wireguard5", "E2E VPN")
 	StartDaemon(t, DaemonConfig{})
 	api.CreateGroup(t, Group{Name: "flap", Interface: "nwg5", Enable: ptr(true)})
