@@ -230,7 +230,7 @@ func (r *IPSetToLink) deleteIPRule() error {
 func (r *IPSetToLink) insertIPRoute() error {
 	if r.nh.IPTables4 != nil {
 		route := &netlink.Route{
-			Priority: 20,
+			Priority: blackholeRouteMetric,
 			Dst:      &net.IPNet{IP: []byte{0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0}},
 			Table:    r.table,
 			Type:     unix.RTN_BLACKHOLE,
@@ -244,7 +244,7 @@ func (r *IPSetToLink) insertIPRoute() error {
 
 	if r.nh.IPTables6 != nil {
 		route := &netlink.Route{
-			Priority: 20,
+			Priority: blackholeRouteMetric,
 			Dst:      &net.IPNet{IP: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, Mask: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 			Table:    r.table,
 			Type:     unix.RTN_BLACKHOLE,
@@ -292,7 +292,7 @@ func (r *IPSetToLink) updateIfaceRoute(iface netlink.Link, family int, current *
 	}
 
 	route := &netlink.Route{
-		Priority:  10,
+		Priority:  deviceRouteMetric,
 		LinkIndex: iface.Attrs().Index,
 		Table:     r.table,
 		Family:    family,

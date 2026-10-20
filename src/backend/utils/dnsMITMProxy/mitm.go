@@ -18,6 +18,10 @@ import (
 const (
 	maxTCPMsgSize = 65535
 	acceptTimeout = 1 * time.Second
+
+	// tcpConnsPerSlot is how many client TCP connections may be open per concurrent request slot. A connection waits
+	// for its next query without holding a slot, but the number of connections still needs a ceiling.
+	tcpConnsPerSlot = 2
 )
 
 type DNSMITMProxy struct {
@@ -28,7 +32,8 @@ type DNSMITMProxy struct {
 	bufferPool  *sync.Pool
 	tcpConnPool *connPool
 	udpConnPool *connPool
-	semaphore   chan struct{}
+	semaphore   chan struct{} // limits requests being processed (UDP and TCP)
+	tcpConns    chan struct{} // limits open client TCP connections
 	timeout     time.Duration
 }
 
@@ -44,6 +49,7 @@ func NewDNSMITMProxy(addr string, maxIdleConns, maxConcurrent uint, timeout time
 		tcpConnPool: newConnPool("tcp", addr, maxIdleConns),
 		udpConnPool: newConnPool("udp", addr, maxIdleConns),
 		semaphore:   make(chan struct{}, maxConcurrent),
+		tcpConns:    make(chan struct{}, maxConcurrent*tcpConnsPerSlot),
 	}
 }
 
@@ -207,9 +213,32 @@ func (p *DNSMITMProxy) processReq(ctx context.Context, clientAddr net.Addr, req 
 	return resp, nil
 }
 
+// processReqLimited waits for a free request slot and processes the request. A TCP connection holds a slot only while
+// its query is processed, not while it waits for the client to send the next one.
+func (p *DNSMITMProxy) processReqLimited(ctx context.Context, clientAddr net.Addr, req []byte, network string) ([]byte, error) {
+	select {
+	case p.semaphore <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-p.semaphore }()
+	return p.processReq(ctx, clientAddr, req, network)
+}
+
 func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.Conn) {
 	defer func() { _ = clientConn.Close() }()
 
+	// RFC 7766: a client may send several queries over one connection; keep serving until it hangs up,
+	// goes idle for longer than the timeout, or something fails.
+	for ctx.Err() == nil {
+		if !p.serveTCPRequest(ctx, clientConn) {
+			return
+		}
+	}
+}
+
+// serveTCPRequest handles one length-prefixed query and reports whether the connection can be reused.
+func (p *DNSMITMProxy) serveTCPRequest(ctx context.Context, clientConn net.Conn) bool {
 	// Set read timeout for receiving the request (separate from processing timeout)
 	_ = clientConn.SetReadDeadline(time.Now().Add(p.timeout))
 
@@ -217,7 +246,7 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 	lenBuf := make([]byte, 2)
 	_, err := io.ReadFull(clientConn, lenBuf)
 	if err != nil {
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && !errors.Is(err, io.EOF) {
 			var networkErr net.Error
 			if errors.As(err, &networkErr) && networkErr.Timeout() {
 				log.Debug().Msg("client read timeout")
@@ -225,12 +254,12 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 				log.Error().Err(err).Msg("failed to read length")
 			}
 		}
-		return
+		return false
 	}
 	reqLen := int(lenBuf[0])<<8 | int(lenBuf[1])
 	if reqLen > maxTCPMsgSize {
 		log.Error().Int("length", reqLen).Msg("request too large")
-		return
+		return false
 	}
 
 	req := make([]byte, reqLen)
@@ -239,7 +268,7 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 		if ctx.Err() == nil {
 			log.Error().Err(err).Msg("failed to read tcp request")
 		}
-		return
+		return false
 	}
 
 	// Now that we have the request, create processing timeout context
@@ -251,11 +280,11 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 		_ = clientConn.SetDeadline(deadline)
 	}
 
-	resp, err := p.processReq(reqCtx, clientConn.RemoteAddr(), req, "tcp")
+	resp, err := p.processReqLimited(reqCtx, clientConn.RemoteAddr(), req, "tcp")
 	if err != nil {
 		if reqCtx.Err() != nil {
 			log.Debug().Msg("request cancelled by context")
-			return
+			return false
 		}
 		var networkErr net.Error
 		if errors.As(err, &networkErr) && networkErr.Timeout() {
@@ -263,7 +292,7 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 		} else {
 			log.Error().Err(err).Msg("failed to process request")
 		}
-		return
+		return false
 	}
 
 	// Write length prefix directly with bytes
@@ -273,15 +302,16 @@ func (p *DNSMITMProxy) handleTCPConnection(ctx context.Context, clientConn net.C
 		if reqCtx.Err() == nil {
 			log.Error().Err(err).Msg("failed to send length")
 		}
-		return
+		return false
 	}
 	_, err = clientConn.Write(resp)
 	if err != nil {
 		if reqCtx.Err() == nil {
 			log.Error().Err(err).Msg("failed to send response")
 		}
-		return
+		return false
 	}
+	return true
 }
 
 func (p *DNSMITMProxy) ListenTCP(ctx context.Context, addr *net.TCPAddr) error {
@@ -318,16 +348,16 @@ func (p *DNSMITMProxy) ListenTCP(ctx context.Context, addr *net.TCPAddr) error {
 			continue
 		}
 
-		// Acquire semaphore
+		// Acquire a connection slot
 		select {
-		case p.semaphore <- struct{}{}:
+		case p.tcpConns <- struct{}{}:
 		case <-ctx.Done():
 			_ = conn.Close()
 			return nil
 		}
 
 		go func() {
-			defer func() { <-p.semaphore }()
+			defer func() { <-p.tcpConns }()
 			p.handleTCPConnection(ctx, conn)
 		}()
 	}

@@ -76,3 +76,37 @@ func TestKeeneticRouterSpecificAPIGetIfaceAliasesUsesBatchRCI(t *testing.T) {
 		t.Fatalf("aliases[nwg1] = %q, want Backup VPN", aliases["nwg1"])
 	}
 }
+
+// GigabitEthernet1 and its Port "0" share the system name eth3; the description must win every time.
+func TestKeeneticRouterSpecificAPIPrefersDescriptionOverPortLabel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rci/show/interface":
+			_ = json.NewEncoder(w).Encode(map[string]keeneticInterfaceMeta{
+				"0":                {InterfaceName: "0"},
+				"GigabitEthernet1": {Description: "Broadband connection", InterfaceName: "GigabitEthernet1"},
+				"1":                {InterfaceName: "1"},
+			})
+		case "/rci/":
+			var requests []keeneticInterfaceSystemNameRequest
+			_ = json.NewDecoder(r.Body).Decode(&requests)
+			response := make([]map[string]map[string]map[string]string, len(requests))
+			for i := range requests {
+				response[i] = map[string]map[string]map[string]string{"show": {"interface": {"system-name": "eth3"}}}
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}
+	}))
+	defer server.Close()
+
+	api := &KeeneticRouterSpecificAPI{BaseURL: server.URL, Client: server.Client()}
+	for i := 0; i < 20; i++ { // map iteration order used to make this flaky
+		aliases, err := api.GetIfaceAliases()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if aliases["eth3"] != "Broadband connection" {
+			t.Fatalf("eth3 alias = %q", aliases["eth3"])
+		}
+	}
+}

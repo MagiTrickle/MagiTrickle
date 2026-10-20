@@ -142,6 +142,18 @@ func (h *Handler) PutGroups(w http.ResponseWriter, r *http.Request) {
 		utils.WriteError(w, http.StatusBadRequest, "no groups in request")
 		return
 	}
+	// Reject duplicate ids before touching the running groups: a failure below would leave them all removed.
+	seen := make(map[intID.ID]struct{}, len(*req.Groups))
+	for _, gReq := range *req.Groups {
+		if gReq.ID == nil {
+			continue
+		}
+		if _, dup := seen[*gReq.ID]; dup {
+			utils.WriteError(w, http.StatusBadRequest, "duplicate group id")
+			return
+		}
+		seen[*gReq.ID] = struct{}{}
+	}
 	for _, g := range h.userGroups() {
 		_ = g.Disable()
 	}

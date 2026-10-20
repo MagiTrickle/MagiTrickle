@@ -101,9 +101,8 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 
 // dnsResponseHook обрабатывает ответы DNS
 func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.Msg, network string) (*dns.Msg, error) {
-	defer a.handleMessage(respMsg, clientAddr, network)
-
 	if a.config.DNSProxy.DisableDropAAAA {
+		a.handleMessage(respMsg, clientAddr, network)
 		return nil, nil
 	}
 
@@ -115,6 +114,9 @@ func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.M
 		}
 	}
 	respMsg.Answer = filteredAnswers
+
+	// Only what the client will actually receive is routed: a dropped AAAA must not end up in an ipset.
+	a.handleMessage(respMsg, clientAddr, network)
 
 	return &respMsg, nil
 }
