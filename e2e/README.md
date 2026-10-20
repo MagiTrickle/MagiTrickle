@@ -26,6 +26,15 @@ Credentials baked into the image: web/RCI `admin:E2ETests`, Entware SSH (host po
 printed when a test fails. A scripted upstream DNS server and a list server (`helper/`, cross-compiled to arm64)
 run on the router, which keeps everything offline. A full run takes 10-12 minutes, so pass `-timeout 30m` (the default 10m is not enough).
 
+## Known flakiness
+
+The suite runs against an emulated router whose ndm daemon and QEMU user-mode network have timing of their own.
+In most full runs one test fails for a reason that has nothing to do with MagiTrickle: a UDP reply lost on the
+forwarded port, a TCP segment that never made it through the forwarder, ndm rewriting netfilter rules at the moment
+a test starts. The failure message and the daemon log tell which one it was (for example, the daemon has logged
+the request it was then not able to answer). Re-run the failed test on its own, e.g.
+`go test -run TestName -count=10 .`; a real bug reproduces.
+
 ## Coverage
 
 `./cover.sh` builds an instrumented `magitrickled`, runs the suite with it and prints the total (profile in `/tmp/e2e-cov.txt`).
