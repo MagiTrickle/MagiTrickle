@@ -15,12 +15,7 @@ func publishList(t testing.TB, name, content string) string {
 	return listURL + name
 }
 
-func subSet(id string, v6 bool) string {
-	if v6 {
-		return "mt_sub-" + id + "_6"
-	}
-	return "mt_sub-" + id + "_4"
-}
+func subSet(id string, v6 bool) string { return ipsetName(id, v6) }
 
 func createSub(t testing.TB, s Subscription) Subscription {
 	t.Helper()
@@ -92,7 +87,7 @@ func TestSubscriptionSyncParsesAndRoutes(t *testing.T) {
 
 	// Netfilter plumbing exists for the subscription as for a user group.
 	s := snapshot(t)
-	if !containsLine(s.mangle4, "-A PREROUTING -j MT_sub-"+sub.ID) {
+	if !containsLine(s.mangle4, "-A MT_ROUTING -j "+routeChain(sub.ID)) {
 		t.Errorf("no mangle jump for subscription:\n%s", s)
 	}
 }

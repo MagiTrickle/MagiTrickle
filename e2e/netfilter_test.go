@@ -74,7 +74,8 @@ func TestNetfilterLayout(t *testing.T) {
 	g := api.CreateGroup(t, Group{Name: "layout", Interface: "nwg5", Enable: ptr(true)})
 	WaitFor(t, 5*time.Second, "chains", func() bool { return count(snapshot(t).mangle4, g.ID) > 0 })
 	s := snapshot(t)
-	chain := "MT_" + g.ID
+	chain := routeChain(g.ID)
+	set4, set6 := ipsetName(g.ID, false), ipsetName(g.ID, true)
 
 	for _, tc := range []struct {
 		name  string
@@ -82,22 +83,25 @@ func TestNetfilterLayout(t *testing.T) {
 		want  []string
 	}{
 		{"filter4", s.filter4, []string{
-			"-A FORWARD -j " + chain,
-			fmt.Sprintf("-A %s -o nwg5 -m set --match-set mt_%s_4 dst -j ACCEPT", chain, g.ID)}},
+			"-A FORWARD -j MT_ROUTING",
+			"-A MT_ROUTING -j " + chain,
+			fmt.Sprintf("-A %s -o nwg5 -m set --match-set %s dst -j ACCEPT", chain, set4)}},
 		{"mangle4", s.mangle4, []string{
-			"-A PREROUTING -j " + chain,
+			"-A PREROUTING -j MT_ROUTING",
+			"-A MT_ROUTING -j " + chain,
 			"-A " + chain + " -m conntrack --ctdir REPLY -j RETURN",
-			fmt.Sprintf("-A %s -m set --match-set mt_%s_4 dst -j MARK --set-xmark 0x%x/0xffffffff", chain, g.ID, firstMark),
-			fmt.Sprintf("-A %s -m set --match-set mt_%s_4 dst -j CONNMARK --save-mark", chain, g.ID)}},
+			fmt.Sprintf("-A %s -m set --match-set %s dst -j MARK --set-xmark 0x%x/0xffffffff", chain, set4, firstMark),
+			fmt.Sprintf("-A %s -m set --match-set %s dst -j CONNMARK --save-mark", chain, set4)}},
 		{"nat4", s.nat4, []string{
-			"-A POSTROUTING -j " + chain,
-			fmt.Sprintf("-A %s -m set --match-set mt_%s_4 dst -j MASQUERADE", chain, g.ID)}},
+			"-A POSTROUTING -j MT_ROUTING",
+			"-A MT_ROUTING -j " + chain,
+			fmt.Sprintf("-A %s -m set --match-set %s dst -j MASQUERADE", chain, set4)}},
 		{"filter6", s.filter6, []string{
-			fmt.Sprintf("-A %s -o nwg5 -m set --match-set mt_%s_6 dst -j ACCEPT", chain, g.ID)}},
+			fmt.Sprintf("-A %s -o nwg5 -m set --match-set %s dst -j ACCEPT", chain, set6)}},
 		{"mangle6", s.mangle6, []string{
-			fmt.Sprintf("-A %s -m set --match-set mt_%s_6 dst -j MARK --set-xmark 0x%x/0xffffffff", chain, g.ID, firstMark)}},
+			fmt.Sprintf("-A %s -m set --match-set %s dst -j MARK --set-xmark 0x%x/0xffffffff", chain, set6, firstMark)}},
 		{"nat6", s.nat6, []string{
-			fmt.Sprintf("-A %s -m set --match-set mt_%s_6 dst -j MASQUERADE", chain, g.ID)}},
+			fmt.Sprintf("-A %s -m set --match-set %s dst -j MASQUERADE", chain, set6)}},
 	} {
 		for _, w := range tc.want {
 			if !containsLine(tc.lines, w) {
@@ -120,7 +124,10 @@ func TestNetfilterLayout(t *testing.T) {
 		parent string
 	}{"filter4": {s.filter4, "FORWARD"}, "mangle4": {s.mangle4, "PREROUTING"}, "nat4": {s.nat4, "POSTROUTING"},
 		"filter6": {s.filter6, "FORWARD"}, "mangle6": {s.mangle6, "PREROUTING"}, "nat6": {s.nat6, "POSTROUTING"}} {
-		if n := jumps(j.lines, j.parent, chain); n != 1 {
+		if n := jumps(j.lines, j.parent, "MT_ROUTING"); n != 1 {
+			t.Errorf("%s: %d jumps to MT_ROUTING, want 1", name, n)
+		}
+		if n := jumps(j.lines, "MT_ROUTING", chain); n != 1 {
 			t.Errorf("%s: %d jumps to %s, want 1", name, n, chain)
 		}
 	}
@@ -236,7 +243,7 @@ func TestMultipleGroupsGetDistinctMarks(t *testing.T) {
 	marks := map[string]string{}
 	for _, l := range s.mangle4 {
 		for _, g := range []Group{g1, g2} {
-			if strings.Contains(l, "-A MT_"+g.ID+" ") && strings.Contains(l, "--set-xmark") {
+			if strings.Contains(l, "-A "+routeChain(g.ID)+" ") && strings.Contains(l, "--set-xmark") {
 				marks[g.ID] = l[strings.Index(l, "--set-xmark"):]
 			}
 		}
@@ -298,8 +305,11 @@ func TestStartupCleansStaleState(t *testing.T) {
 		lines  []string
 		parent string
 	}{"mangle4": {s.mangle4, "PREROUTING"}, "filter4": {s.filter4, "FORWARD"}, "nat4": {s.nat4, "POSTROUTING"}} {
-		if n := jumps(j.lines, j.parent, "MT_"+g.ID); n != 1 {
-			t.Errorf("%s: %d jumps to MT_%s after restart:\n%s", name, n, g.ID, strings.Join(j.lines, "\n"))
+		if n := jumps(j.lines, j.parent, "MT_ROUTING"); n != 1 {
+			t.Errorf("%s: %d jumps to MT_ROUTING after restart:\n%s", name, n, strings.Join(j.lines, "\n"))
+		}
+		if n := jumps(j.lines, "MT_ROUTING", routeChain(g.ID)); n != 1 {
+			t.Errorf("%s: %d jumps to the route of %s after restart:\n%s", name, n, g.ID, strings.Join(j.lines, "\n"))
 		}
 	}
 	if len(s.sets) != 2 {
@@ -366,8 +376,8 @@ func TestIPSetMembersExpire(t *testing.T) {
 func TestRestartRemovesStaleIPTablesEntries(t *testing.T) {
 	d := StartDaemon(t, DaemonConfig{})
 	g := api.CreateGroup(t, Group{Name: "doomed", Interface: "eth3", Enable: ptr(true)})
-	chain := "MT_" + g.ID
-	WaitFor(t, 5*time.Second, "chains", func() bool { return jumps(snapshot(t).mangle4, "PREROUTING", chain) == 1 })
+	chain := routeChain(g.ID)
+	WaitFor(t, 5*time.Second, "chains", func() bool { return jumps(snapshot(t).mangle4, "MT_ROUTING", chain) == 1 })
 
 	// Config on disk has no groups, so after the crash nobody will ever clean "doomed" except the startup sweep.
 	d.Signal("KILL")

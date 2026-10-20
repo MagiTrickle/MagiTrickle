@@ -13,12 +13,29 @@ import (
 	"github.com/miekg/dns"
 )
 
-// ipsetName is the name MagiTrickle gives to the set of a group ("mt_<id>_4" / "_6").
-func ipsetName(groupID string, v6 bool) string {
+// ipsetName is the name of the live set of a group or a subscription ("mt_<id>-<slot>_4" / "_6"). The slot flips
+// when the route moves to another interface, so it is looked up instead of assumed; a set that does not exist
+// gets the name of slot 0.
+func ipsetName(id string, v6 bool) string {
+	family := "_4"
 	if v6 {
-		return "mt_" + groupID + "_6"
+		family = "_6"
 	}
-	return "mt_" + groupID + "_4"
+	out, err := rt.Run("ipset list -n | grep -E " + shq("^mt_"+id+"-[01]"+family+"$") + " | head -n1")
+	if name := strings.TrimSpace(out); err == nil && name != "" {
+		return name
+	}
+	return "mt_" + id + "-0" + family
+}
+
+// routeChain is the iptables chain of a group's or a subscription's route ("MT_<id>-<slot>"), which MT_ROUTING
+// jumps to. A chain that does not exist gets the name of slot 0.
+func routeChain(id string) string {
+	out, err := rt.Run("iptables-save -t mangle | grep -oE " + shq("^:MT_"+id+"-[01]") + " | head -n1")
+	if name := strings.TrimPrefix(strings.TrimSpace(out), ":"); err == nil && name != "" {
+		return name
+	}
+	return "MT_" + id + "-0"
 }
 
 func ipsetExists(t testing.TB, name string) bool {
