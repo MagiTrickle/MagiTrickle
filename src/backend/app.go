@@ -34,6 +34,7 @@ type App struct {
 	stateMu sync.RWMutex
 
 	subscriptionSyncMu sync.Mutex
+	configSaveMu       sync.Mutex // serializes SaveConfig
 
 	dnsMITM              *dnsMITMProxy.DNSMITMProxy
 	nfHelper             *netfilterTools.Helper
