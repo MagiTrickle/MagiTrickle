@@ -115,6 +115,8 @@ func (r *Records) GetAliases(domainName string) []string {
 	return result
 }
 
+// GetAddresses возвращает непросроченные адреса домена, следуя по CNAME.
+// Результат — копии, его можно читать без блокировки.
 func (r *Records) GetAddresses(domainName string) []*Address {
 	r.locker.RLock()
 	defer r.locker.RUnlock()
@@ -125,11 +127,14 @@ func (r *Records) GetAddresses(domainName string) []*Address {
 
 	for {
 		if addresses, ok := r.addresses[domainName]; ok && len(addresses) > 0 {
-			// Фильтруем просроченные адреса (только чтение, без удаления)
+			// Фильтруем просроченные адреса (только чтение, без удаления).
+			// Возвращаем копии: AddAddress продлевает Deadline на месте, а
+			// результат читают уже без блокировки.
 			var valid []*Address
 			for _, addr := range addresses {
 				if !now.After(addr.Deadline) {
-					valid = append(valid, addr)
+					address := *addr
+					valid = append(valid, &address)
 				}
 			}
 			if len(valid) > 0 {

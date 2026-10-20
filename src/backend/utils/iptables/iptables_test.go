@@ -641,3 +641,55 @@ func TestConcurrentCommitsDoNotDuplicateRules(t *testing.T) {
 		t.Errorf("rules after concurrent commits:\nexpected: %v\ngot:      %v", expected, rules)
 	}
 }
+
+// TestSetChainReplacesContent проверяет, что SetChain заменяет содержимое
+// цепочки целиком, в том числе на пустое.
+func TestSetChainReplacesContent(t *testing.T) {
+	fake := NewFakeIPTables(ProtocolIPv4)
+	fake.SetInitialRules("mangle", "MT_ROUTING", [][]string{{"-j", "MT_old"}})
+	ipt := NewIPTables(fake)
+
+	if err := ipt.SetChain("mangle", "MT_ROUTING", [][]string{{"-j", "MT_a"}, {"-j", "MT_b"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ipt.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"-j", "MT_a"}, {"-j", "MT_b"}}
+	if got := fake.GetRules("mangle", "MT_ROUTING"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("chain = %v, want %v", got, want)
+	}
+
+	if err := ipt.SetChain("mangle", "MT_ROUTING", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ipt.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.GetRules("mangle", "MT_ROUTING"); len(got) != 0 {
+		t.Fatalf("chain = %v, want empty", got)
+	}
+}
+
+func TestCommitForgetsDeletedChains(t *testing.T) {
+	fake := NewFakeIPTables(ProtocolIPv4)
+	ipt := NewIPTables(fake)
+	if err := ipt.RegisterChainOverride("filter", "X"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ipt.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ipt.RegisterChainDelete("filter", "X"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ipt.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if fake.ChainExists("filter", "X") {
+		t.Fatal("chain was not deleted")
+	}
+	if _, ok := ipt.rules["filter"]["X"]; ok {
+		t.Error("registration of a deleted chain is kept")
+	}
+}
