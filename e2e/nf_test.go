@@ -2,7 +2,9 @@ package e2e
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 	"testing"
@@ -100,13 +102,25 @@ func exchange(network, name, qtype string) (*dns.Msg, error) {
 		return nil, fmt.Errorf("unknown query type %q", qtype)
 	}
 	m := new(dns.Msg)
-	if qt == dns.TypePTR {
-		m.SetQuestion(dns.Fqdn(name), qt)
-	} else {
-		m.SetQuestion(dns.Fqdn(name), qt)
+	m.SetQuestion(dns.Fqdn(name), qt)
+	// QEMU's user-mode UDP forwarding now and then loses a reply even though the router answered, so a UDP client
+	// retries on timeout the way a stub resolver does. TCP gets one attempt.
+	attempts, timeout := 1, 10*time.Second
+	if network == "udp" {
+		attempts, timeout = 3, 3*time.Second
 	}
-	c := &dns.Client{Net: network, Timeout: 10 * time.Second}
-	r, _, err := c.Exchange(m, "127.0.0.1:8053")
+	c := &dns.Client{Net: network, Timeout: timeout}
+	var r *dns.Msg
+	var err error
+	for i := 0; i < attempts; i++ {
+		if r, _, err = c.Exchange(m, "127.0.0.1:8053"); err == nil {
+			break
+		}
+		var netErr net.Error
+		if !errors.As(err, &netErr) || !netErr.Timeout() {
+			break
+		}
+	}
 	return r, err
 }
 
