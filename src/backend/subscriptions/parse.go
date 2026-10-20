@@ -176,6 +176,14 @@ func detectSubscriptionRuleType(pattern string) string {
 	return ""
 }
 
+// EnsureUniqueRuleIDs выдаёт новые ID правилам с пустым или повторяющимся
+// ID, не меняя исходные правила (см. intID.EnsureUnique).
+func EnsureUniqueRuleIDs(rules []*models.SubscriptionRule) (result []*models.SubscriptionRule, fixed int) {
+	return intID.EnsureUnique(rules,
+		func(rule *models.SubscriptionRule) intID.ID { return rule.ID },
+		(*models.SubscriptionRule).WithID)
+}
+
 func nextUniqueRuleID(used map[[4]byte]struct{}) intID.ID {
 	for {
 		candidate := intID.RandomID()

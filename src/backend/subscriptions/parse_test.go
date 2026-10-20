@@ -1,6 +1,7 @@
 package subscriptions
 
 import (
+	"slices"
 	"testing"
 
 	"magitrickle/models"
@@ -64,5 +65,33 @@ func TestSameRulesIgnoresOrder(t *testing.T) {
 
 	if !sameRules(left, right) {
 		t.Fatal("expected rule comparison to ignore order for equal content")
+	}
+}
+
+func TestEnsureUniqueRuleIDsDoesNotModifySharedRules(t *testing.T) {
+	shared := &models.SubscriptionRule{ID: intID.ID{1}, Rule: "a.com"}
+	rules := []*models.SubscriptionRule{
+		shared,
+		{ID: intID.ID{1}, Rule: "b.com"},
+		{Rule: "c.com"},
+	}
+	original := slices.Clone(rules)
+
+	fixed, count := EnsureUniqueRuleIDs(rules)
+	if count != 2 {
+		t.Fatalf("fixed %d rules, want 2", count)
+	}
+	seen := map[intID.ID]bool{}
+	for _, rule := range fixed {
+		if rule.ID.IsZero() || seen[rule.ID] {
+			t.Fatalf("rule %q has zero or duplicate ID %s", rule.Rule, rule.ID)
+		}
+		seen[rule.ID] = true
+	}
+	if !slices.Equal(rules, original) || rules[1].ID != (intID.ID{1}) || !rules[2].ID.IsZero() {
+		t.Error("input slice or its rules were modified in place")
+	}
+	if fixed[0] != shared {
+		t.Error("rule with a valid ID was copied needlessly")
 	}
 }
