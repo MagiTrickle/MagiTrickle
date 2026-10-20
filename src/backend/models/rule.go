@@ -5,7 +5,6 @@ import (
 
 	"magitrickle/utils/intID"
 
-	"github.com/IGLOU-EU/go-wildcard/v2"
 	"github.com/dlclark/regexp2"
 )
 
@@ -76,7 +75,7 @@ func (d *Rule) IsMatch(domainName string) bool {
 		return domainName[domainLen-ruleLen-1] == '.' && domainName[domainLen-ruleLen:] == d.Rule
 
 	case RuleTypeWildcard:
-		return wildcard.Match(d.Rule, domainName)
+		return matchWildcard(d.Rule, domainName)
 
 	case RuleTypeRegEx:
 		err := d.Compile()
@@ -89,4 +88,32 @@ func (d *Rule) IsMatch(domainName string) bool {
 		return false
 	}
 	return false
+}
+
+// matchWildcard сопоставляет имя с шаблоном, где '*' — любая
+// последовательность символов (в том числе пустая), '?' — ровно один
+// символ, а все остальные символы, включая '.', сравниваются буквально.
+func matchWildcard(pattern, name string) bool {
+	p, n := 0, 0
+	star, retry := -1, 0
+	for n < len(name) {
+		switch {
+		case p < len(pattern) && pattern[p] == '*':
+			star, retry = p, n
+			p++
+		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == name[n]):
+			p++
+			n++
+		case star >= 0:
+			// Откатываемся к последней звёздочке и отдаём ей ещё один символ.
+			retry++
+			p, n = star+1, retry
+		default:
+			return false
+		}
+	}
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
 }

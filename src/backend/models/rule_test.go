@@ -102,6 +102,19 @@ func TestRule_IsMatch_Wildcard(t *testing.T) {
 		{"test??.com", "test12.com", true},
 		{"test??.com", "test123.com", false},
 		{"test.com", "test12.com", false},
+		{"*", "", true},
+		{"*", "anything.com", true},
+		{"a*b*c", "abc", true},
+		{"a*b*c", "aXbYbZc", true},
+		{"a*b*c", "aXbYcZ", false},
+		// Точка — обычный символ, а не «любой символ».
+		{"*.google.com", "evilgoogle.com", false},
+		{"*.google.com", "xgooglexcom", false},
+		{"api.example.com", "apixexample-com", false},
+		// '?' — ровно один символ.
+		{"api?.x.com", "api.x.com", false},
+		{"api?.x.com", "api1.x.com", true},
+		{"a?b", "ab", false},
 	}
 
 	for _, tt := range tests {
