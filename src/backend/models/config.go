@@ -2,60 +2,67 @@ package models
 
 import "time"
 
+type Config struct {
+	ConfigVersion string           `yaml:"configVersion"`
+	App           *AppConfig       `yaml:"app"`
+	Groups        *[]*Group        `yaml:"groups"`
+	Subscriptions *[]*Subscription `yaml:"subscriptions"`
+}
+
 type AppConfig struct {
-	HTTPWeb           AppConfigHTTPWeb
-	DNSProxy          AppConfigDNSProxy
-	Netfilter         AppConfigNetfilter
-	Link              []string
-	ShowAllInterfaces bool
-	LogLevel          string
+	HTTPWeb           AppConfigHTTPWeb   `yaml:"httpWeb"`
+	DNSProxy          AppConfigDNSProxy  `yaml:"dnsProxy"`
+	Netfilter         AppConfigNetfilter `yaml:"netfilter"`
+	Link              []string           `yaml:"link"`
+	ShowAllInterfaces bool               `yaml:"showAllInterfaces"`
+	LogLevel          string             `yaml:"logLevel"`
 }
 
 type AppConfigHTTPWeb struct {
-	Enabled bool
-	Auth    AppConfigAuth
-	Host    AppConfigHTTPWebServer
-	Skin    string
+	Enabled bool                   `yaml:"enabled"`
+	Auth    AppConfigAuth          `yaml:"auth"`
+	Host    AppConfigHTTPWebServer `yaml:"host"`
+	Skin    string                 `yaml:"skin"`
 }
 
 type AppConfigAuth struct {
-	Enabled bool
+	Enabled bool `yaml:"enabled"`
 }
 
 type AppConfigHTTPWebServer struct {
-	Address string
-	Port    uint16
+	Address string `yaml:"address"`
+	Port    uint16 `yaml:"port"`
 }
 
 type AppConfigDNSProxy struct {
-	Host            AppConfigDNSProxyServer
-	Upstream        AppConfigDNSProxyServer
-	DisableRemap53  bool
-	DisableFakePTR  bool
-	DisableDropAAAA bool
-	MaxIdleConns    uint
-	MaxConcurrent   uint
-	Timeout         time.Duration
+	Host            AppConfigDNSProxyServer `yaml:"host"`
+	Upstream        AppConfigDNSProxyServer `yaml:"upstream"`
+	DisableRemap53  bool                    `yaml:"disableRemap53"`
+	DisableFakePTR  bool                    `yaml:"disableFakePTR"`
+	DisableDropAAAA bool                    `yaml:"disableDropAAAA"`
+	MaxIdleConns    uint                    `yaml:"maxIdleConns"`
+	MaxConcurrent   uint                    `yaml:"maxConcurrent"`
+	Timeout         time.Duration           `yaml:"timeout"`
 }
 
 type AppConfigDNSProxyServer struct {
-	Address string
-	Port    uint16
+	Address string `yaml:"address"`
+	Port    uint16 `yaml:"port"`
 }
 
 type AppConfigNetfilter struct {
-	IPTables            AppConfigIPTables
-	IPSet               AppConfigIPSet
-	DisableIPv4         bool
-	DisableIPv6         bool
-	StartMarkTableIndex uint32
+	IPTables            AppConfigIPTables `yaml:"iptables"`
+	IPSet               AppConfigIPSet    `yaml:"ipset"`
+	DisableIPv4         bool              `yaml:"disableIPv4"`
+	DisableIPv6         bool              `yaml:"disableIPv6"`
+	StartMarkTableIndex uint32            `yaml:"startMarkTableIndex"`
 }
 
 type AppConfigIPTables struct {
-	ChainPrefix string
+	ChainPrefix string `yaml:"chainPrefix"`
 }
 
 type AppConfigIPSet struct {
-	TablePrefix   string
-	AdditionalTTL time.Duration
+	TablePrefix   string        `yaml:"tablePrefix"`
+	AdditionalTTL time.Duration `yaml:"additionalTTL"`
 }
