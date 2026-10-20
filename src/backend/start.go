@@ -8,9 +8,11 @@ import (
 	"os"
 	"runtime/debug"
 	"strconv"
+	"sync"
 	"time"
 
 	"magitrickle/api"
+	"magitrickle/routing"
 	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/iptables"
 	"magitrickle/utils/netfilterTools"
@@ -29,6 +31,15 @@ func (a *App) Start(ctx context.Context) (err error) {
 	}
 	defer a.enabled.Store(false)
 
+	if !a.configLoaded.Load() {
+		// Без конфига маршрутизация молча работала бы без групп и подписок,
+		// а сохранить исправления через API всё равно нельзя.
+		if loadErr := a.configErr.Load(); loadErr != nil {
+			return fmt.Errorf("%w: %w", ErrConfigNotLoaded, *loadErr)
+		}
+		return ErrConfigNotLoaded
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintf(os.Stderr, "panic: %v\n%s\n", r, debug.Stack())
@@ -39,10 +50,10 @@ func (a *App) Start(ctx context.Context) (err error) {
 	a.setupLogging()
 
 	a.dnsMITM = dnsMITMProxy.NewDNSMITMProxy(
-		net.JoinHostPort(a.config.DNSProxy.Upstream.Address, strconv.Itoa(int(a.config.DNSProxy.Upstream.Port))),
-		a.config.DNSProxy.MaxIdleConns,
-		a.config.DNSProxy.MaxConcurrent,
-		a.config.DNSProxy.Timeout,
+		net.JoinHostPort(a.cfg().DNSProxy.Upstream.Address, strconv.Itoa(int(a.cfg().DNSProxy.Upstream.Port))),
+		a.cfg().DNSProxy.MaxIdleConns,
+		a.cfg().DNSProxy.MaxConcurrent,
+		a.cfg().DNSProxy.Timeout,
 	)
 	a.dnsMITM.RequestHook = a.dnsRequestHook
 	a.dnsMITM.ResponseHook = a.dnsResponseHook
@@ -55,7 +66,7 @@ func (a *App) Start(ctx context.Context) (err error) {
 	a.recordsCache = recordsCache.New()
 	a.recordsCache.StartCleanup(ctx, 30*time.Second)
 
-	nfh, err := netfilterTools.New(a.config.Netfilter.IPTables.ChainPrefix, a.config.Netfilter.IPSet.TablePrefix, a.config.Netfilter.DisableIPv4, a.config.Netfilter.DisableIPv6, a.config.Netfilter.StartMarkTableIndex)
+	nfh, err := netfilterTools.New(a.cfg().Netfilter.IPTables.ChainPrefix, a.cfg().Netfilter.IPSet.TablePrefix, a.cfg().Netfilter.DisableIPv4, a.cfg().Netfilter.DisableIPv6, a.cfg().Netfilter.StartMarkTableIndex)
 	if err != nil {
 		return fmt.Errorf("netfilter helper init fail: %w", err)
 	}
@@ -114,7 +125,7 @@ func (a *App) Start(ctx context.Context) (err error) {
 	a.startDNSListeners(newCtx, errChan)
 
 	var interfaceAddrs []netlink.Addr
-	for _, linkName := range a.config.Link {
+	for _, linkName := range a.cfg().Link {
 		link, err := netlink.LinkByName(linkName)
 		if err != nil {
 			return fmt.Errorf("failed to find link %s: %w", linkName, err)
@@ -126,8 +137,8 @@ func (a *App) Start(ctx context.Context) (err error) {
 		interfaceAddrs = append(interfaceAddrs, linkAddrList...)
 	}
 
-	if !a.config.DNSProxy.DisableRemap53 {
-		a.dnsOverrider = a.nfHelper.PortRemap("DNSOR", 53, a.config.DNSProxy.Host.Port, interfaceAddrs)
+	if !a.cfg().DNSProxy.DisableRemap53 {
+		a.dnsOverrider = a.nfHelper.PortRemap("DNSOR", 53, a.cfg().DNSProxy.Host.Port, interfaceAddrs)
 		if err := a.dnsOverrider.Enable(); err != nil {
 			return fmt.Errorf("failed to override DNS: %v", err)
 		}
@@ -136,33 +147,116 @@ func (a *App) Start(ctx context.Context) (err error) {
 		}()
 	}
 
-	for _, group := range a.ruleSetSnapshot() {
-		if err := group.Enable(); err != nil {
-			return fmt.Errorf("failed to enable group: %w", err)
-		}
-		if err := group.Sync(); err != nil {
-			return fmt.Errorf("failed to sync group: %w", err)
-		}
+	a.router = a.nfHelper.Router("ROUTING")
+	if err := a.router.Enable(); err != nil {
+		return fmt.Errorf("failed to enable router: %w", err)
 	}
 	defer func() {
-		for _, group := range a.ruleSetSnapshot() {
-			_ = group.Disable()
-		}
+		_ = a.router.Disable()
 	}()
 
+	a.stateMu.Lock()
+	a.routing.Store(routing.New(routing.FromNetfilter(a.router), a.recordsCache))
+	commitErr := a.commitLocked(nil)
+	a.stateMu.Unlock()
+	defer func() {
+		a.stateMu.Lock()
+		a.routing.Store(nil)
+		a.stateMu.Unlock()
+	}()
+	if commitErr != nil {
+		// Сломанный набор не должен мешать остальным: они применены, а он
+		// будет повторён при следующем изменении групп или подписок. Но если
+		// маршрутизация не применилась целиком, работать дальше нельзя.
+		var applyErr *routing.ApplyError
+		if !errors.As(commitErr, &applyErr) || applyErr.Fatal != nil {
+			return fmt.Errorf("failed to apply routing: %w", commitErr)
+		}
+		log.Error().Err(commitErr).Msg("some rule sets failed to apply")
+	}
+
 	go a.StartSubscriptionAutoUpdate(newCtx)
+
+	// Главный цикл только читает события netlink. Хуки Router'а и повтор
+	// маршрутизации ждут блокировку Router'а, поэтому идут в своих
+	// горутинах: иначе на время применения маршрутов чтение событий
+	// останавливалось бы.
+	events := newInterfaceEvents()
+	retryRequests := make(chan struct{}, 1)
+	requestRetry := func() {
+		select {
+		case retryRequests <- struct{}{}:
+		default:
+		}
+	}
+	workersCtx, stopWorkers := context.WithCancel(newCtx)
+	var workers sync.WaitGroup
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		for {
+			select {
+			case <-workersCtx.Done():
+				return
+			case <-events.ready:
+				a.applyInterfaceEvents(events)
+				// Интерфейс поднялся или сменил адрес — неподнявшиеся маршруты могли ожить.
+				requestRetry()
+			}
+		}
+	}()
+	go func() {
+		defer workers.Done()
+		retryLoop(workersCtx, retryRequests, routingRetryInterval, retryRoutingDebounce, a.retryRouting)
+	}()
+	// Останавливаем их раньше, чем снимется маршрутизация.
+	defer func() {
+		stopWorkers()
+		workers.Wait()
+	}()
 
 	for {
 		select {
 		case event := <-linkUpdateChannel:
-			a.handleLink(event)
+			a.handleLink(events, event)
 		case event := <-addrUpdateChannel:
-			a.handleAddr(event)
+			a.handleAddr(events, event)
 		case err := <-errChan:
 			return err
 		case <-ctx.Done():
 			return nil
 		}
+	}
+}
+
+// retryRoutingDebounce — сколько ждать после события netlink перед
+// повтором: при переподключении интерфейса события идут пачкой.
+const retryRoutingDebounce = 2 * time.Second
+
+// retryLoop вызывает retry раз в interval и по запросам из requests, пока
+// не отменён ctx. После запроса ждёт debounce; запросы, пришедшие за это
+// время или во время retry, сливаются в один следующий вызов.
+func retryLoop(ctx context.Context, requests <-chan struct{}, interval, debounce time.Duration, retry func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-requests:
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(debounce):
+			}
+			select {
+			case <-requests:
+			default:
+			}
+		}
+		retry()
 	}
 }
 
@@ -189,7 +283,7 @@ func (a *App) ForceCommitIPTables() error {
 }
 
 func (a *App) setupLogging() {
-	switch a.config.LogLevel {
+	switch a.cfg().LogLevel {
 	case "trace":
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	case "debug":

@@ -18,6 +18,10 @@ import (
 
 const Blackhole = "blackhole"
 
+// IPSetToLink направляет трафик на адреса из ipset в интерфейс: помечает
+// пакеты в собственных цепочках и заводит под метку отдельную таблицу
+// маршрутизации. Сами цепочки ни к чему не подключены — вызывать их
+// в нужном порядке должен Router.
 type IPSetToLink struct {
 	enabled atomic.Bool
 	locker  sync.Mutex
@@ -25,7 +29,7 @@ type IPSetToLink struct {
 	chainName string
 	ifaceName string
 	startIdx  uint32
-	ipset     *IPSet
+	ipsetName string
 	nh        *Helper
 	mark      uint32
 	table     int
@@ -35,12 +39,17 @@ type IPSetToLink struct {
 	ip6Route  [2]*netlink.Route
 }
 
+// ChainName возвращает имя цепочек маршрута (одинаковое в filter, mangle и nat).
+func (r *IPSetToLink) ChainName() string {
+	return r.chainName
+}
+
 func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 	if ipt == nil {
 		return nil
 	}
 
-	ipsetName := r.ipset.ipsetName
+	ipsetName := r.ipsetName
 	if ipt.Proto() == iptables.ProtocolIPv4 {
 		ipsetName += "_4"
 	} else {
@@ -48,7 +57,7 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 	}
 
 	/*
-		Filter Forward
+		Filter
 	*/
 
 	err := ipt.RegisterChainOverride("filter", r.chainName)
@@ -63,13 +72,8 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 		}
 	}
 
-	err = ipt.Append("filter", "FORWARD", "-j", r.chainName)
-	if err != nil {
-		return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
-	}
-
 	/*
-		Mangle Prerouting
+		Mangle
 	*/
 
 	err = ipt.RegisterChainOverride("mangle", r.chainName)
@@ -89,13 +93,8 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 		}
 	}
 
-	err = ipt.Append("mangle", "PREROUTING", "-j", r.chainName)
-	if err != nil {
-		return fmt.Errorf("failed to append rule to PREROUTING: %w", err)
-	}
-
 	/*
-		NAT Postrouting
+		NAT
 	*/
 
 	err = ipt.RegisterChainOverride("nat", r.chainName)
@@ -106,11 +105,6 @@ func (r *IPSetToLink) insertIPTablesRules(ipt *iptables.IPTables) error {
 	err = ipt.Append("nat", r.chainName, "-m", "set", "--match-set", ipsetName, "dst", "-j", "MASQUERADE")
 	if err != nil {
 		return fmt.Errorf("failed to create rule: %w", err)
-	}
-
-	err = ipt.Append("nat", "POSTROUTING", "-j", r.chainName)
-	if err != nil {
-		return fmt.Errorf("failed to append rule to POSTROUTING: %w", err)
 	}
 
 	err = ipt.Commit()
@@ -126,46 +120,19 @@ func (r *IPSetToLink) deleteIPTablesRules(ipt *iptables.IPTables) error {
 	}
 	var errs []error
 
-	/*
-		Filter Forward
-	*/
-
 	err := ipt.RegisterChainDelete("filter", r.chainName)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to clear chain: %w", err))
 	}
-
-	err = ipt.Delete("filter", "FORWARD", "-j", r.chainName)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
-	}
-
-	/*
-		Mangle Prerouting
-	*/
 
 	err = ipt.RegisterChainDelete("mangle", r.chainName)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to delete chain: %w", err))
 	}
 
-	err = ipt.Delete("mangle", "PREROUTING", "-j", r.chainName)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
-	}
-
-	/*
-		NAT Postrouting
-	*/
-
 	err = ipt.RegisterChainDelete("nat", r.chainName)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to delete chain: %w", err))
-	}
-
-	err = ipt.Delete("nat", "POSTROUTING", "-j", r.chainName)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("failed to unlinking chain: %w", err))
 	}
 
 	err = ipt.Commit()
@@ -485,22 +452,6 @@ func (r *IPSetToLink) Disable() error {
 	return r.disable()
 }
 
-func (r *IPSetToLink) ClearIfDisabled() error {
-	r.locker.Lock()
-	defer r.locker.Unlock()
-
-	if r.enabled.Load() {
-		return nil
-	}
-
-	var errs []error
-	errs = append(errs, r.deleteIPRoute())
-	errs = append(errs, r.deleteIPRule())
-	errs = append(errs, r.deleteIPTablesRules(r.nh.IPTables4))
-	errs = append(errs, r.deleteIPTablesRules(r.nh.IPTables6))
-	return errors.Join(errs...)
-}
-
 func (r *IPSetToLink) LinkUpHook(event netlink.LinkUpdate) error {
 	r.locker.Lock()
 	defer r.locker.Unlock()
@@ -542,12 +493,14 @@ func (r *IPSetToLink) AddrChangeHook(event netlink.AddrUpdate) error {
 	return errors.Join(errs...)
 }
 
-func (nh *Helper) IPSetToLink(name string, ifaceName string, ipset *IPSet) *IPSetToLink {
+// IPSetToLink связывает ipset с интерфейсом. Правила ссылаются на ipset по
+// имени, поэтому набор под этим именем можно атомарно подменить (IPSet.Swap).
+func (nh *Helper) IPSetToLink(name string, ifaceName string, ipsetName string) *IPSetToLink {
 	return &IPSetToLink{
 		nh:        nh,
 		chainName: nh.ChainPrefix + name,
 		ifaceName: ifaceName,
-		ipset:     ipset,
+		ipsetName: ipsetName,
 		startIdx:  nh.StartIdx,
 	}
 }

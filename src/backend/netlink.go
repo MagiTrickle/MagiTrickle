@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"sync"
 
 	"magitrickle/constant"
 
@@ -30,8 +31,59 @@ func subscribeAddrUpdates() (chan netlink.AddrUpdate, chan struct{}, error) {
 	return addrUpdateChannel, done, nil
 }
 
-// handleLink обрабатывает события изменения состояния сетевых интерфейсов
-func (a *App) handleLink(event netlink.LinkUpdate) {
+// interfaceEvents копит события netlink по интерфейсам, пока их не
+// применит applyInterfaceEvents. Новое событие заменяет прежнее того же
+// вида для того же интерфейса: хуки всё равно перечитывают текущее
+// состояние интерфейса, так что пачка событий обрабатывается один раз.
+type interfaceEvents struct {
+	mu    sync.Mutex
+	links map[string]netlink.LinkUpdate
+	addrs map[string]netlink.AddrUpdate
+	// ready получает сигнал, когда есть необработанные события.
+	ready chan struct{}
+}
+
+func newInterfaceEvents() *interfaceEvents {
+	return &interfaceEvents{
+		links: make(map[string]netlink.LinkUpdate),
+		addrs: make(map[string]netlink.AddrUpdate),
+		ready: make(chan struct{}, 1),
+	}
+}
+
+func (q *interfaceEvents) putLink(ifaceName string, event netlink.LinkUpdate) {
+	q.mu.Lock()
+	q.links[ifaceName] = event
+	q.mu.Unlock()
+	q.signal()
+}
+
+func (q *interfaceEvents) putAddr(ifaceName string, event netlink.AddrUpdate) {
+	q.mu.Lock()
+	q.addrs[ifaceName] = event
+	q.mu.Unlock()
+	q.signal()
+}
+
+func (q *interfaceEvents) signal() {
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
+}
+
+// take забирает накопленные события.
+func (q *interfaceEvents) take() (map[string]netlink.LinkUpdate, map[string]netlink.AddrUpdate) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	links, addrs := q.links, q.addrs
+	q.links, q.addrs = make(map[string]netlink.LinkUpdate), make(map[string]netlink.AddrUpdate)
+	return links, addrs
+}
+
+// handleLink разбирает событие изменения состояния интерфейса и ставит
+// поднявшийся интерфейс в очередь. Router здесь не вызывается.
+func (a *App) handleLink(events *interfaceEvents, event netlink.LinkUpdate) {
 	switch event.Header.Type {
 	case unix.RTM_NEWLINK:
 		linkAttrs := event.Link.Attrs()
@@ -46,18 +98,7 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 				Int("type", int(event.Header.Type)).
 				Msg("interface up")
 		}
-		for _, group := range a.ruleSetSnapshot() {
-			if group.RouteInterface() != ifaceName {
-				continue
-			}
-
-			if err := group.LinkUpHook(event); err != nil {
-				log.Error().
-					Err(err).
-					Str("group", group.IDValue().String()).
-					Msg("error while handling interface up")
-			}
-		}
+		events.putLink(ifaceName, event)
 
 	case unix.RTM_DELLINK:
 		log.Debug().
@@ -67,8 +108,9 @@ func (a *App) handleLink(event netlink.LinkUpdate) {
 	}
 }
 
-// handleAddr обрабатывает события изменения IP-адресов сетевых интерфейсов
-func (a *App) handleAddr(event netlink.AddrUpdate) {
+// handleAddr разбирает событие изменения IP-адресов интерфейса и ставит
+// интерфейс в очередь. Router здесь не вызывается.
+func (a *App) handleAddr(events *interfaceEvents, event netlink.AddrUpdate) {
 	if !event.NewAddr {
 		return
 	}
@@ -86,16 +128,25 @@ func (a *App) handleAddr(event netlink.AddrUpdate) {
 			Str("addr", event.LinkAddress.String()).
 			Msg("interface address changed")
 	}
+	events.putAddr(ifaceName, event)
+}
 
-	for _, group := range a.ruleSetSnapshot() {
-		if group.RouteInterface() != ifaceName {
-			continue
-		}
-
-		if err := group.AddrChangeHook(event); err != nil {
+// applyInterfaceEvents передаёт накопленные события маршрутам.
+func (a *App) applyInterfaceEvents(events *interfaceEvents) {
+	links, addrs := events.take()
+	for ifaceName, event := range links {
+		if err := a.router.LinkUpHook(event); err != nil {
 			log.Error().
 				Err(err).
-				Str("group", group.IDValue().String()).
+				Str("interface", ifaceName).
+				Msg("error while handling interface up")
+		}
+	}
+	for ifaceName, event := range addrs {
+		if err := a.router.AddrChangeHook(ifaceName, event); err != nil {
+			log.Error().
+				Err(err).
+				Str("interface", ifaceName).
 				Msg("error while handling interface addr change")
 		}
 	}

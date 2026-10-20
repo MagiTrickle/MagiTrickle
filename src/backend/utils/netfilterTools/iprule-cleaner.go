@@ -3,8 +3,6 @@ package netfilterTools
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netlink/nl"
@@ -80,24 +78,4 @@ func hasOwnBlackholeRoute(routes []netlink.Route) bool {
 		}
 	}
 	return false
-}
-
-// CleanIPSets destroys the sets of a previous instance that did not get to remove them. It must run after
-// CleanIPTables, as a set that a rule still references cannot be destroyed.
-func (nh *Helper) CleanIPSets() error {
-	sets, err := netlink.IpsetListAll()
-	if err != nil {
-		return fmt.Errorf("error while listing ipsets: %w", err)
-	}
-
-	var errs []error
-	for _, set := range sets {
-		if !strings.HasPrefix(set.SetName, nh.IpsetPrefix) {
-			continue
-		}
-		if err := netlink.IpsetDestroy(set.SetName); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, fmt.Errorf("error while destroying stale ipset %s: %w", set.SetName, err))
-		}
-	}
-	return errors.Join(errs...)
 }

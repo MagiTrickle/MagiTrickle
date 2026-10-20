@@ -63,6 +63,9 @@ func (nh *Helper) cleanIPTables(ipt *iptables.IPTables) error {
 }
 
 func (nh *Helper) CleanIPTables() error {
+	if nh.ChainPrefix == "" {
+		return errors.New("chain prefix is empty, refusing to delete every chain")
+	}
 	var errs []error
 	errs = append(errs, nh.cleanIPTables(nh.IPTables4))
 	errs = append(errs, nh.cleanIPTables(nh.IPTables6))

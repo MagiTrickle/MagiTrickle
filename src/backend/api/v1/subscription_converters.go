@@ -11,19 +11,14 @@ import (
 func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscription) (*models.Subscription, error) {
 	sub := &models.Subscription{}
 	if existing != nil {
+		if req.ID != nil && !req.ID.IsZero() && *req.ID != existing.ID {
+			return nil, fmt.Errorf("subscription ID mismatch")
+		}
 		sub.ID = existing.ID
 		sub.LastUpdate = existing.LastUpdate
 		sub.LastCheck = existing.LastCheck
 	} else {
-		sub.ID = intID.RandomID()
-	}
-	if req.ID != nil {
-		if existing != nil && sub.ID != *req.ID {
-			return nil, fmt.Errorf("subscription ID mismatch")
-		}
-		if existing == nil {
-			sub.ID = *req.ID
-		}
+		sub.ID = idFromReq(req.ID)
 	}
 	sub.Name = req.Name
 	sub.Interface = req.Interface
@@ -40,17 +35,15 @@ func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscriptio
 	}
 
 	if req.Rules != nil {
-		var existingRules []*models.SubscriptionRule
+		existingRules := make(map[intID.ID]*models.SubscriptionRule)
 		if existing != nil {
-			existingRules = existing.Rules
+			for _, rule := range existing.Rules {
+				existingRules[rule.ID] = rule
+			}
 		}
 		newRules := make([]*models.SubscriptionRule, len(*req.Rules))
 		for i, ruleReq := range *req.Rules {
-			r, err := SubscriptionRuleFromReq(ruleReq, existingRules)
-			if err != nil {
-				return nil, err
-			}
-			newRules[i] = r
+			newRules[i] = SubscriptionRuleFromReq(ruleReq, existingRules)
 		}
 		sub.Rules = newRules
 	} else if existing != nil {
@@ -60,23 +53,19 @@ func SubscriptionFromReq(req types.SubscriptionReq, existing *models.Subscriptio
 	return sub, nil
 }
 
-func SubscriptionRuleFromReq(ruleReq types.SubscriptionRuleReq, existingRules []*models.SubscriptionRule) (*models.SubscriptionRule, error) {
-	rule := &models.SubscriptionRule{}
+// SubscriptionRuleFromReq строит правило подписки из запроса. ID берётся из
+// запроса, как у правил групп (см. idFromReq); правило, у которого ничего не
+// изменилось, берётся прежним объектом (см. RulesFromReq).
+func SubscriptionRuleFromReq(ruleReq types.SubscriptionRuleReq, existingRules map[intID.ID]*models.SubscriptionRule) *models.SubscriptionRule {
+	var existing *models.SubscriptionRule
 	if ruleReq.ID != nil {
-		for _, r := range existingRules {
-			if r.ID == *ruleReq.ID {
-				rule.ID = r.ID
-				break
-			}
-		}
+		existing = existingRules[*ruleReq.ID]
 	}
-	if rule.ID.IsZero() {
-		rule.ID = intID.RandomID()
+	if existing != nil && existing.Rule == ruleReq.Rule && existing.Type == ruleReq.Type && existing.Enable == ruleReq.Enable {
+		return existing
 	}
-	rule.Rule = ruleReq.Rule
-	rule.Type = ruleReq.Type
-	rule.Enable = ruleReq.Enable
-	return rule, nil
+
+	return &models.SubscriptionRule{ID: idFromReq(ruleReq.ID), Rule: ruleReq.Rule, Type: ruleReq.Type, Enable: ruleReq.Enable}
 }
 
 func RespFromSubscriptions(subs []*models.Subscription) types.SubscriptionsRes {
