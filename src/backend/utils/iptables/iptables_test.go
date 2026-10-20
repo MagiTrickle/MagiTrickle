@@ -4,7 +4,9 @@ package iptables
 
 import (
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 )
 
 // TestChainPatch проверяет, что правила добавляются к существующим
@@ -577,5 +579,65 @@ func TestPatchRemovesDuplicates(t *testing.T) {
 
 	if !reflect.DeepEqual(rules, expected) {
 		t.Errorf("Patch duplicate removal failed.\nExpected: %v\nGot: %v", expected, rules)
+	}
+}
+
+// slowSave lets another goroutine run between reading the current rules and applying the change, as it does with
+// the real iptables-save and iptables-restore, and makes the fake safe for concurrent use.
+type slowSave struct {
+	mu    sync.Mutex
+	inner *FakeIPTables
+}
+
+func (s *slowSave) Proto() Protocol { return s.inner.Proto() }
+
+func (s *slowSave) Save() ([]byte, error) {
+	s.mu.Lock()
+	data, err := s.inner.Save()
+	s.mu.Unlock()
+	time.Sleep(20 * time.Millisecond)
+	return data, err
+}
+
+func (s *slowSave) Restore(data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inner.Restore(data)
+}
+
+// TestConcurrentCommitsDoNotDuplicateRules: commits are serialized, so the second one sees what the first one did.
+func TestConcurrentCommitsDoNotDuplicateRules(t *testing.T) {
+	fake := NewFakeIPTables(ProtocolIPv4)
+	fake.SetInitialRules("filter", "FORWARD", [][]string{{"-i", "eth0", "-j", "ACCEPT"}})
+	ipt := NewIPTables(&slowSave{inner: fake})
+
+	if err := ipt.RegisterChainPatch("filter", "FORWARD"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ipt.Append("filter", "FORWARD", "-j", "MT_chain"); err != nil {
+		t.Fatal(err)
+	}
+
+	const commits = 4
+	errs := make(chan error, commits)
+	var wg sync.WaitGroup
+	for i := 0; i < commits; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- ipt.Commit()
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("Commit failed: %v", err)
+		}
+	}
+
+	expected := [][]string{{"-i", "eth0", "-j", "ACCEPT"}, {"-j", "MT_chain"}}
+	if rules := fake.GetRules("filter", "FORWARD"); !reflect.DeepEqual(rules, expected) {
+		t.Errorf("rules after concurrent commits:\nexpected: %v\ngot:      %v", expected, rules)
 	}
 }

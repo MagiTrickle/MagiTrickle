@@ -27,7 +27,10 @@ var (
 type IPTables struct {
 	rules      map[string]map[string]chain
 	executable Executable
-	sync       sync.RWMutex
+	// sync guards the staged rules and serializes Commit: it reads the current rules, works out the difference and
+	// applies it, and two commits running at once (an API request and an ndm netfilter.d event, say) both see the
+	// old state and apply the same changes twice or delete a rule the other one already deleted.
+	sync sync.Mutex
 }
 
 func NewIPTables(executable Executable) *IPTables {
@@ -75,8 +78,8 @@ func (ipt *IPTables) RegisterChainOverride(table, chainName string) error {
 }
 
 func (ipt *IPTables) Append(table, chain string, ruleArgs ...string) error {
-	ipt.sync.RLock()
-	defer ipt.sync.RUnlock()
+	ipt.sync.Lock()
+	defer ipt.sync.Unlock()
 
 	if ipt.rules[table] == nil || ipt.rules[table][chain] == nil {
 		return ErrChainNotInitialized
@@ -86,8 +89,8 @@ func (ipt *IPTables) Append(table, chain string, ruleArgs ...string) error {
 }
 
 func (ipt *IPTables) Insert(table, chain string, ruleNum int, ruleArgs ...string) error {
-	ipt.sync.RLock()
-	defer ipt.sync.RUnlock()
+	ipt.sync.Lock()
+	defer ipt.sync.Unlock()
 
 	if ipt.rules[table] == nil || ipt.rules[table][chain] == nil {
 		return ErrChainNotInitialized
@@ -97,8 +100,8 @@ func (ipt *IPTables) Insert(table, chain string, ruleNum int, ruleArgs ...string
 }
 
 func (ipt *IPTables) Delete(table, chain string, ruleArgs ...string) error {
-	ipt.sync.RLock()
-	defer ipt.sync.RUnlock()
+	ipt.sync.Lock()
+	defer ipt.sync.Unlock()
 
 	if ipt.rules[table] == nil || ipt.rules[table][chain] == nil {
 		return ErrChainNotInitialized
@@ -206,8 +209,8 @@ func splitFields(data []byte) [][]byte {
 }
 
 func (ipt *IPTables) Commit() (err error) {
-	ipt.sync.RLock()
-	defer ipt.sync.RUnlock()
+	ipt.sync.Lock()
+	defer ipt.sync.Unlock()
 
 	buf := new(bytes.Buffer)
 	start := time.Now()
