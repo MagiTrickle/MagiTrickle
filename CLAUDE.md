@@ -64,7 +64,7 @@ Key sub-packages:
 |---|---|
 | `app/` | `Main` and `RuleSet` interfaces (used for testing and API layer) |
 | `api/` | HTTP server (chi, port 8080) and Unix socket; mounts `api/v1` |
-| `models/` | Data types: `Group`, `Rule`, `Subscription`, `AppConfig`; `Group`, `Rule`, `Subscription` carry YAML struct tags and custom `UnmarshalYAML` (absent `enable` defaults to `true`) |
+| `models/` | Data types: `Group`, `Rule`, `Subscription`, `AppConfig`; `Group`, `Rule`, `Subscription` carry YAML struct tags (no custom `UnmarshalYAML`: an absent `enable` key is loaded as `false`; the HTTP API, by contrast, treats an absent `enable` in a request as `true`) |
 | `config/` | YAML-serializable structs for app-level settings only (`App`, `HTTPWeb`, `DNSProxy`, etc.); groups and subscriptions are stored directly as `models.Group`/`models.Subscription` — no separate config types for them |
 | `constant/` | Default config values; platform-conditional paths and ignored interfaces via build tags (`entware`, `entware_kn`, `openwrt`) |
 | `groups/` | Builds `rulesets.Spec` from a `models.Group` for user-defined groups |
