@@ -87,6 +87,7 @@
   "syncing...": "синхронизация...",
   "Synced": "Синхронизировано",
   "Failed to sync": "Ошибка синхронизации",
+  "Subscription was changed during sync, try again": "Подписку изменили во время синхронизации, повторите",
   "Add Subscription": "Добавить подписку",
   "Confirm Subscription": "Подтвердить подписку",
   "Delete Subscription": "Удалить подписку",

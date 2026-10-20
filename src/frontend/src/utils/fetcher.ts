@@ -6,6 +6,16 @@ import { toast } from "./events";
 const viteEnv = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env;
 export const API_BASE = viteEnv?.DEV ? "http://localhost:6969/api/v1" : "/api/v1";
 
+/** Ответ сервера с кодом ошибки; message — тело ответа. */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export async function fetcher<T>(...args: any[]): Promise<T> {
   const url = args.shift();
   const options = args[0] || {};
@@ -32,11 +42,7 @@ export async function fetcher<T>(...args: any[]): Promise<T> {
     }
 
     if (!res.ok || res.status < 200 || res.status > 299) {
-      if (res.body) {
-        throw new Error(await res.text());
-      } else {
-        throw new Error(res.statusText);
-      }
+      throw new HttpError(res.status, res.body ? await res.text() : res.statusText);
     }
     return (await res.json()) as T;
   } catch (e) {
