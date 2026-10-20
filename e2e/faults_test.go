@@ -53,6 +53,9 @@ func TestStartupFailsWhenIPTablesIsBroken(t *testing.T) {
 	if out := stripANSI(p.Log.String()); !strings.Contains(out, "failed to") {
 		t.Errorf("no explanation in the output:\n%s", out)
 	}
+	if p.exitErr == nil {
+		t.Error("daemon exited with status 0 although it failed to start")
+	}
 	if running(t) {
 		t.Error("daemon keeps running with unusable iptables")
 	}
@@ -258,4 +261,46 @@ func TestUnknownLinkInConfig(t *testing.T) {
 		t.Errorf("output:\n%s", out)
 	}
 	rt.Run("rm -f " + pidFile + " " + sockFile)
+}
+
+// The startup cleanup removes everything that starts with the chain/set prefix, so a prefix that is empty or very
+// short must stop the daemon before it touches anything.
+func TestShortPrefixesRefuseToStart(t *testing.T) {
+	rt.MustRun(t, "iptables -N Mforeign; ipset create mforeign hash:ip")
+	t.Cleanup(func() { rt.Run("iptables -X Mforeign; ipset destroy mforeign") })
+
+	for name, c := range map[string]struct{ from, to, want string }{
+		"empty chain prefix":     {"chainPrefix: MT_", `chainPrefix: ""`, "chain prefix"},
+		"one letter chain":       {"chainPrefix: MT_", "chainPrefix: M", "chain prefix"},
+		"empty ipset prefix":     {"tablePrefix: mt_", `tablePrefix: ""`, "ipset prefix"},
+		"two letters ipset name": {"tablePrefix: mt_", "tablePrefix: mt", "ipset prefix"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			StopAll(t)
+			cfg := DaemonConfig{}.YAML()
+			if !strings.Contains(cfg, c.from) {
+				t.Fatalf("template has no %q", c.from)
+			}
+			rt.MustPut(t, configPath, []byte(strings.Replace(cfg, c.from, c.to, 1)), 0o644)
+			p, err := rt.Spawn("magitrickled-short-prefix", daemonBin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { p.Stop(5 * time.Second); StopAll(t); rt.Run("rm -f " + pidFile + " " + sockFile) })
+			WaitFor(t, 10*time.Second, "daemon to give up", p.Exited)
+			if p.exitErr == nil {
+				t.Error("daemon exited with status 0")
+			}
+			if out := stripANSI(p.Log.String()); !strings.Contains(out, c.want) || !strings.Contains(out, "too short") {
+				t.Errorf("no explanation in the output:\n%s", out)
+			}
+			// Nothing was cleaned up, and nothing of ours was created.
+			if !strings.Contains(iptSave(t, "filter", false), "Mforeign") {
+				t.Error("foreign chain was deleted")
+			}
+			if !ipsetExists(t, "mforeign") {
+				t.Error("foreign ipset was destroyed")
+			}
+		})
+	}
 }
