@@ -112,19 +112,38 @@ func TestHookRestoresDNSRedirectFirst(t *testing.T) {
 	}
 }
 
+// hookRun runs the hook script on the router and returns its exit status and how long it took there, so the SSH
+// round trip, which can be slow on the emulator, does not count.
+func hookRun(t *testing.T) (rc int, elapsed time.Duration) {
+	t.Helper()
+	out := rt.MustRun(t, `a=$(cut -d' ' -f1 /proc/uptime); type=iptables table=mangle `+hookFile+`; rc=$?; b=$(cut -d' ' -f1 /proc/uptime); echo "$rc $a $b"`)
+	var a, b float64
+	if _, err := fmt.Sscanf(strings.TrimSpace(out), "%d %f %f", &rc, &a, &b); err != nil {
+		t.Fatalf("unexpected hook output %q: %v", out, err)
+	}
+	return rc, time.Duration((b - a) * float64(time.Second))
+}
+
+// ndm runs the hook synchronously, so it must neither fail nor hang when the daemon is gone: with no socket at all,
+// and with a socket file left behind that nobody listens on.
 func TestHookScriptWithoutDaemonIsHarmless(t *testing.T) {
 	StopAll(t)
 	rt.Run("rm -f " + sockFile)
-	start := time.Now()
-	out, err := rt.Run("type=iptables table=mangle " + hookFile)
-	if err != nil {
-		t.Fatalf("hook failed without daemon: %v\n%s", err, out)
-	}
-	if time.Since(start) > 3*time.Second {
-		t.Errorf("hook took %s without a daemon", time.Since(start))
-	}
-	// A stale socket file that nobody listens on must not hang ndm either.
-	rt.MustRun(t, "rm -f /opt/tmp/dead.sock; (socat UNIX-LISTEN:/opt/tmp/dead.sock /dev/null &) ; sleep 1; killall socat; true")
+	t.Run("no socket", func(t *testing.T) {
+		rc, took := hookRun(t)
+		if rc != 0 || took > 2*time.Second {
+			t.Errorf("hook: status %d after %s", rc, took)
+		}
+	})
+	t.Run("stale socket file", func(t *testing.T) {
+		// socat leaves the socket file behind when killed.
+		rt.MustRun(t, "rm -f "+sockFile+"; (socat UNIX-LISTEN:"+sockFile+" /dev/null &) ; sleep 1; killall socat; test -S "+sockFile)
+		t.Cleanup(func() { rt.Run("rm -f " + sockFile) })
+		rc, took := hookRun(t)
+		if rc != 0 || took > 2*time.Second {
+			t.Errorf("hook: status %d after %s", rc, took)
+		}
+	})
 }
 
 func TestHookEndpointValidation(t *testing.T) {
