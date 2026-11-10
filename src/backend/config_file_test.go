@@ -104,14 +104,16 @@ func TestFailedLoadDoesNotChangeTheRunningConfig(t *testing.T) {
 			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			a := &App{config: constant.DefaultAppConfig}
+			a := &App{}
+			defaults := constant.DefaultAppConfig
+			a.config.Store(&defaults)
 
 			if err := a.loadConfigFile(path); err == nil {
 				t.Fatal("want an error")
 			}
 
-			if a.config.HTTPWeb.Host.Port != constant.DefaultAppConfig.HTTPWeb.Host.Port {
-				t.Errorf("port = %d, the failed load changed the running config", a.config.HTTPWeb.Host.Port)
+			if a.cfg().HTTPWeb.Host.Port != constant.DefaultAppConfig.HTTPWeb.Host.Port {
+				t.Errorf("port = %d, the failed load changed the running config", a.cfg().HTTPWeb.Host.Port)
 			}
 		})
 	}

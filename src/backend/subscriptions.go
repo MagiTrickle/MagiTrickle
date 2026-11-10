@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"magitrickle/app"
@@ -16,71 +17,11 @@ import (
 
 const subscriptionAutoUpdateTick = time.Minute
 
-func (a *App) SyncSubscriptionRuleSets() error {
-	a.subscriptionSyncMu.Lock()
-	defer a.subscriptionSyncMu.Unlock()
-
-	a.stateMu.Lock()
-	defer a.stateMu.Unlock()
-
-	return a.syncSubscriptionRuleSetsLocked()
-}
-
-func (a *App) syncSubscriptionRuleSetsLocked() error {
-	var errs []error
-
-	for _, ruleSet := range a.subscriptionRuleSets {
-		if err := ruleSet.Disable(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to disable subscription rule set %s: %w", ruleSet.IDValue().String(), err))
-		}
-	}
-	a.subscriptionRuleSets = nil
-
-	runtimeRuleSets, err := a.buildSubscriptionRuleSetsLocked()
-	if err != nil {
-		return errors.Join(append(errs, err)...)
-	}
-	a.subscriptionRuleSets = runtimeRuleSets
-
-	return errors.Join(errs...)
-}
-
-func (a *App) buildSubscriptionRuleSetsLocked() ([]*RuleSet, error) {
-	specs := subscriptions.BuildRuntimeRuleSets(a.subscriptions)
-	runtimeRuleSets := make([]*RuleSet, 0, len(specs))
-	for _, spec := range specs {
-		ruleSet, err := newRuleSet(spec, a)
-		if err != nil {
-			_ = disableRuleSets(runtimeRuleSets)
-			return nil, fmt.Errorf("failed to create subscription rule set %s: %w", spec.ID.String(), err)
-		}
-
-		runtimeRuleSets = append(runtimeRuleSets, ruleSet)
-		if !a.enabled.Load() {
-			continue
-		}
-
-		if err := ruleSet.Enable(); err != nil {
-			_ = disableRuleSets(runtimeRuleSets)
-			return nil, fmt.Errorf("failed to enable subscription rule set %s: %w", ruleSet.IDValue().String(), err)
-		}
-		if err := ruleSet.Sync(); err != nil {
-			_ = disableRuleSets(runtimeRuleSets)
-			return nil, fmt.Errorf("failed to sync subscription rule set %s: %w", ruleSet.IDValue().String(), err)
-		}
-	}
-	return runtimeRuleSets, nil
-}
-
-func disableRuleSets(ruleSets []*RuleSet) error {
-	var errs []error
-	for _, ruleSet := range ruleSets {
-		if err := ruleSet.Disable(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
+// subscriptionRetryDelay — через сколько повторить обновление подписки, если
+// новые правила не удалось применить (но не позже её обычного интервала).
+// Каждую минуту — слишком часто: список скачивается заново, а через интервал
+// — слишком долго для временного сбоя маршрутизации.
+const subscriptionRetryDelay = 5 * time.Minute
 
 func (a *App) StartSubscriptionAutoUpdate(ctx context.Context) {
 	if a == nil {
@@ -111,11 +52,12 @@ func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride strin
 	defer a.subscriptionSyncMu.Unlock()
 
 	a.stateMu.RLock()
-	sub := findSubscriptionByID(a.subscriptions, id)
-	if sub == nil {
+	idx := subscriptionIndex(a.subscriptions, id)
+	if idx < 0 {
 		a.stateMu.RUnlock()
 		return app.SubscriptionSyncResult{}, false, app.ErrSubscriptionNotFound
 	}
+	sub := a.subscriptions[idx]
 	fetchURL := urlOverride
 	if fetchURL == "" {
 		fetchURL = sub.URL
@@ -138,39 +80,34 @@ func (a *App) SyncSubscriptionByID(id intID.ID, now time.Time, urlOverride strin
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
 
-	current := findSubscriptionByID(a.subscriptions, id)
-	if current == nil {
+	idx = subscriptionIndex(a.subscriptions, id)
+	if idx < 0 {
 		return app.SubscriptionSyncResult{}, false, app.ErrSubscriptionNotFound
 	}
-
-	urlChanged := current.URL != fetchURL
-	prevURL := current.URL
-	prevLastCheck := current.LastCheck
-	prevLastUpdate := current.LastUpdate
-	prevRules := current.Rules
-
-	current.URL = fetchURL
-	current.LastCheck = nowSeconds
-
-	if rulesChanged {
-		current.Rules = refreshed
-		current.LastUpdate = nowSeconds
-		if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-			current.URL = prevURL
-			current.LastCheck = prevLastCheck
-			current.LastUpdate = prevLastUpdate
-			current.Rules = prevRules
-			if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
-				return app.SubscriptionSyncResult{}, true, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))
-			}
-			return app.SubscriptionSyncResult{}, true, err
-		}
+	current := a.subscriptions[idx]
+	if !sameFetchInput(current, sub) {
+		return app.SubscriptionSyncResult{}, false, app.ErrSubscriptionChanged
 	}
+	urlChanged := current.URL != fetchURL
 
+	updated := current.Clone()
+	updated.URL = fetchURL
+	updated.LastCheck = nowSeconds
+	if rulesChanged {
+		updated.Rules = refreshed
+		updated.LastUpdate = nowSeconds
+	}
+	next := slices.Clone(a.subscriptions)
+	next[idx] = updated
+
+	if err := a.publishSubscriptionsLocked(next, rulesChanged); err != nil {
+		return app.SubscriptionSyncResult{}, true, err
+	}
+	delete(a.subscriptionRetryAt, id)
 	return app.SubscriptionSyncResult{
-		URL:        current.URL,
-		LastUpdate: current.LastUpdate,
-		Rules:      current.Rules,
+		URL:        updated.URL,
+		LastUpdate: updated.LastUpdate,
+		Rules:      updated.Rules,
 	}, urlChanged || rulesChanged, nil
 }
 
@@ -178,23 +115,16 @@ func (a *App) SyncDueSubscriptions(now time.Time) (bool, error) {
 	a.subscriptionSyncMu.Lock()
 	defer a.subscriptionSyncMu.Unlock()
 
-	type dueRef struct {
-		id            intID.ID
-		url           string
-		existingRules []*models.SubscriptionRule
-	}
-
 	a.stateMu.RLock()
-	var due []dueRef
+	var due []*models.Subscription
 	for _, sub := range a.subscriptions {
 		if !subscriptions.IsDue(sub, now) {
 			continue
 		}
-		due = append(due, dueRef{
-			id:            sub.ID,
-			url:           sub.URL,
-			existingRules: sub.Rules,
-		})
+		if retryAt, ok := a.subscriptionRetryAt[sub.ID]; ok && now.Before(retryAt) {
+			continue
+		}
+		due = append(due, sub)
 	}
 	a.stateMu.RUnlock()
 
@@ -202,21 +132,17 @@ func (a *App) SyncDueSubscriptions(now time.Time) (bool, error) {
 		return false, nil
 	}
 
-	type planResult struct {
-		id        intID.ID
-		refreshed []*models.SubscriptionRule
-		changed   bool
-	}
-	plans := make([]planResult, 0, len(due))
-	for _, item := range due {
-		list, err := subscriptions.FetchList(item.url)
+	plans := make([]subscriptionPlan, 0, len(due))
+	for _, sub := range due {
+		list, err := subscriptions.FetchList(sub.URL)
 		if err != nil {
-			log.Error().Err(err).Str("subscription", item.id.String()).Msg("failed to fetch subscription")
+			log.Error().Err(err).Str("subscription", sub.ID.String()).Msg("failed to fetch subscription")
 			continue
 		}
-		refreshed, changed := subscriptions.PlanRefresh(item.existingRules, list)
-		plans = append(plans, planResult{
-			id:        item.id,
+		refreshed, changed := subscriptions.PlanRefresh(sub.Rules, list)
+		plans = append(plans, subscriptionPlan{
+			fetched:   sub,
+			id:        sub.ID,
 			refreshed: refreshed,
 			changed:   changed,
 		})
@@ -228,68 +154,93 @@ func (a *App) SyncDueSubscriptions(now time.Time) (bool, error) {
 
 	nowSeconds := uint32(now.Unix())
 
-	type rollbackEntry struct {
-		sub        *models.Subscription
-		rules      []*models.SubscriptionRule
-		lastCheck  uint32
-		lastUpdate uint32
-	}
-
 	a.stateMu.Lock()
-
-	var rollback []rollbackEntry
+	var errs []error
 	anyChanged := false
-
 	for _, p := range plans {
-		sub := findSubscriptionByID(a.subscriptions, p.id)
-		if sub == nil {
+		idx := subscriptionIndex(a.subscriptions, p.id)
+		if idx < 0 {
+			delete(a.subscriptionRetryAt, p.id)
 			continue
 		}
-		rollback = append(rollback, rollbackEntry{
-			sub:        sub,
-			rules:      sub.Rules,
-			lastCheck:  sub.LastCheck,
-			lastUpdate: sub.LastUpdate,
-		})
-		sub.LastCheck = nowSeconds
+		if !sameFetchInput(a.subscriptions[idx], p.fetched) {
+			// Пока скачивали, подписку изменили; обновим её на следующем тике.
+			log.Debug().Str("subscription", p.id.String()).Msg("subscription changed while it was being fetched, skipping")
+			continue
+		}
+		updated := a.subscriptions[idx].Clone()
+		updated.LastCheck = nowSeconds
 		if p.changed {
-			sub.Rules = p.refreshed
-			sub.LastUpdate = nowSeconds
-			anyChanged = true
+			updated.Rules = p.refreshed
+			updated.LastUpdate = nowSeconds
 		}
-	}
+		next := slices.Clone(a.subscriptions)
+		next[idx] = updated
 
-	if !anyChanged {
-		a.stateMu.Unlock()
-		return false, nil
-	}
-
-	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-		for _, r := range rollback {
-			r.sub.Rules = r.rules
-			r.sub.LastCheck = r.lastCheck
-			r.sub.LastUpdate = r.lastUpdate
+		// Подписки независимы: применяем по одной, чтобы сбой одной не
+		// откатывал уже применённые остальные.
+		if err := a.publishSubscriptionsLocked(next, p.changed); err != nil {
+			errs = append(errs, fmt.Errorf("subscription %s: %w", p.id, err))
+			// Правила откатились, и LastCheck вместе с ними: проверка не
+			// удалась. Повторяем не каждую минуту, но и не через весь интервал.
+			a.scheduleRetry(p.id, updated.Interval, now)
+			continue
 		}
-		rollbackErr := a.syncSubscriptionRuleSetsLocked()
-		a.stateMu.Unlock()
-		if rollbackErr != nil {
-			return true, errors.Join(err, fmt.Errorf("failed to rollback subscription sync: %w", rollbackErr))
-		}
-		return true, err
+		delete(a.subscriptionRetryAt, p.id)
+		anyChanged = anyChanged || p.changed
 	}
 	a.stateMu.Unlock()
 
-	if err := a.SaveConfig(); err != nil {
-		log.Error().Err(err).Msg("failed to save config file")
-	}
-	return true, nil
-}
-
-func findSubscriptionByID(subs []*models.Subscription, id intID.ID) *models.Subscription {
-	for _, sub := range subs {
-		if sub != nil && sub.ID == id {
-			return sub
+	if anyChanged {
+		if err := a.SaveConfig(); err != nil {
+			log.Error().Err(err).Msg("failed to save config file")
 		}
 	}
+	return anyChanged, errors.Join(errs...)
+}
+
+// scheduleRetry откладывает следующее обновление подписки на
+// subscriptionRetryDelay, но не дальше её обычного интервала. Вызывается
+// под stateMu.
+func (a *App) scheduleRetry(id intID.ID, interval uint32, now time.Time) {
+	if a.subscriptionRetryAt == nil {
+		a.subscriptionRetryAt = make(map[intID.ID]time.Time)
+	}
+	a.subscriptionRetryAt[id] = now.Add(min(subscriptionRetryDelay, time.Duration(interval)*time.Second))
+}
+
+// publishSubscriptionsLocked публикует обновлённые подписки. Если правила не
+// менялись (обновились только URL и время проверки), маршрутизация не
+// затронута и применять её заново незачем.
+func (a *App) publishSubscriptionsLocked(subscriptions []*models.Subscription, rulesChanged bool) error {
+	if rulesChanged {
+		return a.setSubscriptionsLocked(subscriptions)
+	}
+	a.subscriptions = subscriptions
 	return nil
+}
+
+// subscriptionPlan — результат скачивания подписки: новые правила и
+// изменились ли они.
+type subscriptionPlan struct {
+	// fetched — версия подписки, по которой скачивали.
+	fetched   *models.Subscription
+	id        intID.ID
+	refreshed []*models.SubscriptionRule
+	changed   bool
+}
+
+// sameFetchInput сообщает, что результат скачивания подписки fetched ещё
+// годится для current: у них тот же URL и те же правила, из которых
+// строилось обновление. Остальные поля (имя, интерфейс, включённость) на
+// него не влияют и берутся из current. Сравниваются сами объекты правил:
+// опубликованные правила неизменяемы, а API переиспользует неизменённые,
+// так что сохранение списка подписок из UI не сбрасывает идущие
+// скачивания, пока правила и URL подписки не менялись.
+func sameFetchInput(current, fetched *models.Subscription) bool {
+	return current.URL == fetched.URL && slices.Equal(current.Rules, fetched.Rules)
+}
+
+func subscriptionIndex(subs []*models.Subscription, id intID.ID) int {
+	return slices.IndexFunc(subs, func(sub *models.Subscription) bool { return sub.ID == id })
 }

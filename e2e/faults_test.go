@@ -88,14 +88,14 @@ func TestIPTablesFailureAtRuntimeIsReportedAndRecoverable(t *testing.T) {
 	// Once iptables works again the daemon is usable without a restart.
 	failIPTables(t, false)
 	g := api.CreateGroup(t, Group{Name: "recovered", Interface: "eth3", Enable: ptr(true)})
-	WaitFor(t, 5*time.Second, "chains after recovery", func() bool { return jumps(snapshot(t).mangle4, "PREROUTING", "MT_"+g.ID) == 1 })
+	WaitFor(t, 5*time.Second, "chains after recovery", func() bool { return jumps(snapshot(t).mangle4, "MT_ROUTING", routeChain(g.ID)) == 1 })
 }
 
 func TestDisableFailsGracefullyWhenIPTablesIsBroken(t *testing.T) {
 	installFakeIPTables(t)
 	d := startWithFakeIPTables(t, DaemonConfig{ShowAll: true})
 	g := api.CreateGroup(t, Group{Name: "g", Interface: "eth3", Enable: ptr(true)})
-	WaitFor(t, 5*time.Second, "chains", func() bool { return jumps(snapshot(t).mangle4, "PREROUTING", "MT_"+g.ID) == 1 })
+	WaitFor(t, 5*time.Second, "chains", func() bool { return jumps(snapshot(t).mangle4, "MT_ROUTING", routeChain(g.ID)) == 1 })
 
 	failIPTables(t, true)
 	for name, call := range map[string]func() int{
@@ -129,15 +129,31 @@ func TestConfigWriteFailures(t *testing.T) {
 		if c := api.Status(t, "POST", "/system/config/save", nil); c != 500 {
 			t.Errorf("save into a directory = %d, want 500", c)
 		}
-		// ?save=true on a mutating call: the change is applied and the error is only logged.
-		var g Group
-		api.OK(t, "POST", "/groups?save=true", Group{Name: "unsaved", Interface: "eth3"}, &g)
-		api.OK(t, "PUT", "/groups/"+g.ID+"?save=true", g, nil)
-		api.OK(t, "POST", "/groups/"+g.ID+"/rules?save=true", Rule{Name: "r", Type: "domain", Rule: "x.test", Enable: true}, nil)
-		api.OK(t, "DELETE", "/groups/"+g.ID+"?save=true", nil, nil)
-		d.WaitLog(`failed to save config file`, 5*time.Second)
-		if d.CountLog(`failed to save config file`) < 3 {
-			t.Errorf("save failures logged %d times", d.CountLog(`failed to save config file`))
+		// ?save=true on a mutating call: the change is applied, and the failed save is reported to the client.
+		const unsaved = "changes are applied but not saved"
+		saveFails := func(method, path string, payload any) {
+			t.Helper()
+			code, body, err := api.Do(method, path, payload)
+			if err != nil || code != 500 || !strings.Contains(string(body), unsaved) {
+				t.Errorf("%s %s = %d %s (%v), want 500 %q", method, path, code, body, err, unsaved)
+			}
+		}
+		saveFails("POST", "/groups?save=true", Group{Name: "unsaved", Interface: "eth3"})
+		groups := api.Groups(t, false)
+		if len(groups) != 1 || groups[0].Name != "unsaved" {
+			t.Fatalf("the group was not applied: %+v", groups)
+		}
+		g := groups[0]
+		saveFails("PUT", "/groups/"+g.ID+"?save=true", g)
+		saveFails("POST", "/groups/"+g.ID+"/rules?save=true", Rule{Name: "r", Type: "domain", Rule: "x.test", Enable: true})
+		if c := api.Status(t, "DELETE", "/groups/"+g.ID+"?save=true", nil); c != 500 {
+			t.Errorf("DELETE with a failing save = %d, want 500", c)
+		}
+		if groups := api.Groups(t, false); len(groups) != 0 {
+			t.Errorf("the group was not deleted: %+v", groups)
+		}
+		if d.Exited() {
+			t.Fatal("daemon died")
 		}
 	})
 
@@ -186,7 +202,7 @@ func TestConfigOptionsTakeEffect(t *testing.T) {
 		Rules: &[]Rule{{Name: "r", Type: "domain", Rule: "opts.test", Enable: true}}})
 	SetZone(t, ZoneRecord{Name: "opts.test", Type: "A", Value: "203.0.113.98"})
 	WaitFor(t, 5*time.Second, "custom chain prefix", func() bool {
-		return strings.Contains(rt.MustRun(t, "iptables-save -t mangle"), "-A PREROUTING -j XT_"+g.ID)
+		return strings.Contains(rt.MustRun(t, "iptables-save -t mangle"), "-A XT_ROUTING -j XT_"+g.ID)
 	})
 	out := rt.MustRun(t, "iptables-save -t nat")
 	if !strings.Contains(out, "XT_DNSOR") || !strings.Contains(out, "--to-destination :4553") {
@@ -199,7 +215,7 @@ func TestConfigOptionsTakeEffect(t *testing.T) {
 	if res := strings.TrimSpace(rt.MustRun(t, "dig +short +time=3 +tries=1 -p 4553 @127.0.0.1 opts.test A")); res != "203.0.113.98" {
 		t.Errorf("dig on the configured port = %q", res)
 	}
-	waitMembers(t, "xs_"+g.ID+"_4", "203.0.113.98")
+	waitMembers(t, "xs_"+g.ID+"-0_4", "203.0.113.98")
 	if rules := rt.MustRun(t, "ip rule | grep fwmark"); !strings.Contains(rules, "fwmark 0x1388 lookup 5000") {
 		t.Errorf("startMarkTableIndex ignored: %q", rules)
 	}
@@ -269,11 +285,12 @@ func TestShortPrefixesRefuseToStart(t *testing.T) {
 	rt.MustRun(t, "iptables -N Mforeign; ipset create mforeign hash:ip")
 	t.Cleanup(func() { rt.Run("iptables -X Mforeign; ipset destroy mforeign") })
 
-	for name, c := range map[string]struct{ from, to, want string }{
-		"empty chain prefix":     {"chainPrefix: MT_", `chainPrefix: ""`, "chain prefix"},
-		"one letter chain":       {"chainPrefix: MT_", "chainPrefix: M", "chain prefix"},
-		"empty ipset prefix":     {"tablePrefix: mt_", `tablePrefix: ""`, "ipset prefix"},
-		"two letters ipset name": {"tablePrefix: mt_", "tablePrefix: mt", "ipset prefix"},
+	for name, c := range map[string]struct{ from, to, want, reason string }{
+		// An empty prefix is already refused when the config is validated, a short one when the helper is created.
+		"empty chain prefix":     {"chainPrefix: MT_", `chainPrefix: ""`, "chainPrefix", "must not be empty"},
+		"one letter chain":       {"chainPrefix: MT_", "chainPrefix: M", "chain prefix", "too short"},
+		"empty ipset prefix":     {"tablePrefix: mt_", `tablePrefix: ""`, "tablePrefix", "must not be empty"},
+		"two letters ipset name": {"tablePrefix: mt_", "tablePrefix: mt", "ipset prefix", "too short"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			StopAll(t)
@@ -291,7 +308,7 @@ func TestShortPrefixesRefuseToStart(t *testing.T) {
 			if p.exitErr == nil {
 				t.Error("daemon exited with status 0")
 			}
-			if out := stripANSI(p.Log.String()); !strings.Contains(out, c.want) || !strings.Contains(out, "too short") {
+			if out := stripANSI(p.Log.String()); !strings.Contains(out, c.want) || !strings.Contains(out, c.reason) {
 				t.Errorf("no explanation in the output:\n%s", out)
 			}
 			// Nothing was cleaned up, and nothing of ours was created.

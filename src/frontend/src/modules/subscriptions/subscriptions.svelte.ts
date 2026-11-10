@@ -4,7 +4,7 @@ import { ChangeTracker } from "../../utils/change-tracker.svelte";
 import { type Subscription, type SubscriptionRule } from "../../types";
 import { randomId } from "../../utils/defaults";
 import { overlay, toast } from "../../utils/events";
-import { fetcher } from "../../utils/fetcher";
+import { fetcher, HttpError } from "../../utils/fetcher";
 
 export const SUBSCRIPTIONS_STORE_CONTEXT = Symbol("subscriptions-store");
 
@@ -453,7 +453,12 @@ export class SubscriptionsStore {
       toast.success(t("Synced"));
     } catch (error) {
       console.error(error);
-      toast.error(t("Failed to sync"));
+      if (error instanceof HttpError && error.status === 409) {
+        // Подписку изменили, пока сервер её скачивал; результат отброшен.
+        toast.error(t("Subscription was changed during sync, try again"));
+      } else {
+        toast.error(t("Failed to sync"));
+      }
     } finally {
       overlay.hide();
     }

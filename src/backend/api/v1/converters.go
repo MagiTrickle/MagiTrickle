@@ -13,20 +13,19 @@ import (
 
 var colorRegExp = regexp2.MustCompile(`^#[0-9a-f]{6}$`, regexp2.IgnoreCase)
 
+// GroupFromReq строит группу из запроса. existing — текущая версия группы,
+// если она обновляется; она не изменяется, результат — новая группа.
+// ID группы и правил берутся из запроса, если клиент их передал, иначе
+// генерируются; уникальность проверяет App при сохранении.
 func GroupFromReq(req types.GroupReq, existing *models.Group) (*models.Group, error) {
 	var group *models.Group
 	if existing == nil {
-		group = &models.Group{ID: intID.RandomID()}
+		group = &models.Group{ID: idFromReq(req.ID)}
 	} else {
-		group = existing
-	}
-	if req.ID != nil {
-		if existing != nil && group.ID != *req.ID {
+		if req.ID != nil && !req.ID.IsZero() && *req.ID != existing.ID {
 			return nil, fmt.Errorf("group ID mismatch")
 		}
-		if existing == nil {
-			group.ID = *req.ID
-		}
+		group = existing.Clone()
 	}
 	group.Name = req.Name
 	group.Color = "#ffffff"
@@ -40,39 +39,52 @@ func GroupFromReq(req types.GroupReq, existing *models.Group) (*models.Group, er
 	}
 
 	if req.Rules != nil {
-		newRules := make([]*models.Rule, len(*req.Rules))
-		for i, ruleReq := range *req.Rules {
-			r, err := RuleFromReq(ruleReq, group.Rules)
-			if err != nil {
-				return nil, err
-			}
-			newRules[i] = r
-		}
-		group.Rules = newRules
+		group.Rules = RulesFromReq(*req.Rules, group.Rules)
 	}
 	return group, nil
 }
 
-func RuleFromReq(ruleReq types.RuleReq, existingRules []*models.Rule) (*models.Rule, error) {
-	var rule *models.Rule
-	if ruleReq.ID != nil {
-		for _, r := range existingRules {
-			if r.ID == *ruleReq.ID {
-				rule = r
-				break
-			}
-		}
+// RulesFromReq строит правила из запроса. Правило, которое не изменилось
+// (тот же ID и те же поля, что в existing), берётся прежним объектом: по
+// указателям на правила кэш наборов правил узнаёт, что их не нужно
+// разбирать заново.
+func RulesFromReq(req []types.RuleReq, existing []*models.Rule) []*models.Rule {
+	byID := make(map[intID.ID]*models.Rule, len(existing))
+	for _, rule := range existing {
+		byID[rule.ID] = rule
 	}
-	if rule == nil {
-		rule = &models.Rule{
-			ID: intID.RandomID(),
+	rules := make([]*models.Rule, len(req))
+	for i, ruleReq := range req {
+		rule := RuleFromReq(ruleReq)
+		if old := byID[rule.ID]; old != nil && sameRule(old, rule) {
+			rule = old
 		}
+		rules[i] = rule
 	}
-	rule.Name = ruleReq.Name
-	rule.Type = ruleReq.Type
-	rule.Rule = ruleReq.Rule
-	rule.Enable = ruleReq.Enable
-	return rule, nil
+	return rules
+}
+
+func sameRule(a, b *models.Rule) bool {
+	return a.ID == b.ID && a.Name == b.Name && a.Type == b.Type && a.Rule == b.Rule && a.Enable == b.Enable
+}
+
+func RuleFromReq(req types.RuleReq) *models.Rule {
+	return &models.Rule{
+		ID:     idFromReq(req.ID),
+		Name:   req.Name,
+		Type:   req.Type,
+		Rule:   req.Rule,
+		Enable: req.Enable,
+	}
+}
+
+// idFromReq возвращает ID из запроса или новый, если ID не передан. Нулевой
+// ID считается непереданным.
+func idFromReq(id *intID.ID) intID.ID {
+	if id != nil && !id.IsZero() {
+		return *id
+	}
+	return intID.RandomID()
 }
 
 func RespFromGroups(groups []*models.Group, withRules bool) types.GroupsRes {

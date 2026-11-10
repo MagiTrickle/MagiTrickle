@@ -40,8 +40,10 @@ func TestDNSResponseHookDoesNotProcessDroppedAAAA(t *testing.T) {
 }
 
 func TestDNSResponseHookProcessesAAAAWhenNotDropped(t *testing.T) {
-	app := &App{recordsCache: recordsCache.New(), config: models.AppConfig{}}
-	app.config.DNSProxy.DisableDropAAAA = true
+	app := &App{recordsCache: recordsCache.New()}
+	cfg := models.AppConfig{}
+	cfg.DNSProxy.DisableDropAAAA = true
+	app.config.Store(&cfg)
 
 	resp, err := app.dnsResponseHook(nil, dns.Msg{}, aaaaResponse(), "udp")
 	if err != nil || resp != nil {

@@ -3,14 +3,17 @@ package magitrickle
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"magitrickle/app"
 	"magitrickle/constant"
-	groupruntime "magitrickle/groups"
 	"magitrickle/internal/interfaces"
 	"magitrickle/models"
+	"magitrickle/routing"
+	"magitrickle/rulesets"
 	"magitrickle/utils/dnsMITMProxy"
 	"magitrickle/utils/intID"
 	"magitrickle/utils/netfilterTools"
@@ -21,36 +24,57 @@ import (
 
 var (
 	ErrAlreadyRunning           = errors.New("already running")
-	ErrGroupIDConflict          = errors.New("group id conflict")
-	ErrRuleIDConflict           = errors.New("rule id conflict")
 	ErrConfigUnsupportedVersion = errors.New("config unsupported version")
+	ErrConfigNotLoaded          = errors.New("config file was not loaded")
 )
 
 // App – основная структура ядра приложения
 type App struct {
 	enabled atomic.Bool
 
-	config  models.AppConfig
-	stateMu sync.RWMutex
+	// config — текущие настройки; снимок не меняется, LoadConfig подменяет его целиком.
+	config atomic.Pointer[models.AppConfig]
+	// configLoaded — конфиг прочитан успешно, и его можно перезаписывать.
+	configLoaded atomic.Bool
+	// configErr — почему конфиг не загрузился, пока configLoaded не выставлен.
+	configErr atomic.Pointer[error]
 
+	// stateMu защищает groups и subscriptions. Любое их изменение
+	// завершается commitLocked, который применяет новое состояние к
+	// маршрутизации. Опубликованные группы и подписки не изменяются на
+	// месте — только заменяются новыми объектами, поэтому снимки из Groups
+	// и Subscriptions можно читать без блокировки.
+	stateMu sync.RWMutex
+	// subscriptionSyncMu не даёт обновлениям подписок идти параллельно. На
+	// время скачивания держится только он, а не stateMu, поэтому остальные
+	// изменения медленного источника не ждут.
 	subscriptionSyncMu sync.Mutex
 	configSaveMu       sync.Mutex // serializes SaveConfig
+	// subscriptionRetryAt — когда повторить обновление подписки, новые
+	// правила которой не удалось применить; защищён stateMu.
+	subscriptionRetryAt map[intID.ID]time.Time
+	groups              []*models.Group
+	subscriptions       []*models.Subscription
 
-	dnsMITM              *dnsMITMProxy.DNSMITMProxy
-	nfHelper             *netfilterTools.Helper
-	recordsCache         *recordsCache.Records
-	userRuleSets         []*RuleSet
-	subscriptionRuleSets []*RuleSet
-	dnsOverrider         *netfilterTools.PortRemap
-	subscriptions        []*models.Subscription
+	// ruleSets собирает наборы правил из groups и subscriptions; защищён stateMu.
+	ruleSets rulesets.Builder
+
+	// routing существует, пока приложение запущено.
+	routing atomic.Pointer[routing.Table]
+
+	dnsMITM      *dnsMITMProxy.DNSMITMProxy
+	nfHelper     *netfilterTools.Helper
+	router       *netfilterTools.Router
+	recordsCache *recordsCache.Records
+	dnsOverrider *netfilterTools.PortRemap
 }
 
 // New создаёт новый экземпляр App. Если конфиг существует, но не читается, не разбирается или имеет неподдерживаемую
 // версию, возвращается ошибка: запуск с настройками по умолчанию затёр бы пользовательский конфиг при первом сохранении.
 func New() (*App, error) {
-	a := &App{
-		config: constant.DefaultAppConfig,
-	}
+	a := &App{}
+	defaults := constant.DefaultAppConfig
+	a.config.Store(&defaults)
 	if err := a.LoadConfig(); err != nil {
 		return nil, fmt.Errorf("failed to load config file: %w", err)
 	}
@@ -59,196 +83,284 @@ func New() (*App, error) {
 
 // Config возвращает конфигурацию
 func (a *App) Config() models.AppConfig {
-	return a.config
+	return *a.cfg()
 }
 
-// UserGroups returns only user-defined groups.
-func (a *App) UserGroups() []app.RuleSet {
+// cfg возвращает текущие настройки. Снимок только для чтения.
+func (a *App) cfg() *models.AppConfig {
+	if c := a.config.Load(); c != nil {
+		return c
+	}
+	defaults := constant.DefaultAppConfig
+	return &defaults
+}
+
+// Groups возвращает пользовательские группы в порядке их применения.
+func (a *App) Groups() []*models.Group {
 	a.stateMu.RLock()
 	defer a.stateMu.RUnlock()
-	list := make([]app.RuleSet, len(a.userRuleSets))
-	for i, g := range a.userRuleSets {
-		list[i] = g
-	}
-	return list
+	return slices.Clone(a.groups)
 }
 
-// ClearGroups отключает все группы и очищает список
-func (a *App) ClearGroups() {
+// Group возвращает группу по ID или nil.
+func (a *App) Group(id intID.ID) *models.Group {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	if idx := groupIndex(a.groups, id); idx >= 0 {
+		return a.groups[idx]
+	}
+	return nil
+}
+
+// ReplaceGroups заменяет весь список групп. Группы переходят во владение App.
+func (a *App) ReplaceGroups(groups []*models.Group) error {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-	for _, g := range a.userRuleSets {
-		_ = g.Disable()
-	}
-	a.userRuleSets = nil
+	return a.setGroupsLocked(slices.Clone(groups))
 }
 
-// AddGroup добавляет новую группу
-func (a *App) AddGroup(groupModel *models.Group) error {
+// AddGroup добавляет группу в конец списка.
+func (a *App) AddGroup(group *models.Group) error {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-	return a.addGroupLocked(groupModel)
-}
 
-func (a *App) addGroupLocked(groupModel *models.Group) error {
-	for _, group := range a.userRuleSets {
-		if groupModel.ID == group.IDValue() {
-			return ErrGroupIDConflict
-		}
-	}
-	// Проверка уникальности rule.ID внутри группы.
-	dup := make(map[[4]byte]struct{})
-	for _, rule := range groupModel.Rules {
-		if _, exists := dup[rule.ID]; exists {
-			return ErrRuleIDConflict
-		}
-		dup[rule.ID] = struct{}{}
-	}
-
-	grp, err := NewRuleSet(groupruntime.BuildRuntimeRuleSet(groupModel), a)
-	if err != nil {
-		return fmt.Errorf("failed to create group: %w", err)
-	}
-	a.userRuleSets = append(a.userRuleSets, grp)
-	removeAdded := func() {
-		a.userRuleSets = a.userRuleSets[:len(a.userRuleSets)-1]
+	if err := a.setGroupsLocked(append(slices.Clone(a.groups), group)); err != nil {
+		return err
 	}
 
 	log.Info().
-		Str("id", grp.IDValue().String()).
-		Str("name", grp.DisplayName()).
+		Str("id", group.ID.String()).
+		Str("name", group.Name).
 		Msg("added group")
-
-	// если приложение уже запущено – включаем группу и выполняем синхронизацию
-	if a.enabled.Load() {
-		if err = grp.Enable(); err != nil {
-			removeAdded()
-			return fmt.Errorf("failed to enable group: %w", err)
-		}
-		if err = grp.Sync(); err != nil {
-			_ = grp.Disable()
-			removeAdded()
-			return fmt.Errorf("failed to sync group: %w", err)
-		}
-	}
 	return nil
 }
 
-// RemoveGroupByIndex удаляет группу по индексу
-func (a *App) RemoveGroupByIndex(idx int) {
+// UpdateGroup заменяет группу id на то, что вернёт update, сохраняя её место
+// в списке. update вызывается под блокировкой с текущей версией группы, так
+// что параллельные изменения одной группы не теряются. current менять
+// нельзя — нужно вернуть новую группу (например, current.Clone()) с тем же ID.
+// Методы App из update вызывать нельзя: блокировка уже взята.
+func (a *App) UpdateGroup(id intID.ID, update func(current *models.Group) (*models.Group, error)) (*models.Group, error) {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-	a.userRuleSets = append(a.userRuleSets[:idx], a.userRuleSets[idx+1:]...)
-}
 
-// RemoveGroupByID removes a group by ID.
-func (a *App) RemoveGroupByID(id intID.ID) bool {
-	a.stateMu.Lock()
-	defer a.stateMu.Unlock()
-	for idx, group := range a.userRuleSets {
-		if group.IDValue() == id {
-			a.userRuleSets = append(a.userRuleSets[:idx], a.userRuleSets[idx+1:]...)
-			return true
-		}
+	idx := groupIndex(a.groups, id)
+	if idx < 0 {
+		return nil, app.ErrGroupNotFound
 	}
-	return false
+	group, err := update(a.groups[idx])
+	if err != nil {
+		return nil, err
+	}
+	if group == nil {
+		return nil, fmt.Errorf("update of group %s returned no group", id)
+	}
+	if group.ID != id {
+		return nil, fmt.Errorf("group ID cannot be changed")
+	}
+
+	next := slices.Clone(a.groups)
+	next[idx] = group
+	if err := a.setGroupsLocked(next); err != nil {
+		return nil, err
+	}
+	return group, nil
 }
 
-// WithSubscriptions invokes fn while holding the state read lock so the slice
-// passed in is a stable snapshot of the live subscriptions. Callers must treat
-// the slice and its elements as read-only and must not retain references past
-// the callback.
-func (a *App) WithSubscriptions(fn func([]*models.Subscription)) {
+// RemoveGroup удаляет группу по ID.
+func (a *App) RemoveGroup(id intID.ID) (bool, error) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	idx := groupIndex(a.groups, id)
+	if idx < 0 {
+		return false, nil
+	}
+	return true, a.setGroupsLocked(slices.Delete(slices.Clone(a.groups), idx, idx+1))
+}
+
+func (a *App) setGroupsLocked(groups []*models.Group) error {
+	if err := validateGroups(groups, a.subscriptions); err != nil {
+		return err
+	}
+	previous := a.groups
+	a.groups = groups
+	return a.commitLocked(func() { a.groups = previous })
+}
+
+// Subscriptions возвращает подписки в порядке их применения.
+func (a *App) Subscriptions() []*models.Subscription {
 	a.stateMu.RLock()
 	defer a.stateMu.RUnlock()
-	fn(a.subscriptions)
+	return slices.Clone(a.subscriptions)
 }
 
-// ReplaceSubscriptions replaces the subscriptions list and rebuilds subscription rule sets.
+// ReplaceSubscriptions заменяет весь список подписок. Подписки переходят во владение App.
 func (a *App) ReplaceSubscriptions(subscriptions []*models.Subscription) error {
-	a.subscriptionSyncMu.Lock()
-	defer a.subscriptionSyncMu.Unlock()
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	if err := a.setSubscriptionsLocked(slices.Clone(subscriptions)); err != nil {
+		return err
+	}
+	// Подписки заменены целиком — отложенные повторы относились к прежним.
+	clear(a.subscriptionRetryAt)
+	return nil
+}
 
+// AddSubscription добавляет подписку, если её ID ещё не занят.
+func (a *App) AddSubscription(subscription *models.Subscription) error {
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
 
+	if err := a.setSubscriptionsLocked(append(slices.Clone(a.subscriptions), subscription)); err != nil {
+		return err
+	}
+	delete(a.subscriptionRetryAt, subscription.ID)
+	return nil
+}
+
+// RemoveSubscriptionByID удаляет подписку по ID.
+func (a *App) RemoveSubscriptionByID(id intID.ID) (bool, error) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+
+	idx := subscriptionIndex(a.subscriptions, id)
+	if idx < 0 {
+		return false, nil
+	}
+	if err := a.setSubscriptionsLocked(slices.Delete(slices.Clone(a.subscriptions), idx, idx+1)); err != nil {
+		return true, err
+	}
+	delete(a.subscriptionRetryAt, id)
+	return true, nil
+}
+
+func (a *App) setSubscriptionsLocked(subscriptions []*models.Subscription) error {
+	if err := validateSubscriptions(subscriptions, a.groups); err != nil {
+		return err
+	}
 	previous := a.subscriptions
 	a.subscriptions = subscriptions
-	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-		a.subscriptions = previous
-		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
-		}
-		return err
-	}
-	return nil
+	return a.commitLocked(func() { a.subscriptions = previous })
 }
 
-// AddSubscription adds a new subscription if ID is unique and rebuilds subscription rule sets.
-func (a *App) AddSubscription(subscription *models.Subscription) error {
-	a.subscriptionSyncMu.Lock()
-	defer a.subscriptionSyncMu.Unlock()
+// commitLocked применяет текущие группы и подписки к маршрутизации. Если
+// применить не удалось, restore возвращает прежнее состояние, и оно
+// применяется заново, чтобы маршрутизация не осталась в промежуточном виде.
+// Пока приложение не запущено, ничего не делает.
+func (a *App) commitLocked(restore func()) error {
+	table := a.routing.Load()
+	if table == nil {
+		return nil
+	}
+
+	err := table.Apply(a.ruleSets.Build(a.subscriptions, a.groups))
+	if err == nil || restore == nil {
+		return err
+	}
+
+	restore()
+	if restoreErr := table.Apply(a.ruleSets.Build(a.subscriptions, a.groups)); restoreErr != nil {
+		return errors.Join(err, fmt.Errorf("failed to restore previous state: %w", restoreErr))
+	}
+	return err
+}
+
+// routingRetryInterval — как часто повторять наборы правил, которые не
+// удалось применить, если их не повторило изменение групп или подписок.
+const routingRetryInterval = time.Minute
+
+// retryRouting повторяет наборы правил, которые не применились в прошлый раз.
+func (a *App) retryRouting() {
+	table := a.routing.Load()
+	if table == nil || !table.Pending() {
+		return
+	}
 
 	a.stateMu.Lock()
 	defer a.stateMu.Unlock()
-
-	for _, sub := range a.subscriptions {
-		if sub.ID == subscription.ID {
-			return app.ErrSubscriptionConflict
-		}
+	// Наборы не менялись, поэтому их ошибки Apply только логирует; успех
+	// определяем по Pending.
+	if err := a.commitLocked(nil); err != nil {
+		log.Warn().Err(err).Msg("failed to retry routing")
+		return
 	}
-	a.subscriptions = append(a.subscriptions, subscription)
-	if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-		a.subscriptions = a.subscriptions[:len(a.subscriptions)-1]
-		if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
-		}
-		return err
+	if !table.Pending() {
+		log.Info().Msg("previously failed rule sets are applied")
 	}
-	return nil
-}
-
-// RemoveSubscriptionByID removes a subscription by ID.
-func (a *App) RemoveSubscriptionByID(id intID.ID) (bool, error) {
-	a.subscriptionSyncMu.Lock()
-	defer a.subscriptionSyncMu.Unlock()
-
-	a.stateMu.Lock()
-	defer a.stateMu.Unlock()
-
-	for idx, sub := range a.subscriptions {
-		if sub.ID == id {
-			removed := sub
-			a.subscriptions = append(a.subscriptions[:idx], a.subscriptions[idx+1:]...)
-			if err := a.syncSubscriptionRuleSetsLocked(); err != nil {
-				a.subscriptions = append(a.subscriptions[:idx], append([]*models.Subscription{removed}, a.subscriptions[idx:]...)...)
-				if rollbackErr := a.syncSubscriptionRuleSetsLocked(); rollbackErr != nil {
-					return true, errors.Join(err, fmt.Errorf("failed to rollback subscriptions: %w", rollbackErr))
-				}
-				return true, err
-			}
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // ListInterfaces возвращает список сетевых интерфейсов, доступных для выбора в UI.
 func (a *App) ListInterfaces() ([]models.InterfaceInfo, error) {
-	return interfaces.List(a.config.ShowAllInterfaces)
+	return interfaces.List(a.cfg().ShowAllInterfaces)
 }
 
-// DnsOverrider возвращает dnsOverrider
-func (a *App) DnsOverrider() *netfilterTools.PortRemap {
-	return a.dnsOverrider
+func groupIndex(groups []*models.Group, id intID.ID) int {
+	return slices.IndexFunc(groups, func(group *models.Group) bool { return group.ID == id })
 }
 
-func (a *App) ruleSetSnapshot() []*RuleSet {
-	a.stateMu.RLock()
-	defer a.stateMu.RUnlock()
+// validateGroups проверяет, что ID групп уникальны и не заняты подписками,
+// а ID правил уникальны внутри каждой группы. ID групп и подписок общие:
+// по ID маршрутизация именует ipset и цепочки.
+func validateGroups(groups []*models.Group, subscriptions []*models.Subscription) error {
+	taken := subscriptionIDs(subscriptions)
+	seen := make(map[intID.ID]struct{}, len(groups))
+	for _, group := range groups {
+		if _, ok := taken[group.ID]; ok {
+			return fmt.Errorf("%w: %s is already used by a subscription", app.ErrGroupIDConflict, group.ID)
+		}
+		if _, ok := seen[group.ID]; ok {
+			return fmt.Errorf("%w: duplicate group %s", app.ErrGroupIDConflict, group.ID)
+		}
+		seen[group.ID] = struct{}{}
 
-	list := make([]*RuleSet, 0, len(a.userRuleSets)+len(a.subscriptionRuleSets))
-	list = append(list, a.userRuleSets...)
-	list = append(list, a.subscriptionRuleSets...)
-	return list
+		if err := uniqueRuleIDs(group.Rules, func(rule *models.Rule) intID.ID { return rule.ID }); err != nil {
+			return fmt.Errorf("group %s: %w", group.ID, err)
+		}
+	}
+	return nil
+}
+
+// validateSubscriptions проверяет, что ID подписок уникальны и не заняты
+// группами, а ID правил уникальны внутри каждой подписки.
+func validateSubscriptions(subscriptions []*models.Subscription, groups []*models.Group) error {
+	taken := make(map[intID.ID]struct{}, len(groups))
+	for _, group := range groups {
+		taken[group.ID] = struct{}{}
+	}
+	seen := make(map[intID.ID]struct{}, len(subscriptions))
+	for _, sub := range subscriptions {
+		if _, ok := taken[sub.ID]; ok {
+			return fmt.Errorf("%w: %s is already used by a group", app.ErrSubscriptionConflict, sub.ID)
+		}
+		if _, ok := seen[sub.ID]; ok {
+			return fmt.Errorf("%w: duplicate subscription %s", app.ErrSubscriptionConflict, sub.ID)
+		}
+		seen[sub.ID] = struct{}{}
+
+		if err := uniqueRuleIDs(sub.Rules, func(rule *models.SubscriptionRule) intID.ID { return rule.ID }); err != nil {
+			return fmt.Errorf("subscription %s: %w", sub.ID, err)
+		}
+	}
+	return nil
+}
+
+func uniqueRuleIDs[R any](rules []*R, id func(*R) intID.ID) error {
+	seen := make(map[intID.ID]struct{}, len(rules))
+	for _, rule := range rules {
+		ruleID := id(rule)
+		if _, ok := seen[ruleID]; ok {
+			return fmt.Errorf("%w: duplicate rule %s", app.ErrRuleIDConflict, ruleID)
+		}
+		seen[ruleID] = struct{}{}
+	}
+	return nil
+}
+
+func subscriptionIDs(subscriptions []*models.Subscription) map[intID.ID]struct{} {
+	ids := make(map[intID.ID]struct{}, len(subscriptions))
+	for _, sub := range subscriptions {
+		ids[sub.ID] = struct{}{}
+	}
+	return ids
 }

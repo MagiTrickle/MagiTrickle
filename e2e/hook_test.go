@@ -66,8 +66,8 @@ var allJumps = []jump{
 
 func TestHookScriptRestoresRules(t *testing.T) {
 	d := StartDaemon(t, DaemonConfig{})
-	g := api.CreateGroup(t, Group{Name: "hook", Interface: "eth3", Enable: ptr(true)})
-	chain := "MT_" + g.ID
+	api.CreateGroup(t, Group{Name: "hook", Interface: "eth3", Enable: ptr(true)})
+	chain := "MT_ROUTING"
 	WaitFor(t, 5*time.Second, "chains", func() bool { return jumpPresent(t, "ip6tables", "nat", "POSTROUTING", chain) })
 
 	for _, j := range allJumps {
@@ -180,8 +180,8 @@ func TestHookEndpointValidation(t *testing.T) {
 func TestNDMFiresHookOnConnectionToggle(t *testing.T) {
 	settleNDMAfter(t)
 	d := StartDaemon(t, DaemonConfig{})
-	g := api.CreateGroup(t, Group{Name: "ndm", Interface: "eth3", Enable: ptr(true)})
-	chain := "MT_" + g.ID
+	api.CreateGroup(t, Group{Name: "ndm", Interface: "eth3", Enable: ptr(true)})
+	chain := "MT_ROUTING"
 	WaitFor(t, 5*time.Second, "chains", func() bool { return jumpPresent(t, "iptables", "mangle", "PREROUTING", chain) })
 	before := len(hookEvents(d))
 
@@ -210,8 +210,8 @@ func TestNDMFiresHookOnConnectionToggle(t *testing.T) {
 func TestNDMHookStorm(t *testing.T) {
 	settleNDMAfter(t)
 	d := StartDaemon(t, DaemonConfig{})
-	g := api.CreateGroup(t, Group{Name: "storm", Interface: "eth3", Enable: ptr(true)})
-	chain := "MT_" + g.ID
+	api.CreateGroup(t, Group{Name: "storm", Interface: "eth3", Enable: ptr(true)})
+	chain := "MT_ROUTING"
 	WaitFor(t, 5*time.Second, "chains", func() bool { return jumpPresent(t, "iptables", "mangle", "PREROUTING", chain) })
 
 	for i := 0; i < 3; i++ {
@@ -236,8 +236,8 @@ func TestNDMHookStorm(t *testing.T) {
 func TestNDMFiresNATHookOnGuestNetworkToggle(t *testing.T) {
 	settleNDMAfter(t)
 	d := StartDaemon(t, DaemonConfig{})
-	g := api.CreateGroup(t, Group{Name: "guest", Interface: "eth3", Enable: ptr(true)})
-	chain := "MT_" + g.ID
+	api.CreateGroup(t, Group{Name: "guest", Interface: "eth3", Enable: ptr(true)})
+	chain := "MT_ROUTING"
 	WaitFor(t, 5*time.Second, "chains", func() bool { return jumpPresent(t, "iptables", "nat", "POSTROUTING", chain) })
 	t.Cleanup(func() { rci.SetInterface(t, "Bridge1", false) })
 

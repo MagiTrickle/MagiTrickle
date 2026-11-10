@@ -30,6 +30,12 @@ type Rule struct {
 	compiled    func(string) bool
 }
 
+// WithID возвращает новое правило с теми же полями и другим ID. Правило не
+// копируется по значению: в нём лежит состояние компиляции выражения.
+func (d *Rule) WithID(id intID.ID) *Rule {
+	return &Rule{ID: id, Name: d.Name, Type: d.Type, Rule: d.Rule, Enable: d.Enable}
+}
+
 func (d *Rule) IsEnabled() bool {
 	return d.Enable
 }

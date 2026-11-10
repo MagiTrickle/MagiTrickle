@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"magitrickle/utils/netfilterTools"
+	"magitrickle/routing"
 
 	"github.com/miekg/dns"
 	"github.com/rs/zerolog/log"
@@ -32,7 +32,7 @@ func trimFQDN(name string) string {
 
 func (a *App) startDNSListeners(ctx context.Context, errChan chan error) {
 	go func() {
-		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", a.config.DNSProxy.Host.Address, a.config.DNSProxy.Host.Port))
+		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", a.cfg().DNSProxy.Host.Address, a.cfg().DNSProxy.Host.Port))
 		if err != nil {
 			errChan <- fmt.Errorf("failed to resolve udp address: %v", err)
 			return
@@ -43,7 +43,7 @@ func (a *App) startDNSListeners(ctx context.Context, errChan chan error) {
 	}()
 
 	go func() {
-		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", a.config.DNSProxy.Host.Address, a.config.DNSProxy.Host.Port))
+		addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", a.cfg().DNSProxy.Host.Address, a.cfg().DNSProxy.Host.Port))
 		if err != nil {
 			errChan <- fmt.Errorf("failed to resolve tcp address: %v", err)
 			return
@@ -79,7 +79,7 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 			Msg("requested record")
 	}
 
-	if a.config.DNSProxy.DisableFakePTR {
+	if a.cfg().DNSProxy.DisableFakePTR {
 		return nil, nil, nil
 	}
 
@@ -101,7 +101,7 @@ func (a *App) dnsRequestHook(clientAddr net.Addr, reqMsg dns.Msg, network string
 
 // dnsResponseHook обрабатывает ответы DNS
 func (a *App) dnsResponseHook(clientAddr net.Addr, reqMsg dns.Msg, respMsg dns.Msg, network string) (*dns.Msg, error) {
-	if a.config.DNSProxy.DisableDropAAAA {
+	if a.cfg().DNSProxy.DisableDropAAAA {
 		a.handleMessage(respMsg, clientAddr, network)
 		return nil, nil
 	}
@@ -180,49 +180,12 @@ func (a *App) processARecord(aRecord dns.A, idStr, clientAddrStr, network string
 		Str("network", network).
 		Msg("processing A record")
 
-	ttlDuration := aRecord.Hdr.Ttl + uint32(a.config.Netfilter.IPSet.AdditionalTTL.Seconds())
+	ttlDuration := aRecord.Hdr.Ttl + uint32(a.cfg().Netfilter.IPSet.AdditionalTTL.Seconds())
 
 	a.recordsCache.AddAddress(domainName, aRecord.A, ttlDuration)
 
-	names := a.recordsCache.GetAliases(domainName)
-	for _, group := range a.ruleSetSnapshot() {
-	Rule:
-		for _, domain := range group.RuleModels() {
-			if !domain.IsEnabled() {
-				continue
-			}
-			for _, name := range names {
-				if !domain.IsMatch(name) {
-					continue
-				}
-
-				// TODO: Check already existed
-				subnet := netfilterTools.IPv4Subnet{Address: [4]byte(aRecord.A)}
-				if err := group.AddIPv4Subnet(subnet, &ttlDuration); err != nil {
-					log.Error().
-						Err(err).
-						Str("subnet", subnet.String()).
-						Str("aRecordDomain", domainName).
-						Str("cNameDomain", name).
-						Msg("failed to add subnet")
-				} else {
-					log.Debug().
-						Str("subnet", subnet.String()).
-						Str("aRecordDomain", domainName).
-						Str("cNameDomain", name).
-						Msg("added subnet")
-				}
-
-				log.Info().
-					Str("name", domainName).
-					Str("address", addrStr).
-					Str("group", group.DisplayName()).
-					Str("groupId", group.IDValue().String()).
-					Msg("added to routing")
-
-				break Rule
-			}
-		}
+	if table := a.routing.Load(); table != nil {
+		table.AddAddresses(a.recordsCache.GetAliases(domainName), []routing.Address{{IP: aRecord.A, TTL: ttlDuration}})
 	}
 }
 
@@ -251,49 +214,12 @@ func (a *App) processAAAARecord(aaaaRecord dns.AAAA, idStr, clientAddrStr, netwo
 		Str("network", network).
 		Msg("processing AAAA record")
 
-	ttlDuration := aaaaRecord.Hdr.Ttl + uint32(a.config.Netfilter.IPSet.AdditionalTTL.Seconds())
+	ttlDuration := aaaaRecord.Hdr.Ttl + uint32(a.cfg().Netfilter.IPSet.AdditionalTTL.Seconds())
 
 	a.recordsCache.AddAddress(domainName, aaaaRecord.AAAA, ttlDuration)
 
-	names := a.recordsCache.GetAliases(domainName)
-	for _, group := range a.ruleSetSnapshot() {
-	Rule:
-		for _, domain := range group.RuleModels() {
-			if !domain.IsEnabled() {
-				continue
-			}
-			for _, name := range names {
-				if !domain.IsMatch(name) {
-					continue
-				}
-
-				// TODO: Check already existed
-				subnet := netfilterTools.IPv6Subnet{Address: [16]byte(aaaaRecord.AAAA)}
-				if err := group.AddIPv6Subnet(subnet, &ttlDuration); err != nil {
-					log.Error().
-						Err(err).
-						Str("subnet", subnet.String()).
-						Str("aaaaRecordDomain", domainName).
-						Str("cNameDomain", name).
-						Msg("failed to add subnet")
-				} else {
-					log.Debug().
-						Str("subnet", subnet.String()).
-						Str("aaaaRecordDomain", domainName).
-						Str("cNameDomain", name).
-						Msg("added subnet")
-				}
-
-				log.Info().
-					Str("name", domainName).
-					Str("address", addrStr).
-					Str("group", group.DisplayName()).
-					Str("groupId", group.IDValue().String()).
-					Msg("added to routing")
-
-				break Rule
-			}
-		}
+	if table := a.routing.Load(); table != nil {
+		table.AddAddresses(a.recordsCache.GetAliases(domainName), []routing.Address{{IP: aaaaRecord.AAAA, TTL: ttlDuration}})
 	}
 }
 
@@ -310,68 +236,23 @@ func (a *App) processCNameRecord(cNameRecord dns.CNAME, idStr, clientAddrStr, ne
 		Str("network", network).
 		Msg("processing CNAME record")
 
-	ttlDuration := cNameRecord.Hdr.Ttl + uint32(a.config.Netfilter.IPSet.AdditionalTTL.Seconds())
+	ttlDuration := cNameRecord.Hdr.Ttl + uint32(a.cfg().Netfilter.IPSet.AdditionalTTL.Seconds())
 
 	a.recordsCache.AddAlias(domainName, targetName, ttlDuration)
 
+	table := a.routing.Load()
+	if table == nil {
+		return
+	}
+
+	// Адреса цели уже могли быть в кэше: направляем их через группы,
+	// которые совпали с новым псевдонимом.
 	now := time.Now()
-	addresses := a.recordsCache.GetAddresses(domainName)
-	aliases := a.recordsCache.GetAliases(domainName)
-	for _, group := range a.ruleSetSnapshot() {
-	Rule:
-		for _, domain := range group.RuleModels() {
-			if !domain.IsEnabled() {
-				continue
-			}
-			for _, alias := range aliases {
-				if !domain.IsMatch(alias) {
-					continue
-				}
-
-				log.Info().
-					Str("name", domainName).
-					Str("cname", targetName).
-					Str("group", group.DisplayName()).
-					Str("groupId", group.IDValue().String()).
-					Msg("added alias")
-
-				for _, address := range addresses {
-					ttlDuration := address.Deadline.Sub(now).Seconds()
-					if ttlDuration <= 0 {
-						continue
-					}
-					ttl := uint32(ttlDuration)
-
-					if len(address.Address) == net.IPv4len {
-						subnet := netfilterTools.IPv4Subnet{Address: [4]byte(address.Address)}
-						if err := group.AddIPv4Subnet(subnet, &ttl); err != nil {
-							log.Error().
-								Err(err).
-								Str("subnet", subnet.String()).
-								Str("cNameDomain", alias).
-								Msg("failed to add subnet")
-						}
-						log.Debug().
-							Str("subnet", subnet.String()).
-							Str("cNameDomain", alias).
-							Msg("added subnet")
-					} else if len(address.Address) == net.IPv6len {
-						subnet := netfilterTools.IPv6Subnet{Address: [16]byte(address.Address)}
-						if err := group.AddIPv6Subnet(subnet, &ttl); err != nil {
-							log.Error().
-								Err(err).
-								Str("subnet", subnet.String()).
-								Str("cNameDomain", alias).
-								Msg("failed to add subnet")
-						}
-						log.Debug().
-							Str("subnet", subnet.String()).
-							Str("cNameDomain", alias).
-							Msg("added subnet")
-					}
-				}
-				continue Rule
-			}
+	var addresses []routing.Address
+	for _, address := range a.recordsCache.GetAddresses(domainName) {
+		if ttl := address.Deadline.Sub(now).Seconds(); ttl > 0 {
+			addresses = append(addresses, routing.Address{IP: address.Address, TTL: uint32(ttl)})
 		}
 	}
+	table.AddAddresses(a.recordsCache.GetAliases(domainName), addresses)
 }

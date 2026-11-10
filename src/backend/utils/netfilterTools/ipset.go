@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -13,6 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// IPv4Subnet — запись ipset. CIDR 0 означает одиночный адрес (/32).
 type IPv4Subnet struct {
 	Address [4]byte
 	CIDR    uint8
@@ -26,6 +29,18 @@ func (subnet IPv4Subnet) String() string {
 	}
 }
 
+// hostCIDR приводит маску одиночного адреса к 0. Адрес без маски ядро
+// хранит в hash:net как /32 (/128) и при чтении возвращает маску явно,
+// поэтому без приведения прочитанный хост не совпал бы с записанным и был
+// бы удалён сверкой как лишний.
+func hostCIDR(cidr, hostBits uint8) uint8 {
+	if cidr == hostBits {
+		return 0
+	}
+	return cidr
+}
+
+// IPv6Subnet — запись ipset. CIDR 0 означает одиночный адрес (/128).
 type IPv6Subnet struct {
 	Address [16]byte
 	CIDR    uint8
@@ -158,7 +173,7 @@ func (r *IPSet) ListIPv4Subnets() (map[IPv4Subnet]IPSetTimeout, error) {
 		}
 		subnet := IPv4Subnet{
 			Address: [4]byte(entry.IP),
-			CIDR:    entry.CIDR,
+			CIDR:    hostCIDR(entry.CIDR, 32),
 		}
 		if entry.Timeout != nil && *entry.Timeout == 0 {
 			addresses[subnet] = nil
@@ -190,7 +205,7 @@ func (r *IPSet) ListIPv6Subnets() (map[IPv6Subnet]IPSetTimeout, error) {
 		}
 		subnet := IPv6Subnet{
 			Address: [16]byte(entry.IP),
-			CIDR:    entry.CIDR,
+			CIDR:    hostCIDR(entry.CIDR, 128),
 		}
 		if entry.Timeout != nil && *entry.Timeout == 0 {
 			addresses[subnet] = nil
@@ -284,8 +299,77 @@ func (r *IPSet) Disable() error {
 	return r.disable()
 }
 
+// Name возвращает имя набора без суффикса семейства (_4, _6).
+func (r *IPSet) Name() string {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+	return r.ipsetName
+}
+
+// Swap атомарно обменивает наборы r и other в ядре: правила iptables,
+// ссылающиеся на имя r, сразу видят содержимое other, и наоборот. Имена в
+// объектах тоже обмениваются, так что каждый объект продолжает указывать
+// на своё содержимое. Семейства обмениваются по очереди; если второе не
+// удалось, первое возвращается назад.
+func (r *IPSet) Swap(other *IPSet) error {
+	r.locker.Lock()
+	defer r.locker.Unlock()
+	other.locker.Lock()
+	defer other.locker.Unlock()
+
+	if !r.enabled.Load() || !other.enabled.Load() {
+		return errors.New("failed to swap ipsets: both must be enabled")
+	}
+	if err := netlink.IpsetSwap(r.ipsetName+"_4", other.ipsetName+"_4"); err != nil {
+		return fmt.Errorf("failed to swap ipv4 ipsets: %w", err)
+	}
+	if err := netlink.IpsetSwap(r.ipsetName+"_6", other.ipsetName+"_6"); err != nil {
+		if backErr := netlink.IpsetSwap(r.ipsetName+"_4", other.ipsetName+"_4"); backErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to swap ipv4 ipsets back: %w", backErr))
+		}
+		return fmt.Errorf("failed to swap ipv6 ipsets: %w", err)
+	}
+	r.ipsetName, other.ipsetName = other.ipsetName, r.ipsetName
+	return nil
+}
+
 func (nh *Helper) IPSet(name string) *IPSet {
 	return &IPSet{
 		ipsetName: nh.IpsetPrefix + name,
 	}
+}
+
+// ownIPSetName — имена наборов, которые создаёт приложение, без префикса:
+// <id>-<слот>_<семейство>, а также старые форматы без слота и с "sub-".
+var ownIPSetName = regexp.MustCompile(`^(sub-)?[0-9a-f]{8}(-[01])?_[46]$`)
+
+// isOwnIPSet сообщает, что набор name создан приложением с префиксом prefix.
+func isOwnIPSet(name, prefix string) bool {
+	rest, ok := strings.CutPrefix(name, prefix)
+	return ok && ownIPSetName.MatchString(rest)
+}
+
+// CleanIPSets удаляет ipset'ы приложения: с его префиксом и именем в его
+// формате, чтобы не задеть чужие наборы с похожим префиксом. Вызывается при
+// старте после CleanIPTables (ipset, на который ссылается правило iptables,
+// удалить нельзя), чтобы не копились наборы, оставшиеся после аварийного
+// завершения, — в том числе в старых форматах имён.
+func (nh *Helper) CleanIPSets() error {
+	if nh.IpsetPrefix == "" {
+		return errors.New("ipset prefix is empty, refusing to destroy every ipset")
+	}
+	sets, err := netlink.IpsetListAll()
+	if err != nil {
+		return fmt.Errorf("failed to list ipsets: %w", err)
+	}
+	var errs []error
+	for _, set := range sets {
+		if !isOwnIPSet(set.SetName, nh.IpsetPrefix) {
+			continue
+		}
+		if err := netlink.IpsetDestroy(set.SetName); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("failed to destroy ipset %s: %w", set.SetName, err))
+		}
+	}
+	return errors.Join(errs...)
 }

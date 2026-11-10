@@ -15,7 +15,6 @@ import (
 	"magitrickle/utils/intID"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
 )
 
 // GetSubscriptions
@@ -28,11 +27,7 @@ import (
 //	@Failure		500	{object}	types.ErrorRes
 //	@Router			/api/v1/subscriptions [get]
 func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
-	var res types.SubscriptionsRes
-	h.app.WithSubscriptions(func(subs []*models.Subscription) {
-		res = RespFromSubscriptions(subs)
-	})
-	utils.WriteJson(w, http.StatusOK, res)
+	utils.WriteJson(w, http.StatusOK, RespFromSubscriptions(h.app.Subscriptions()))
 }
 
 // PutSubscriptions
@@ -46,6 +41,7 @@ func (h *Handler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 //	@Param			json	body		types.SubscriptionsReq	true	"Тело запроса"
 //	@Success		200		{object}	map[string]string
 //	@Failure		400		{object}	types.ErrorRes
+//	@Failure		409		{object}	types.ErrorRes
 //	@Failure		500		{object}	types.ErrorRes
 //	@Router			/api/v1/subscriptions [put]
 func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -59,56 +55,51 @@ func (h *Handler) PutSubscriptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Новый список строится по снимку без блокировки: это полная замена, и
+	// параллельные изменения (например, результат синхронизации подписки)
+	// перезаписываются.
+	existingByID := make(map[intID.ID]*models.Subscription)
+	for _, sub := range h.app.Subscriptions() {
+		existingByID[sub.ID] = sub
+	}
 	newSubs := make([]*models.Subscription, len(*req.Subscriptions))
-	var buildErr error
-	var buildErrStatus int
-	h.app.WithSubscriptions(func(subs []*models.Subscription) {
-		existingByID := make(map[intID.ID]*models.Subscription, len(subs))
-		for _, sub := range subs {
-			existingByID[sub.ID] = sub
+	for i, subReq := range *req.Subscriptions {
+		if subReq.URL == "" {
+			utils.WriteError(w, http.StatusBadRequest, "subscription url is required")
+			return
 		}
-		for i, subReq := range *req.Subscriptions {
-			if subReq.URL == "" {
-				buildErr = errors.New("subscription url is required")
-				buildErrStatus = http.StatusBadRequest
-				return
-			}
-			var existing *models.Subscription
-			if subReq.ID != nil {
-				existing = existingByID[*subReq.ID]
-			}
-			sub, err := SubscriptionFromReq(subReq, existing)
-			if err != nil {
-				buildErr = err
-				buildErrStatus = http.StatusBadRequest
-				return
-			}
-			newSubs[i] = sub
+		var existing *models.Subscription
+		if subReq.ID != nil {
+			existing = existingByID[*subReq.ID]
 		}
-	})
-	if buildErr != nil {
-		utils.WriteError(w, buildErrStatus, buildErr.Error())
-		return
-	}
-	if err := ensureUniqueSubscriptionIDs(newSubs); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	for _, sub := range newSubs {
-		if err := ensureUniqueSubscriptionRuleIDs(sub); err != nil {
+		sub, err := SubscriptionFromReq(subReq, existing)
+		if err != nil {
 			utils.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		newSubs[i] = sub
+	}
+	newSubs, _ = intID.EnsureUnique(newSubs,
+		func(sub *models.Subscription) intID.ID { return sub.ID },
+		func(sub *models.Subscription, id intID.ID) *models.Subscription {
+			renumbered := sub.Clone()
+			renumbered.ID = id
+			return renumbered
+		})
+	for _, sub := range newSubs {
+		sub.Rules, _ = subscriptions.EnsureUniqueRuleIDs(sub.Rules)
 	}
 
 	if err := h.app.ReplaceSubscriptions(newSubs); err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		if errors.Is(err, app.ErrSubscriptionConflict) || errors.Is(err, app.ErrRuleIDConflict) {
+			status = http.StatusConflict
+		}
+		utils.WriteError(w, status, err.Error())
 		return
 	}
-	if r.URL.Query().Get("save") != "false" {
-		if err := h.app.SaveConfig(); err != nil {
-			log.Error().Err(err).Msg("failed to save config file")
-		}
+	if !h.save(w, r, true) {
+		return
 	}
 	utils.WriteJson(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -142,22 +133,17 @@ func (h *Handler) CreateSubscription(w http.ResponseWriter, r *http.Request) {
 		utils.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := ensureUniqueSubscriptionRuleIDs(sub); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
+	sub.Rules, _ = subscriptions.EnsureUniqueRuleIDs(sub.Rules)
 	if err := h.app.AddSubscription(sub); err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, app.ErrSubscriptionConflict) {
+		if errors.Is(err, app.ErrSubscriptionConflict) || errors.Is(err, app.ErrRuleIDConflict) {
 			status = http.StatusConflict
 		}
 		utils.WriteError(w, status, err.Error())
 		return
 	}
-	if r.URL.Query().Get("save") != "false" {
-		if err := h.app.SaveConfig(); err != nil {
-			log.Error().Err(err).Msg("failed to save config file")
-		}
+	if !h.save(w, r, true) {
+		return
 	}
 	utils.WriteJson(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -204,16 +190,16 @@ func (h *Handler) SyncSubscription(w http.ResponseWriter, r *http.Request) {
 			utils.WriteError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, app.ErrSubscriptionFetch):
 			utils.WriteError(w, http.StatusBadGateway, err.Error())
+		case errors.Is(err, app.ErrSubscriptionChanged):
+			utils.WriteError(w, http.StatusConflict, err.Error())
 		default:
 			utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		}
 		return
 	}
 
-	if changed && r.URL.Query().Get("save") != "false" {
-		if err := h.app.SaveConfig(); err != nil {
-			log.Error().Err(err).Msg("failed to save config file")
-		}
+	if changed && !h.save(w, r, true) {
+		return
 	}
 
 	rulesRes := RespFromSubscriptionRules(target.Rules)
@@ -263,10 +249,8 @@ func (h *Handler) DeleteSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.URL.Query().Get("save") != "false" {
-		if err := h.app.SaveConfig(); err != nil {
-			log.Error().Err(err).Msg("failed to save config file")
-		}
+	if !h.save(w, r, true) {
+		return
 	}
 	utils.WriteJson(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -295,36 +279,4 @@ func (h *Handler) GetSubscriptionRules(w http.ResponseWriter, r *http.Request) {
 	}
 	rules := subscriptions.ParseRules(list)
 	utils.WriteJson(w, http.StatusOK, RespFromSubscriptionRules(rules))
-}
-
-func ensureUniqueSubscriptionIDs(subs []*models.Subscription) error {
-	dup := make(map[[4]byte]struct{})
-	for _, sub := range subs {
-		if _, exists := dup[sub.ID]; exists || sub.ID.IsZero() {
-			for {
-				sub.ID = intID.RandomID()
-				if _, exists := dup[sub.ID]; !exists {
-					break
-				}
-			}
-		}
-		dup[sub.ID] = struct{}{}
-	}
-	return nil
-}
-
-func ensureUniqueSubscriptionRuleIDs(sub *models.Subscription) error {
-	dup := make(map[[4]byte]struct{})
-	for _, rule := range sub.Rules {
-		if _, exists := dup[rule.ID]; exists || rule.ID.IsZero() {
-			for {
-				rule.ID = intID.RandomID()
-				if _, exists := dup[rule.ID]; !exists {
-					break
-				}
-			}
-		}
-		dup[rule.ID] = struct{}{}
-	}
-	return nil
 }

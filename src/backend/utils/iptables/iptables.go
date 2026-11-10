@@ -77,6 +77,26 @@ func (ipt *IPTables) RegisterChainOverride(table, chainName string) error {
 	return nil
 }
 
+// SetChain регистрирует цепочку, содержимое которой целиком заменяется на
+// rules. В отличие от RegisterChainOverride с последующими Append, замена
+// атомарна: параллельный Commit не увидит цепочку пустой или заполненной
+// наполовину.
+func (ipt *IPTables) SetChain(table, chainName string, rules [][]string) error {
+	override := &chainOverride{rules: make([]Rule, len(rules))}
+	for i, args := range rules {
+		override.rules[i] = ruleFromStrings(args)
+	}
+
+	ipt.sync.Lock()
+	defer ipt.sync.Unlock()
+
+	if _, ok := ipt.rules[table]; !ok {
+		ipt.rules[table] = make(map[string]chain)
+	}
+	ipt.rules[table][chainName] = override
+	return nil
+}
+
 func (ipt *IPTables) Append(table, chain string, ruleArgs ...string) error {
 	ipt.sync.Lock()
 	defer ipt.sync.Unlock()
@@ -208,10 +228,33 @@ func splitFields(data []byte) [][]byte {
 	return fields
 }
 
-func (ipt *IPTables) Commit() (err error) {
+// Commit приводит iptables к зарегистрированным цепочкам. Удалённые
+// цепочки после этого забываются: иначе регистрации удалённых экземпляров
+// маршрутов копились бы и перебирались при каждом Commit. Регистрация во
+// время Commit ждёт его окончания, так что забывается ровно то, что было
+// применено.
+func (ipt *IPTables) Commit() error {
 	ipt.sync.Lock()
 	defer ipt.sync.Unlock()
 
+	deleted, err := ipt.commit()
+	if err != nil {
+		return err
+	}
+	for _, r := range deleted {
+		delete(ipt.rules[r.table], r.chain)
+	}
+	return nil
+}
+
+// registration — цепочка, зарегистрированная в IPTables.
+type registration struct {
+	table, chain string
+}
+
+// commit применяет зарегистрированные цепочки и возвращает удалённые.
+// Вызывается под ipt.sync.
+func (ipt *IPTables) commit() (deleted []registration, err error) {
 	buf := new(bytes.Buffer)
 	start := time.Now()
 	defer func() {
@@ -231,7 +274,7 @@ func (ipt *IPTables) Commit() (err error) {
 
 	curRules, err := ipt.GetCurrentRules()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for tableName, table := range ipt.rules {
@@ -242,6 +285,9 @@ func (ipt *IPTables) Commit() (err error) {
 
 		commandsPrioritized := make(map[int8][]command)
 		for chainName, chain := range table {
+			if _, ok := chain.(*chainDelete); ok {
+				deleted = append(deleted, registration{table: tableName, chain: chainName})
+			}
 			chainNameBytes := []byte(chainName)
 			var curChain []Rule
 			if curTable[chainName] != nil {
@@ -249,7 +295,7 @@ func (ipt *IPTables) Commit() (err error) {
 			}
 			commands, priority, err := chain.Compile(chainNameBytes, curChain)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if commandsPrioritized[int8(priority)] == nil {
 				commandsPrioritized[int8(priority)] = make([]command, 0)
@@ -322,8 +368,8 @@ func (ipt *IPTables) Commit() (err error) {
 	}
 
 	if buf.Len() == 0 {
-		return nil
+		return deleted, nil
 	}
 
-	return ipt.executable.Restore(buf.Bytes())
+	return deleted, ipt.executable.Restore(buf.Bytes())
 }

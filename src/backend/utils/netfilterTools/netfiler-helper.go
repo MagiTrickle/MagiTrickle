@@ -52,3 +52,14 @@ func New(chainPrefix, ipsetPrefix string, disableIPv4, disableIPv6 bool, startId
 		StartIdx:    startIdx,
 	}, nil
 }
+
+// iptables возвращает включённые семейства iptables.
+func (nh *Helper) iptables() []*iptables.IPTables {
+	list := make([]*iptables.IPTables, 0, 2)
+	for _, ipt := range []*iptables.IPTables{nh.IPTables4, nh.IPTables6} {
+		if ipt != nil {
+			list = append(list, ipt)
+		}
+	}
+	return list
+}

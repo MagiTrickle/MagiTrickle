@@ -2,6 +2,7 @@ package recordsCache
 
 import (
 	"bytes"
+	"net"
 	"slices"
 	"testing"
 	"time"
@@ -315,4 +316,24 @@ func TestGetAliasesUnknownDomain(t *testing.T) {
 	if len(aliases) != 1 || aliases[0] != "unknown.com" {
 		t.Fatal("unknown domain should return only itself")
 	}
+}
+
+func TestGetAddressesResultIsNotChangedByLaterUpdates(t *testing.T) {
+	r := New()
+	ip := net.IPv4(1, 1, 1, 1).To4()
+	r.AddAddress("example.com", ip, 60)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 100 {
+			r.AddAddress("example.com", ip, 120)
+		}
+	}()
+	for range 100 {
+		for _, address := range r.GetAddresses("example.com") {
+			_ = address.Deadline
+		}
+	}
+	<-done
 }
