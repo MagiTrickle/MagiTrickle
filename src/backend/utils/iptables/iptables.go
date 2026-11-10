@@ -237,7 +237,7 @@ func (ipt *IPTables) Commit() error {
 	ipt.sync.Lock()
 	defer ipt.sync.Unlock()
 
-	deleted, err := ipt.commit()
+	deleted, err := ipt.commitWithRetry()
 	if err != nil {
 		return err
 	}
@@ -245,6 +245,21 @@ func (ipt *IPTables) Commit() error {
 		delete(ipt.rules[r.table], r.chain)
 	}
 	return nil
+}
+
+const commitAttempts = 3
+
+var commitRetryDelay = 300 * time.Millisecond
+
+func (ipt *IPTables) commitWithRetry() (deleted []registration, err error) {
+	for attempt := 1; ; attempt++ {
+		deleted, err = ipt.commit()
+		if err == nil || attempt >= commitAttempts {
+			return deleted, err
+		}
+		log.Warn().Err(err).Int("attempt", attempt).Msg("iptables commit failed, retrying")
+		time.Sleep(time.Duration(attempt) * commitRetryDelay)
+	}
 }
 
 // registration — цепочка, зарегистрированная в IPTables.
