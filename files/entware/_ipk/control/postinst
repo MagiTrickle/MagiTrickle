@@ -1,12 +1,12 @@
 #!/bin/sh
 
-RESTART_SERVICE_ON_UPDATE=true
+START_SERVICE_ON_INSTALL=true
 
 CONFIG_FILE=/opt/etc/config/magitrickle.conf
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
 
-if [ "$RESTART_SERVICE_ON_UPDATE" = "true" ]; then
-	/opt/etc/init.d/S99magitrickle restart
+if [ "$START_SERVICE_ON_INSTALL" = "true" ]; then
+	/opt/etc/init.d/S99magitrickle start
 fi
 
 exit 0

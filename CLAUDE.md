@@ -69,7 +69,7 @@ Key sub-packages:
 | `rulesets/` | Domain layer: turns subscriptions and groups into `RuleSet` snapshots (only enabled rules; domain rules indexed in `Matcher`, subnets parsed into `Subnets`); `Build` decides which are active and their order, `Builder` caches rule sets per (immutable) model pointer. Knows nothing about netfilter |
 | `routing/` | Glue: `Table` maps rule sets to routes, fills ipsets from the DNS cache, routes DNS answers. The only package that knows both sides. A route whose fill failed does not replace the live one. `Apply` fails only for rule sets changed since the previous call (`ApplyError.Fatal` for routing as a whole); still-broken unchanged ones are logged and retried by `App` every minute and on netlink events, so they don't block unrelated edits |
 | `utils/dnsMITMProxy/` | UDP/TCP DNS proxy with request/response hooks |
-| `utils/netfilterTools/` | iptables chain management, ipset CRUD, port remap (53→3553); `Router` — ordered set of routes (ipset → interface) changed in two phases. Knows nothing about groups. Host entries are keyed with CIDR 0 on both write and read (the kernel reports them as /32 or /128) |
+| `utils/netfilterTools/` | iptables chain management, ipset CRUD, port remap (53→3553); `Router` — ordered set of routes (ipset → interface) changed in two phases. Knows nothing about groups. Host entries are written with CIDR 0 (the kernel reports them as /32 or /128) |
 | `utils/recordsCache/` | In-memory DNS A/AAAA/CNAME cache with TTL cleanup |
 | `utils/intID/` | 4-byte ID type used for groups and rules |
 | `utils/iptables/` | Low-level iptables wrapper with batched commit |

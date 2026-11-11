@@ -3,6 +3,7 @@
 package iptables
 
 import (
+	"errors"
 	"reflect"
 	"sync"
 	"testing"
@@ -691,5 +692,48 @@ func TestCommitForgetsDeletedChains(t *testing.T) {
 	}
 	if _, ok := ipt.rules["filter"]["X"]; ok {
 		t.Error("registration of a deleted chain is kept")
+	}
+}
+
+// flakyExecutable fails the first failures Restore calls, like iptables-restore does when ndm rewrote the table
+// between reading the rules and applying the difference.
+type flakyExecutable struct {
+	*FakeIPTables
+	failures int
+	restores int
+}
+
+func (f *flakyExecutable) Restore(data []byte) error {
+	f.restores++
+	if f.restores <= f.failures {
+		return errors.New("iptables-restore: table changed")
+	}
+	return f.FakeIPTables.Restore(data)
+}
+
+func TestCommitRetriesTransientFailure(t *testing.T) {
+	old := commitRetryDelay
+	commitRetryDelay = time.Millisecond
+	defer func() { commitRetryDelay = old }()
+
+	for _, tc := range []struct {
+		failures int
+		wantErr  bool
+	}{{0, false}, {commitAttempts - 1, false}, {commitAttempts, true}} {
+		fake := &flakyExecutable{FakeIPTables: NewFakeIPTables(ProtocolIPv4), failures: tc.failures}
+		ipt := NewIPTables(fake)
+		if err := ipt.RegisterChainOverride("filter", "MT_TEST"); err != nil {
+			t.Fatal(err)
+		}
+		if err := ipt.Append("filter", "MT_TEST", "-j", "ACCEPT"); err != nil {
+			t.Fatal(err)
+		}
+		err := ipt.Commit()
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("failures=%d: err=%v, wantErr=%v", tc.failures, err, tc.wantErr)
+		}
+		if !tc.wantErr && len(fake.GetRules("filter", "MT_TEST")) != 1 {
+			t.Fatalf("failures=%d: rule was not applied", tc.failures)
+		}
 	}
 }
