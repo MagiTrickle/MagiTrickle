@@ -1,0 +1,12 @@
+#!/bin/sh
+
+STOP_SERVICE_ON_UNINSTALL=true
+
+CONFIG_FILE=/opt/etc/config/magitrickle.conf
+[ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+
+if [ "$STOP_SERVICE_ON_UNINSTALL" = "true" ]; then
+	/opt/etc/init.d/S99magitrickle stop
+fi
+
+exit 0
