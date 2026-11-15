@@ -4,52 +4,18 @@
 
   import { t } from "../../data/locale.svelte";
 
-  import { scrollToDocumentBoundary } from "../../lib/virtual/viewport";
+  import { initDocumentScrollShortcuts, scrollToDocumentBoundary } from "../../utils/scroll-motion";
   import { ToTop } from "../ui/icons";
 
   let scrollY = $state(0);
   let innerWidth = $state(0);
   const visible = $derived(scrollY > 0 && innerWidth > 668);
-  let cancelMotion = () => {};
-
-  function cancelScroll() {
-    cancelMotion();
-  }
 
   function backToTop() {
-    cancelScroll();
-    cancelMotion = scrollToDocumentBoundary("start");
+    scrollToDocumentBoundary("start");
   }
 
-  onMount(() => {
-    const cancelOnKey = (event: KeyboardEvent) => {
-      if (
-        [
-          "ArrowUp",
-          "ArrowDown",
-          "PageUp",
-          "PageDown",
-          "Home",
-          "End",
-          " ",
-          "Tab",
-          "Escape",
-        ].includes(event.key)
-      )
-        cancelScroll();
-    };
-    window.addEventListener("wheel", cancelScroll, { passive: true });
-    window.addEventListener("touchstart", cancelScroll, { passive: true });
-    window.addEventListener("pointerdown", cancelScroll, { passive: true });
-    window.addEventListener("keydown", cancelOnKey);
-    return () => {
-      cancelScroll();
-      window.removeEventListener("wheel", cancelScroll);
-      window.removeEventListener("touchstart", cancelScroll);
-      window.removeEventListener("pointerdown", cancelScroll);
-      window.removeEventListener("keydown", cancelOnKey);
-    };
-  });
+  onMount(initDocumentScrollShortcuts);
 </script>
 
 <svelte:window bind:scrollY bind:innerWidth />

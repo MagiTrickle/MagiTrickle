@@ -32,6 +32,7 @@ function sameValue(left: unknown, right: unknown): boolean {
 }
 
 const OBJECT_KEYS = Symbol("tracked object keys");
+const ARRAY_MUTATIONS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse"]);
 
 class PropertySource {
   constructor(private readonly onInactive: () => void) {}
@@ -123,7 +124,8 @@ export class ChangeTracker<T extends object> {
       for (let index = 0; index < next.length; index++) target[index] = next[index];
       target.length = next.length;
       for (let index = 0; index < incoming.length; index++) {
-        await tracker.replayDraftAsync(target[index], incoming[index], budget);
+        if (target[index] !== incoming[index])
+          await tracker.replayDraftAsync(target[index], incoming[index], budget);
         const pause = budget.checkpoint();
         if (pause) await pause;
       }
@@ -158,19 +160,9 @@ export class ChangeTracker<T extends object> {
     const budget = new CooperativeBudget(options.budgetMs ?? 4, options.signal);
     let committed = false;
     try {
-      budget.checkpoint();
+      const initialPause = budget.checkpoint();
+      if (initialPause) await initialPause;
       const incoming = await cloneCooperatively(items, budget);
-      const next: Item[] = [];
-      for (const item of incoming) {
-        next.push(item);
-        const pause = budget.checkpoint();
-        if (pause) await pause;
-      }
-      for (let index = 0; index < length; index++) {
-        next.push(target[index]);
-        const pause = budget.checkpoint();
-        if (pause) await pause;
-      }
       await this.markOwnedAsync(incoming, budget);
       const validate = () => {
         if (options.signal?.aborted) throw new DOMException("Preparation cancelled", "AbortError");
@@ -184,10 +176,12 @@ export class ChangeTracker<T extends object> {
           validate();
           committed = true;
           if (!incoming.length) return;
-          // Raw writes avoid repeated unshift/checkArrayStructure passes and
-          // browser argument limits when importing an entire 100k-rule list.
-          for (let index = 0; index < next.length; index++) target[index] = next[index];
-          target.length = next.length;
+          // Move existing raw entries in place instead of allocating another
+          // complete array. Publication stays synchronous: yielding mid-shift
+          // would expose an incomplete list through its retained proxy.
+          target.length = length + incoming.length;
+          Array.prototype.copyWithin.call(target, incoming.length, 0, length);
+          for (let index = 0; index < incoming.length; index++) target[index] = incoming[index];
           this.checkArrayStructure(target);
           this.invalidateArray(target);
           this.notify();
@@ -287,6 +281,9 @@ export class ChangeTracker<T extends object> {
     draft: IdObject,
     budget: CooperativeBudget,
   ): Promise<void> {
+    // Only fromDraftAsync calls this method, with its private detached clone.
+    // New nodes can be adopted directly; the saved snapshot remains separate.
+    if (target === draft) return;
     for (const key of new Set([...Object.keys(target), ...Object.keys(draft)])) {
       const current = target[key];
       const desired = draft[key];
@@ -305,7 +302,7 @@ export class ChangeTracker<T extends object> {
             const restored: unknown = this.originalObjects.get(item.id);
             next.push(
               existing ??
-                (await cloneCooperatively(isIdObject(restored) ? restored : item, budget)),
+                (isIdObject(restored) ? await cloneCooperatively(restored, budget) : item),
             );
             const pause = budget.checkpoint();
             if (pause) await pause;
@@ -321,19 +318,22 @@ export class ChangeTracker<T extends object> {
             const restored: unknown = this.originalObjects.get(item.id);
             if (!byId.has(item.id) && restored)
               await this.indexAndLinkAsync(current[index], restored, budget);
-            await this.replayDraftAsync(current[index], item, budget);
+            if (current[index] !== item) await this.replayDraftAsync(current[index], item, budget);
             const pause = budget.checkpoint();
             if (pause) await pause;
           }
         } else {
-          const next = await cloneCooperatively(desired, budget);
-          for (let index = 0; index < next.length; index++) current[index] = next[index];
-          current.length = next.length;
+          for (let index = 0; index < desired.length; index++) {
+            current[index] = desired[index];
+            const pause = budget.checkpoint();
+            if (pause) await pause;
+          }
+          current.length = desired.length;
         }
         await this.checkArrayStructureAsync(current, budget);
         if (this.dirtyObjectProps.get(target.id)?.has(key)) this.checkObjectField(target, key);
       } else if (!sameValue(current, desired)) {
-        if (Object.hasOwn(draft, key)) target[key] = await cloneCooperatively(desired, budget);
+        if (Object.hasOwn(draft, key)) target[key] = desired;
         else delete target[key];
         this.checkObjectField(target, key);
       }
@@ -438,78 +438,75 @@ export class ChangeTracker<T extends object> {
     for (const source of properties.values()) source.invalidate();
   }
 
+  // Validation first reads every rule through its proxy. Share the traps so
+  // that scan creates one proxy per node, without a handler and six closures
+  // for every offscreen object.
+  private readonly proxyHandler: ProxyHandler<any> = {
+    ownKeys: (tgt) => {
+      this.trackProperty(tgt, OBJECT_KEYS);
+      return Reflect.ownKeys(tgt);
+    },
+    has: (tgt, prop) => {
+      this.trackProperty(tgt, prop);
+      return Reflect.has(tgt, prop);
+    },
+    getOwnPropertyDescriptor: (tgt, prop) => {
+      this.trackProperty(tgt, prop);
+      return Reflect.getOwnPropertyDescriptor(tgt, prop);
+    },
+    get: (tgt, prop, receiver) => {
+      this.trackProperty(tgt, prop);
+      if (Array.isArray(tgt) && typeof prop === "string" && ARRAY_MUTATIONS.has(prop)) {
+        return (...args: any[]) => {
+          const rawArgs = args.map((arg) => this.detachValue(arg));
+          const res = Reflect.get(tgt, prop, receiver).apply(tgt, rawArgs);
+          this.checkArrayStructure(tgt);
+          this.invalidateArray(tgt);
+          this.notify();
+          return res;
+        };
+      }
+      const val = Reflect.get(tgt, prop, receiver);
+      return typeof val === "object" && val !== null ? this.createProxy(val) : val;
+    },
+    set: (tgt, prop, val) => {
+      const raw = this.detachValue(val);
+      const present = Object.hasOwn(tgt, prop);
+      if (present && Object.is(Reflect.get(tgt, prop), raw)) return true;
+      const res = Reflect.set(tgt, prop, raw);
+      if (!res) return false;
+      if (Array.isArray(tgt)) {
+        if (typeof prop === "string" && (prop === "length" || !isNaN(Number(prop))))
+          this.checkArrayStructure(tgt);
+        this.invalidateArray(tgt);
+      } else {
+        if (typeof prop === "string") this.checkObjectField(tgt, prop);
+        this.invalidateProperty(tgt, prop, !present);
+      }
+      this.notify();
+      return res;
+    },
+    deleteProperty: (tgt, prop) => {
+      if (!Object.hasOwn(tgt, prop)) return true;
+      const res = Reflect.deleteProperty(tgt, prop);
+      if (!res) return false;
+      if (Array.isArray(tgt)) {
+        this.checkArrayStructure(tgt);
+        this.invalidateArray(tgt);
+      } else {
+        if (typeof prop === "string") this.checkObjectField(tgt, prop);
+        this.invalidateProperty(tgt, prop, true);
+      }
+      this.notify();
+      return res;
+    },
+  };
+
   private createProxy(target: any): any {
     if (typeof target !== "object" || target === null) return target;
     if (this.proxyCache.has(target)) return this.proxyCache.get(target);
 
-    const isArray = Array.isArray(target);
-
-    const handler: ProxyHandler<any> = {
-      ownKeys: (tgt) => {
-        this.trackProperty(tgt, OBJECT_KEYS);
-        return Reflect.ownKeys(tgt);
-      },
-      has: (tgt, prop) => {
-        this.trackProperty(tgt, prop);
-        return Reflect.has(tgt, prop);
-      },
-      getOwnPropertyDescriptor: (tgt, prop) => {
-        this.trackProperty(tgt, prop);
-        return Reflect.getOwnPropertyDescriptor(tgt, prop);
-      },
-      get: (tgt, prop, receiver) => {
-        this.trackProperty(tgt, prop);
-        if (
-          isArray &&
-          typeof prop === "string" &&
-          ["push", "pop", "shift", "unshift", "splice", "sort", "reverse"].includes(prop)
-        ) {
-          return (...args: any[]) => {
-            const rawArgs = args.map((arg) => this.detachValue(arg));
-            const res = Reflect.get(tgt, prop, receiver).apply(tgt, rawArgs);
-            this.checkArrayStructure(tgt);
-            this.invalidateArray(tgt);
-            this.notify();
-            return res;
-          };
-        }
-        const val = Reflect.get(tgt, prop, receiver);
-        return typeof val === "object" && val !== null ? this.createProxy(val) : val;
-      },
-      set: (tgt, prop, val) => {
-        const raw = this.detachValue(val);
-        const present = Object.hasOwn(tgt, prop);
-        if (present && Object.is(Reflect.get(tgt, prop), raw)) return true;
-        const res = Reflect.set(tgt, prop, raw);
-        if (!res) return false;
-        if (isArray) {
-          if (typeof prop === "string" && (prop === "length" || !isNaN(Number(prop))))
-            this.checkArrayStructure(tgt);
-          this.invalidateArray(tgt);
-        } else {
-          if (typeof prop === "string") this.checkObjectField(tgt, prop);
-          this.invalidateProperty(tgt, prop, !present);
-        }
-        this.notify();
-        return res;
-      },
-      deleteProperty: (tgt, prop) => {
-        if (!Object.hasOwn(tgt, prop)) return true;
-        const res = Reflect.deleteProperty(tgt, prop);
-        if (!res) return false;
-        if (isArray) {
-          this.checkArrayStructure(tgt);
-          this.invalidateArray(tgt);
-        } else {
-          if (typeof prop === "string") this.checkObjectField(tgt, prop);
-          this.invalidateProperty(tgt, prop, true);
-        }
-        this.notify();
-        return res;
-      },
-    };
-
-    const proxy = new Proxy(target, handler);
+    const proxy = new Proxy(target, this.proxyHandler);
     this.proxyCache.set(target, proxy);
     this.reverseProxyCache.set(proxy, target);
     return proxy;
@@ -596,38 +593,45 @@ export class ChangeTracker<T extends object> {
     }
   }
 
-  private collectLiveState(node: any, ids: Set<string>, arrays: Set<object>) {
+  private collectLiveState(node: any, objects: Map<string, object>, arrays: Set<object>) {
     if (!node || typeof node !== "object") return;
 
     if (Array.isArray(node)) {
       arrays.add(node);
       for (const item of node) {
-        this.collectLiveState(item, ids, arrays);
+        this.collectLiveState(item, objects, arrays);
       }
       return;
     }
 
-    if (node.id) {
-      ids.add(node.id);
+    // Only dirty IDs need a live object for reconciliation. Do not build a
+    // second index of every unchanged rule during a baseline update.
+    if (node.id && this.dirtyObjectProps.has(node.id)) {
+      objects.set(node.id, node);
     }
 
     for (const key in node) {
       if (typeof node[key] === "object") {
-        this.collectLiveState(node[key], ids, arrays);
+        this.collectLiveState(node[key], objects, arrays);
       }
     }
   }
 
   private pruneDirtyState() {
-    const liveIds = new Set<string>();
+    const liveObjects = new Map<string, object>();
     const liveArrays = new Set<object>();
 
-    this.collectLiveState(this.state, liveIds, liveArrays);
+    this.collectLiveState(this.state, liveObjects, liveArrays);
 
-    for (const id of Array.from(this.dirtyObjectProps.keys())) {
-      if (!liveIds.has(id)) {
+    for (const [id, props] of this.dirtyObjectProps) {
+      const target = liveObjects.get(id);
+      if (!target) {
         this.dirtyObjectProps.delete(id);
+        continue;
       }
+      // Reconcile the final live object, which may have moved elsewhere while
+      // its old parent was restored. A saved clone must not clear its edits.
+      for (const prop of Array.from(props)) this.checkObjectField(target, prop);
     }
 
     for (const array of Array.from(this.dirtyArrays)) {

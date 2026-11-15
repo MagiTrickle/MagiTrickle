@@ -103,10 +103,7 @@
 
   :global([data-dialog-overlay]) {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -126,8 +123,10 @@
     top: 50%;
     transform: translate(-50%, -50%) scale(0.985);
     opacity: 0;
-    width: 100%;
-    max-width: min(var(--generic-dialog-max-width, 300px), calc(100vw - 5rem));
+    box-sizing: border-box;
+    /* Use the containing width, which excludes a reserved native scrollbar. */
+    width: calc(100% - 2rem);
+    max-width: calc(var(--generic-dialog-max-width, 300px) + 2rem + 2px);
     background-color: var(--bg-dark);
     border-radius: 0.5rem;
     border: 1px solid var(--bg-light-extra);

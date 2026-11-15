@@ -14,18 +14,40 @@ records the behavior to retain while replacing pagination and staged rendering.
 - At 700px and below both row types become stacked cards. Their heights can
   differ from desktop and change with wrapping. Resize and font loading must
   update measurements rather than leaving gaps or overlapping rows.
-- Use the document scroll, retaining the sticky toolbar. Virtual spacers do not
+- Use native document scrolling with the original overlay scrollbar restored
+  from before `a139e6d`, retaining its header bounds, appearance, auto-hide and
+  pointer capture. Wheel and keyboard scrolling remain browser-owned; only an
+  explicit scrollbar drag/click writes the document position. The overlay does
+  not reserve a page gutter or shift content when a dialog opens. Virtual spacers do not
   clip menus, introduce stacking contexts above portals or cover neighboring
   panels. Popup hit testing must succeed where a popup overlaps another row.
 - Back to top reaches document offset zero even while virtual measurements
   change. Repeated clicks work; wheel, touch, pointer and navigation keys cancel
   the animation. Reduced motion jumps directly to the top.
-- Ctrl/Cmd+Up/Down and Home/End reach the document edge in one action. Retain
-  that edge while nested virtual measurements settle, suppressing competing
-  anchor corrections. Share easing with Back to top, with a soft start and stop
-  and a short duration based on distance (200–480 ms). Reduced motion jumps
-  directly to the edge. Manual input cancels this intent. Editable fields,
-  selections, menus and dialogs keep their native keyboard behavior.
+- Home/End keep their native browser behavior. Ctrl/Cmd+Up/Down and Back to top
+  initiate a native smooth scroll, or an instant scroll with reduced motion.
+  After scrollend and the destination panel's layout frames, check the requested
+  edge again: remounting an expanded panel can change the document height or
+  clamp Safari's original target. Continue natively only if that edge was lost;
+  release the request on arrival or cancellation. Do not implement easing,
+  replay the destination each frame or write scroll offsets from ResizeObserver:
+  those writes interrupt the browser's animation. Manual
+  input cancels an initiated move. Editable fields, selections, menus and dialogs
+  keep their native keyboard behavior. Do not prevent or replay wheel deltas to
+  override the browser's native handoff from a cancelled animation.
+- Keep native scroll anchoring available on real rows; exclude only spacers.
+  Learn common rule and collapsed-panel sizes from a consistent visible batch,
+  while retaining individual measurements for wrapping or other exceptions.
+  Preserve fractional CSS pixels in both measurements and common estimates;
+  rounding each row makes the document height depend on the mounted range.
+  Very tall spacers keep their fractional part separate from their whole-pixel
+  height so CSS length precision does not change the sum as rows mount.
+  Shared estimates survive panel unmounts and have separate mobile/desktop values.
+  The collection owns cached rule measurements through a weak key; resizing
+  invalidates incompatible geometry without retaining deleted collections.
+- Functional panel estimates track every panel's open state and rule count,
+  including offscreen panels. Changing one panel must not clear unrelated
+  measurements. Updating a numeric estimate preserves already measured rows.
 - A tooltip or open popup must never remain orphaned when its trigger unmounts.
   Escape closes a popup and restores its trigger when that trigger remains
   mounted. Focused editors and active drag sources need stable ownership.
@@ -35,13 +57,9 @@ records the behavior to retain while replacing pagination and staged rendering.
   Panel components retain their logical keys because they own editor state.
 - Share document viewport scheduling across lists. Repeated scroll/resize
   notifications with unchanged ranges or sizes must not rebuild the layout.
-  Scrollbar geometry reads precede writes and run at most once per frame.
-- Read scrollbar geometry in the shared frame before virtual ranges commit.
-  Programmatic scrolling and its new range belong to the same frame. Restore
-  normal overscan before finishing an edge jump so final measurements settle
-  while the requested edge is still retained.
-- An already-open panel remounted by scrolling does not replay its expand
-  transition. Closed panels retain their accessibility relationships without
+  Viewport reads precede virtual range commits; the browser owns scrolling.
+- Group and subscription rules expand and collapse immediately, with no height
+  or opacity transition. Closed panels retain their accessibility relationships without
   measuring or mounting offscreen rule content.
 - Local popup and preview scrolling uses the same VirtualList with its own
   scroll element. It must not move the document, clip portals or grow mounted
@@ -77,6 +95,8 @@ records the behavior to retain while replacing pagination and staged rendering.
 - Build detached change tracking, validation and duplicate indexes in bounded
   pieces that yield to browser tasks, including inside one large rule array.
   Preparation must not publish partial drafts or invalidate background loads.
+  Reuse the preparation's own detached nodes instead of cloning them again;
+  saved baselines and caller-owned snapshots must remain separate.
 - Validate every prepared store and the current editor snapshot before committing
   the transaction synchronously. Reject stale preparation without losing edits.
   Imported drafts remain reversible and Save retains its existing API contract.
@@ -85,10 +105,20 @@ records the behavior to retain while replacing pagination and staged rendering.
 
 - Parsing, type detection, statistics, deduplication and ID generation run in
   a cancellable worker session. The complete rule list stays there until Apply;
-  the preview retains its existing first-500-lines limit and continuation marker.
+  the preview is limited to the first 500 lines and 32 Ki UTF-16 text units,
+  retaining a continuation marker and the full original editor buffer.
+- Apply pulls one bounded worker message at a time (up to 256 fragments and
+  32 Ki UTF-16 text units). Assemble a private result array without repeated
+  concatenation, and publish it only after every ordered chunk is complete.
+  Cancellation discards the partial result; late replies from a terminated
+  session cannot affect a later import. Parser failure invalidates the preview
+  cache so retry reparses the retained input in a new worker.
 - Preview and edit modes retain one textarea and its native editing buffer.
   Technical text has spellcheck, correction and writing suggestions disabled.
   Resizing reads only enough lines to reach the editor's maximum height.
+  Closing clears the bulk text only after the textarea leaves the DOM, including
+  a dialog outro. Reopening during that outro starts a fresh editor without a
+  delayed reset of the new input.
 - Type or text changes invalidate cached results, including while editing.
   Cancel, close and destruction terminate obsolete work. Apply awaits one
   atomic store commit; cancellation and errors keep the previous draft intact

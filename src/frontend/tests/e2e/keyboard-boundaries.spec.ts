@@ -39,7 +39,14 @@ async function loadLargeList(page: Page, panels: boolean) {
     await page.locator(".group [data-collapsible-trigger]").click();
     await expect(page.locator(".rule").first()).toBeVisible();
   }
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.evaluate(async () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    // Let the first painted rows supply their measurements before the test
+    // captures a target offset; DOM visibility alone precedes ResizeObserver.
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
   return groups;
 }
 
@@ -65,7 +72,9 @@ for (const width of [1280, 390]) {
         ["End", "Home"],
       ]) {
         await page.keyboard.press(down);
-        await expect.poll(async () => (await documentEdge(page)).bottom).toBeLessThan(1);
+        await expect
+          .poll(async () => (await documentEdge(page)).bottom, { message: `${down}: document end` })
+          .toBeLessThan(1);
         if (panels) {
           await expect(
             page.locator(`.group[data-uuid="${last.id}"] input.group-name`),
@@ -78,7 +87,9 @@ for (const width of [1280, 390]) {
         await page.waitForTimeout(250);
         expect((await documentEdge(page)).bottom).toBeLessThan(1);
         await page.keyboard.press(up);
-        await expect.poll(async () => (await documentEdge(page)).top).toBeLessThan(1);
+        await expect
+          .poll(async () => (await documentEdge(page)).top, { message: `${up}: document start` })
+          .toBeLessThan(1);
         await expect(page.locator("input.group-name").first()).toHaveValue(groups[0].name);
         await page.waitForTimeout(250);
         expect((await documentEdge(page)).top).toBeLessThan(1);
@@ -158,9 +169,9 @@ test("manual wheel input releases a boundary jump while virtual heights settle",
   await expect.poll(async () => (await documentEdge(page)).bottom).toBeGreaterThan(200);
   await page.waitForTimeout(400);
   expect((await documentEdge(page)).bottom).toBeGreaterThan(200);
-  // Cancel on the very first boundary frame too, before its four-frame
-  // settling window can expire. Synthetic wheel input has no native scroll,
-  // so move the viewport explicitly after delivering the cancellation event.
+  // Deliver another navigation request and cancel before it completes.
+  // Synthetic wheel input has no native scroll, so move the viewport
+  // explicitly after delivering the cancellation event.
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
@@ -183,6 +194,36 @@ test("manual wheel input releases a boundary jump while virtual heights settle",
   expect((await documentEdge(page)).bottom).toBeGreaterThan(200);
 });
 
+test("wheel input after scrollend cancels the pending edge check", async ({ page }) => {
+  await loadLargeList(page, true);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "ArrowDown",
+            metaKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        // The boundary controller queues its layout check first. Simulate the
+        // user's next wheel before that check can reclaim the requested edge.
+        function onEnd(event: Event) {
+          if (event.target !== document) return;
+          document.removeEventListener("scrollend", onEnd);
+          window.dispatchEvent(new WheelEvent("wheel", { deltaY: -1100 }));
+          window.scrollBy(0, -1100);
+          resolve();
+        }
+        document.addEventListener("scrollend", onEnd);
+      }),
+  );
+  await expect.poll(async () => (await documentEdge(page)).bottom).toBeGreaterThan(200);
+  await page.waitForTimeout(400);
+  expect((await documentEdge(page)).bottom).toBeGreaterThan(200);
+});
+
 test("boundary shortcuts leave the priority popover buttons in control", async ({ page }) => {
   await loadLargeList(page, true);
   await page.locator(".priority-trigger").first().click();
@@ -202,49 +243,105 @@ test("boundary shortcuts leave the priority popover buttons in control", async (
   await expect(page.locator(".priority-popover")).toBeHidden();
 });
 
-test("boundary shortcuts animate through an intermediate position before settling at the exact edge", async ({
-  page,
-}) => {
-  // Load with the clock running naturally, then pause it between shortcuts.
-  // Advancing exactly 80ms proves that a short jump has intermediate frames
-  // without depending on the speed of the machine running this test.
-  await page.clock.install();
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await loadLargeList(page, true);
-  for (const [shortcut, edge] of [
-    ["Control+ArrowDown", "bottom"],
-    ["Meta+ArrowUp", "top"],
-    ["End", "bottom"],
-    ["Home", "top"],
-  ] as const) {
-    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
-    await page.keyboard.press(shortcut);
-    await page.clock.runFor(80);
-    const intermediate = await documentEdge(page);
-    expect(intermediate.top).toBeGreaterThan(100);
-    expect(intermediate.bottom).toBeGreaterThan(100);
-    await page.clock.resume();
-    await expect.poll(async () => (await documentEdge(page))[edge]).toBeLessThan(1);
-    await page.waitForTimeout(250);
-    expect((await documentEdge(page))[edge]).toBeLessThan(1);
-  }
-});
+for (const panels of [true, false]) {
+  test(`native boundary scrolling is not interrupted by ${panels ? "panel" : "100k rule"} measurements`, async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await loadLargeList(page, panels);
+    type Trace = {
+      positions: { top: number; bottom: number }[];
+      calls: string[];
+      prevented: boolean[];
+    };
+    type TraceWindow = Window & { finishScrollTrace?: () => Trace };
+    for (const [shortcut, edge, alias] of [
+      ["Control+ArrowDown", "bottom", true],
+      ["Meta+ArrowUp", "top", true],
+      ["End", "bottom", false],
+      ["Home", "top", false],
+    ] as const) {
+      await page.evaluate(() => {
+        const trace: Trace = { positions: [], calls: [], prevented: [] };
+        const scrollTo = window.scrollTo;
+        const scrollBy = window.scrollBy;
+        window.scrollTo = new Proxy(scrollTo, {
+          apply(target, receiver, argumentsList) {
+            trace.calls.push("scrollTo");
+            return Reflect.apply(target, receiver, argumentsList);
+          },
+        });
+        window.scrollBy = new Proxy(scrollBy, {
+          apply(target, receiver, argumentsList) {
+            trace.calls.push("scrollBy");
+            return Reflect.apply(target, receiver, argumentsList);
+          },
+        });
+        const onScroll = () =>
+          trace.positions.push({
+            top: scrollY,
+            bottom: document.documentElement.scrollHeight - innerHeight - scrollY,
+          });
+        const onKey = (event: KeyboardEvent) => trace.prevented.push(event.defaultPrevented);
+        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("keydown", onKey);
+        (window as TraceWindow).finishScrollTrace = () => {
+          window.scrollTo = scrollTo;
+          window.scrollBy = scrollBy;
+          window.removeEventListener("scroll", onScroll);
+          window.removeEventListener("keydown", onKey);
+          return trace;
+        };
+      });
+      await page.keyboard.press(shortcut);
+      await expect
+        .poll(async () => (await documentEdge(page))[edge], { message: `${shortcut}: ${edge}` })
+        .toBeLessThan(1);
+      // Check through the following layout frames as well as the first arrival.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            let remaining = 12;
+            function sample() {
+              if (--remaining) requestAnimationFrame(sample);
+              else resolve();
+            }
+            requestAnimationFrame(sample);
+          }),
+      );
+      expect((await documentEdge(page))[edge]).toBeLessThan(1);
+      const trace = await page.evaluate(() => {
+        const state = window as TraceWindow;
+        const trace = state.finishScrollTrace!();
+        delete state.finishScrollTrace;
+        return trace;
+      });
+      // One native scroll starts an alias; measurement callbacks must not write
+      // scroll offsets and cancel its animation. Home/End need no scripted move.
+      expect(trace.calls).toEqual(alias ? ["scrollTo"] : []);
+      if (alias) {
+        expect(
+          trace.positions.some((position) => position.top > 100 && position.bottom > 100),
+        ).toBe(true);
+      } else {
+        expect(trace.prevented).toEqual([false]);
+      }
+    }
+  });
+}
 
-test("reduced motion makes boundary shortcuts immediate while preserving the exact edge", async ({
+test("reduced motion makes boundary aliases immediate while preserving the exact edge", async ({
   page,
 }) => {
-  await page.clock.install();
   await page.emulateMedia({ reducedMotion: "reduce" });
   await loadLargeList(page, true);
   for (const [shortcut, edge] of [
     ["Control+ArrowDown", "bottom"],
     ["Meta+ArrowUp", "top"],
   ] as const) {
-    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
     await page.keyboard.press(shortcut);
-    await page.clock.runFor(80);
     expect((await documentEdge(page))[edge]).toBeLessThan(1);
-    await page.clock.resume();
     await page.waitForTimeout(250);
     expect((await documentEdge(page))[edge]).toBeLessThan(1);
   }

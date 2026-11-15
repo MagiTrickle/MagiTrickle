@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import type { RuleListResponse } from "../../src/modules/groups/rule-list-parser";
 import type { Group } from "../../src/types";
 
 async function editor(page: Page) {
@@ -70,9 +71,69 @@ async function seedBulkText(textarea: Locator, text: string) {
 const largeText = () =>
   Array.from({ length: 100000 }, (_, index) => `item${index}.example.test`).join("\n");
 
+type StagingProbe = {
+  armed: boolean;
+  timerRan: boolean;
+  actedWhileApplying: boolean;
+  actionTaken: boolean;
+  rowsBeforeAction: number;
+  taskDelayMs: number;
+};
+type ProbeWindow = Window & { nativeImportProbe?: StagingProbe };
+
+async function interruptNextRuleStaging(page: Page, action: "close" | "edit") {
+  await page.addInitScript((action) => {
+    const probe: StagingProbe = {
+      armed: true,
+      timerRan: false,
+      actedWhileApplying: false,
+      actionTaken: false,
+      rowsBeforeAction: -1,
+      taskDelayMs: 0,
+    };
+    (window as ProbeWindow).nativeImportProbe = probe;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes("rule-list-parser.worker")) return;
+        this.addEventListener("message", (event: MessageEvent<RuleListResponse>) => {
+          if (!probe.armed || event.data.type !== "chunk" || !event.data.done) return;
+          probe.armed = false;
+          const receivedAt = performance.now();
+          // The final response enters preparation through its promise before
+          // this task runs. Acting immediately after clicking Import could
+          // instead happen during transfer, before the store revision is read.
+          setTimeout(() => {
+            probe.timerRan = true;
+            probe.taskDelayMs = performance.now() - receivedAt;
+            const dialog = document.querySelector('[data-dialog-content][data-state="open"]');
+            const submit = dialog?.querySelector<HTMLButtonElement>('button[type="submit"]');
+            probe.actedWhileApplying = Boolean(submit?.disabled);
+            probe.rowsBeforeAction = document.querySelectorAll(".group .rule").length;
+            if (!probe.actedWhileApplying) return;
+            if (action === "close") {
+              const close = dialog?.querySelector<HTMLButtonElement>("[data-dialog-close]");
+              if (!close) return;
+              close.click();
+            } else {
+              const name = document.querySelector<HTMLInputElement>("input.group-name");
+              if (!name) return;
+              name.value = "Changed during import";
+              name.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            probe.actionTaken = true;
+          }, 0);
+        });
+      }
+    };
+  }, action);
+  return () => page.evaluate(() => (window as ProbeWindow).nativeImportProbe!);
+}
+
 test("100k native rule import keeps the editor buffer, limits preview DOM and imports edits in full", async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(120000);
   const { open, writes } = await editor(page);
   const dialog = await open();
@@ -108,9 +169,118 @@ test("100k native rule import keeps the editor buffer, limits preview DOM and im
   await expect(textarea).toHaveValue(/^edited\.item0\.example\.test/);
   await textarea.blur();
   await expect(preview).toBeVisible();
-  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await textarea.evaluate((node: HTMLTextAreaElement) => {
+    const value = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!;
+    node.dataset.connectedClears = "0";
+    Object.defineProperty(node, "value", {
+      configurable: true,
+      get: () => value.get!.call(node),
+      set: (next: string) => {
+        // Closing must remove the native editor before clearing its bulk
+        // buffer. Replacing 100k live lines also rebuilds native text layout.
+        if (!next && node.isConnected)
+          node.dataset.connectedClears = String(Number(node.dataset.connectedClears) + 1);
+        value.set!.call(node, next);
+      },
+    });
+  });
+  type ApplyMetrics = {
+    elapsedMs: number;
+    frameCount: number;
+    maxFrameGapMs: number;
+    p95FrameGapMs: number;
+    taskTurnCount: number;
+    maxTaskGapMs: number;
+    longTasksSupported: boolean;
+    longTaskCount: number | null;
+    maxLongTaskMs: number | null;
+    longTaskTotalMs: number | null;
+  };
+  type MetricsWindow = Window & { finishImportMetrics?: () => ApplyMetrics };
+  const submitBox = await dialog.getByRole("button", { name: "Import", exact: true }).boundingBox();
+  expect(submitBox).not.toBeNull();
+  await page.evaluate(() => {
+    const started = performance.now();
+    const gaps: number[] = [];
+    const tasks: number[] = [];
+    let previousFrame = started;
+    let previousTask = started;
+    let taskTurnCount = 0;
+    let maxTaskGapMs = 0;
+    let frame = 0;
+    function sample(now: number) {
+      gaps.push(now - previousFrame);
+      previousFrame = now;
+      frame = requestAnimationFrame(sample);
+    }
+    frame = requestAnimationFrame(sample);
+    const timer = setInterval(() => {
+      const now = performance.now();
+      maxTaskGapMs = Math.max(maxTaskGapMs, now - previousTask);
+      previousTask = now;
+      taskTurnCount++;
+    }, 0);
+    const supported =
+      globalThis.PerformanceObserver?.supportedEntryTypes?.includes("longtask") ?? false;
+    const collect = (entries: PerformanceEntry[]) => {
+      for (const entry of entries) if (entry.startTime >= started) tasks.push(entry.duration);
+    };
+    const observer = supported
+      ? new PerformanceObserver((list) => collect(list.getEntries()))
+      : undefined;
+    observer?.observe({ type: "longtask" });
+    (window as MetricsWindow).finishImportMetrics = () => {
+      cancelAnimationFrame(frame);
+      clearInterval(timer);
+      if (observer) {
+        collect(observer.takeRecords());
+        observer.disconnect();
+      }
+      const now = performance.now();
+      gaps.sort((a, b) => a - b);
+      return {
+        elapsedMs: now - started,
+        frameCount: gaps.length,
+        maxFrameGapMs: Math.max(0, ...gaps),
+        p95FrameGapMs: gaps[Math.floor(gaps.length * 0.95)] ?? 0,
+        taskTurnCount,
+        maxTaskGapMs: Math.max(maxTaskGapMs, now - previousTask),
+        longTasksSupported: supported,
+        longTaskCount: supported ? tasks.length : null,
+        maxLongTaskMs: supported ? Math.max(0, ...tasks) : null,
+        longTaskTotalMs: supported ? tasks.reduce((sum, duration) => sum + duration, 0) : null,
+      };
+    };
+  });
+  await page.mouse.click(submitBox!.x + submitBox!.width / 2, submitBox!.y + submitBox!.height / 2);
+  // Polling locator assertions adds accessibility-snapshot work over the still
+  // mounted 100k-line textarea. Keep test-runner diagnostics outside this interval.
+  await page.waitForFunction(() => {
+    const save = document.querySelector<HTMLButtonElement>("#save-changes");
+    return Boolean(
+      !document.querySelector("[data-dialog-content]") &&
+      save &&
+      !save.disabled &&
+      document.querySelector(".group .rule"),
+    );
+  });
+  const metrics = await page.evaluate(() => {
+    const state = window as MetricsWindow;
+    const result = state.finishImportMetrics!();
+    delete state.finishImportMetrics;
+    return result;
+  });
   await expect(dialog).toBeHidden();
+  expect(await originalEditor!.evaluate((node) => node.dataset.connectedClears)).toBe("0");
   await expect(page.locator("#save-changes")).toBeEnabled();
+  await expect(page.locator(".rule").first()).toBeVisible();
+  await testInfo.attach("native-100k-apply-metrics.json", {
+    body: JSON.stringify(metrics, null, 2),
+    contentType: "application/json",
+  });
+  // Record successful Apply separately from paste/edit and the full export.
+  // These diagnostics have no hardware-dependent pass/fail threshold.
+  console.log("native-100k-apply-metrics", JSON.stringify(metrics));
   const downloading = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export Config", exact: true }).click();
   const path = await (await downloading).path();
@@ -162,22 +332,56 @@ test("changing the type while editing invalidates a cached native preview", asyn
   await expect(page.locator(".rule").first()).toContainText("Domain");
 });
 
+test("reopening during the dialog exit starts a fresh editor without a late reset", async ({
+  page,
+}) => {
+  const { open, writes } = await editor(page);
+  const dialog = await open();
+  const textarea = dialog.locator("textarea");
+  await expect(dialog).toHaveCSS("opacity", "1");
+  await textarea.fill("old.example.test");
+  const oldEditor = await textarea.elementHandle();
+  const closing = await page.evaluate(async () => {
+    const dialog = document.querySelector("[data-dialog-content]")!;
+    document.querySelector<HTMLButtonElement>("[data-dialog-close]")!.click();
+    // Flush the controlled closed state before reopening during the outro.
+    // Two synchronous clicks collapse false -> true in Svelte's batch and do
+    // not represent a second input event reaching the closing dialog.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const closing = { connected: dialog.isConnected, state: dialog.getAttribute("data-state") };
+    document.querySelector<HTMLButtonElement>('[data-value="Import Rule List"] button')!.click();
+    return closing;
+  });
+  expect(closing).toEqual({ connected: true, state: "closed" });
+  await expect(dialog).toHaveAttribute("data-state", "open");
+  await expect(dialog).toBeVisible();
+  await expect(textarea).toHaveValue("");
+  expect(await oldEditor!.evaluate((node) => node.isConnected)).toBe(false);
+  await textarea.fill("new.example.test");
+  await textarea.blur();
+  await expect(dialog.locator(".count-val")).toHaveText("1");
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".pattern-input")).toHaveValue("new.example.test");
+  expect(writes).toEqual([]);
+});
+
 test("a failed native bulk apply retains its parsed input for retry", async ({ page }) => {
   test.setTimeout(120000);
-  const { open } = await editor(page);
+  const readProbe = await interruptNextRuleStaging(page, "edit");
+  const { open, writes } = await editor(page);
   const dialog = await open();
   await seedBulkText(dialog.locator("textarea"), largeText());
   await dialog.locator("textarea").blur();
   await expect(dialog.locator(".results-view")).toBeVisible();
   const submit = dialog.getByRole("button", { name: "Import", exact: true });
   await submit.click();
-  await expect(submit).toBeDisabled();
-  // A background editor mutation during cooperative preparation invalidates
-  // that transaction. The modal must retain the user's complete source.
-  await page.locator("input.group-name").evaluate((node: HTMLInputElement) => {
-    node.value = "Changed during import";
-    node.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await expect.poll(async () => (await readProbe()).timerRan).toBe(true);
+  const probe = await readProbe();
+  expect(probe.actedWhileApplying).toBe(true);
+  expect(probe.actionTaken).toBe(true);
+  expect(probe.rowsBeforeAction).toBe(0);
+  await expect(page.locator("input.group-name")).toHaveValue("Changed during import");
   await expect(submit).toBeEnabled();
   await expect(dialog).toBeVisible();
   await expect(dialog.locator(".results-view")).toBeVisible();
@@ -190,6 +394,101 @@ test("a failed native bulk apply retains its parsed input for retry", async ({ p
       .locator("textarea")
       .evaluate((node: HTMLTextAreaElement) => node.value.split("\n").length),
   ).toBe(100000);
+  await expect(page.locator(".group .rule")).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+test("a failed worker transfer can retry unchanged native rule text", async ({ page }) => {
+  type FailureWindow = Window & { nativeApplyFailed?: boolean };
+  await page.addInitScript(() => {
+    const state = window as FailureWindow;
+    state.nativeApplyFailed = false;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes("rule-list-parser.worker")) return;
+        this.addEventListener("message", (event: MessageEvent<RuleListResponse>) => {
+          if (state.nativeApplyFailed || event.data.type !== "chunk") return;
+          state.nativeApplyFailed = true;
+          event.stopImmediatePropagation();
+          this.dispatchEvent(
+            new ErrorEvent("error", { message: "Simulated worker failure", cancelable: true }),
+          );
+        });
+      }
+    };
+  });
+  const { open, writes } = await editor(page);
+  const dialog = await open();
+  const textarea = dialog.locator("textarea");
+  const originalEditor = await textarea.elementHandle();
+  const text = "retry-one.example.test\nretry-two.example.test";
+  await textarea.fill(text);
+  await textarea.blur();
+  await expect(dialog.locator(".count-val")).toHaveText("2");
+  const submit = dialog.getByRole("button", { name: "Import", exact: true });
+  await submit.click();
+  await expect
+    .poll(() => page.evaluate(() => (window as FailureWindow).nativeApplyFailed))
+    .toBe(true);
+  await expect(submit).toBeEnabled();
+  await expect(dialog).toBeVisible();
+  await expect(textarea).toHaveValue(text);
+  expect(
+    await originalEditor!.evaluate(
+      (node) => node === document.querySelector("[data-dialog-content] textarea"),
+    ),
+  ).toBe(true);
+  await expect(page.locator(".group .rule")).toHaveCount(0);
+  await expect(page.locator("#save-changes")).toBeDisabled();
+
+  await submit.click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".pattern-input")).toHaveCount(2);
+  await expect(page.locator(".pattern-input").first()).toHaveValue("retry-one.example.test");
+  await expect(page.locator(".pattern-input").last()).toHaveValue("retry-two.example.test");
+  expect(writes).toEqual([]);
+});
+
+test("100k native import yields to cancellation during client staging without publishing partial rules", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120000);
+  const readProbe = await interruptNextRuleStaging(page, "close");
+
+  const { open, writes } = await editor(page);
+  let dialog = await open();
+  await seedBulkText(dialog.locator("textarea"), largeText());
+  await dialog.locator("textarea").blur();
+  await expect(dialog.locator(".count-val")).toHaveText("100000");
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await expect.poll(async () => (await readProbe()).timerRan).toBe(true);
+  const probe = await readProbe();
+  await testInfo.attach("native-import-cancellation.json", {
+    body: JSON.stringify(probe, null, 2),
+    contentType: "application/json",
+  });
+  expect(probe.actedWhileApplying).toBe(true);
+  expect(probe.actionTaken).toBe(true);
+  expect(probe.rowsBeforeAction).toBe(0);
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("#save-changes")).toBeDisabled();
+
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export Config", exact: true }).click();
+  const path = await (await downloading).path();
+  const exported = JSON.parse(await readFile(path!, "utf8")) as { groups: Group[] };
+  expect(exported.groups[0].rules).toEqual([]);
+
+  dialog = await open();
+  await dialog.locator("textarea").fill("fresh-one.example.test\nfresh-two.example.test");
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".pattern-input")).toHaveCount(2);
+  await expect(page.locator(".pattern-input").first()).toHaveValue("fresh-one.example.test");
+  await expect(page.locator(".pattern-input").last()).toHaveValue("fresh-two.example.test");
+  expect(writes).toEqual([]);
 });
 
 test("trusted 100k paste retains native Undo and Redo after returning from preview", async ({

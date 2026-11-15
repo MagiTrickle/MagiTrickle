@@ -239,6 +239,39 @@ Deno.test(
   },
 );
 
+Deno.test("bulk insertion shifts overlapping ranges and retains existing field edits", async () => {
+  const tracker = new ChangeTracker([
+    {
+      id: "group",
+      rules: [
+        { id: "a", rule: "a.test" },
+        { id: "b", rule: "b.test" },
+        { id: "c", rule: "c.test" },
+      ],
+    },
+  ]);
+  const array = tracker.data[0].rules;
+  const original = array.slice();
+  original[1].rule = "edited.test";
+  const prepared = await tracker.preparePrepend(array, [
+    { id: "new-a", rule: "new-a.test" },
+    { id: "new-b", rule: "new-b.test" },
+  ]);
+  prepared.commit();
+  assert.equal(tracker.data[0].rules, array);
+  assert.deepEqual(
+    array.map((item: { id: string }) => item.id),
+    ["new-a", "new-b", "a", "b", "c"],
+  );
+  for (let index = 0; index < original.length; index++)
+    assert.equal(array[index + 2], original[index]);
+  array.splice(0, 2);
+  assert.equal(tracker.isDirty, true);
+  assert.equal(array[1].rule, "edited.test");
+  array[1].rule = "b.test";
+  assert.equal(tracker.isDirty, false);
+});
+
 Deno.test("bulk preparation rejects stale edits and cancellation without publishing", async () => {
   const tracker = new ChangeTracker(fixture());
   const array = tracker.data[0].rules;
@@ -279,6 +312,133 @@ Deno.test("bulk preparation rejects mutations and cancellation while still build
   await assert.rejects(cancelled, { name: "AbortError" });
   assert.equal(array.length, 1);
   assert.equal(tracker.data[1].name, "Concurrent");
+});
+
+Deno.test("prepared draft adoption isolates new and restored nodes from both inputs", async () => {
+  const saved = fixture().map((group) => ({
+    ...group,
+    labels: ["saved"],
+    metadata: { note: "Saved", values: [{ value: "saved" }] },
+  }));
+  const draft = structuredClone(saved);
+  draft[0].rules.unshift({ id: "new", rule: "new.test" });
+  const moved = draft[1].rules.pop()!;
+  moved.rule = "moved.test";
+  Object.assign(moved, { comment: "Only in the draft" });
+  draft[0].rules.push(moved);
+  draft[0].rules[1].rule = "edited.test";
+  draft[0].labels = ["draft"];
+  draft[0].metadata = { note: "Draft", values: [{ value: "draft" }] };
+  const expected = structuredClone(draft);
+  const originalSaved = structuredClone(saved);
+  const tracker = await ChangeTracker.fromDraftAsync(saved, draft, { budgetMs: 0 });
+  const synchronous = new ChangeTracker(saved);
+  synchronous.replaceDraft(draft);
+  assert.deepEqual(JSON.parse(JSON.stringify(tracker.data)), expected);
+  assert.deepEqual(tracker.changes, synchronous.changes);
+  assert.deepEqual([...tracker.dirtyRootIds].sort(), [...synchronous.dirtyRootIds].sort());
+
+  draft[0].rules[0].rule = "outside.test";
+  draft[0].metadata.values[0].value = "outside";
+  draft[0].labels.push("outside");
+  assert.equal(tracker.data[0].rules[0].rule, "new.test");
+  assert.equal(tracker.data[0].metadata.values[0].value, "draft");
+  assert.deepEqual([...tracker.data[0].labels], ["draft"]);
+  tracker.data[0].rules[0].rule = "inside.test";
+  tracker.data[0].rules[2].rule = "moved-again.test";
+  tracker.data[0].metadata.values[0].value = "inside";
+  tracker.data[0].labels.push("inside");
+  assert.equal(draft[0].rules[0].rule, "outside.test");
+  assert.equal(draft[0].rules[2].rule, "moved.test");
+  assert.equal(draft[0].metadata.values[0].value, "outside");
+  assert.deepEqual(draft[0].labels, ["draft", "outside"]);
+  assert.deepEqual(saved, originalSaved);
+
+  tracker.replaceDraft(saved);
+  assert.deepEqual(JSON.parse(JSON.stringify(tracker.data)), originalSaved);
+  assert.equal(tracker.isDirty, false);
+  tracker.data[1].rules[0].rule = "after-restore.test";
+  assert.equal(tracker.isDirty, true);
+  tracker.data[1].rules[0].rule = "second.test";
+  assert.equal(tracker.isDirty, false);
+  tracker.data[1].rules[0].rule = "before-removal.test";
+  tracker.data.pop();
+  tracker.replaceDraft(saved);
+  assert.deepEqual(JSON.parse(JSON.stringify(tracker.data)), originalSaved);
+  assert.equal(tracker.isDirty, false);
+});
+
+Deno.test("restoring an empty group retains edits of its rule moved to another group", () => {
+  const saved = [
+    { id: "a", rules: [] },
+    { id: "b", rules: [{ id: "moved", rule: "saved.test" }] },
+  ];
+  const tracker = new ChangeTracker(saved);
+  const moved = tracker.data[1].rules[0];
+  tracker.data[1].rules.pop();
+  tracker.data[0].rules.push(moved);
+  moved.rule = "edited.test";
+  tracker.data.pop();
+
+  tracker.replaceDraft([
+    { id: "a", rules: [{ id: "moved", rule: "edited.test" }] },
+    { id: "b", rules: [] },
+  ]);
+  assert.equal(tracker.data[0].rules[0], moved);
+  assert.deepEqual(tracker.changes.mutated, [{ id: "moved", rule: "edited.test" }]);
+
+  tracker.data[0].rules.pop();
+  tracker.data[1].rules.push(moved);
+  assert.equal(tracker.isDirty, true);
+  assert.deepEqual(tracker.changes.mutated, [{ id: "moved", rule: "edited.test" }]);
+  moved.rule = "saved.test";
+  assert.equal(tracker.isDirty, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(tracker.data)), saved);
+});
+
+Deno.test("detached draft preparation yields and can cancel between tasks", async () => {
+  const saved = fixture();
+  const live = new ChangeTracker(saved);
+  const draft = [
+    {
+      ...saved[0],
+      rules: Array.from({ length: 5000 }, (_, index) => ({
+        id: `new-${index}`,
+        rule: `new-${index}.test`,
+      })),
+    },
+  ];
+  let timerRan = false;
+  const timer = setTimeout(() => {
+    timerRan = true;
+  }, 0);
+  try {
+    const pending = ChangeTracker.fromDraftAsync(saved, draft, { budgetMs: 0 });
+    assert.equal(live.data[0].rules.length, 1);
+    const tracker = await pending;
+    assert.equal(timerRan, true);
+    assert.equal(tracker.data[0].rules.length, 5000);
+    assert.equal(live.data[0].rules.length, 1);
+    assert.equal(live.isDirty, false);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const controller = new AbortController();
+  const cancel = setTimeout(() => controller.abort(), 0);
+  try {
+    await assert.rejects(
+      ChangeTracker.fromDraftAsync(saved, draft, { budgetMs: 0, signal: controller.signal }),
+      { name: "AbortError" },
+    );
+    assert.equal(live.data[0].rules.length, 1);
+    assert.equal(live.isDirty, false);
+    assert.equal(draft[0].rules.length, 5000);
+    assert.equal(draft[0].rules[4999].rule, "new-4999.test");
+    assert.deepEqual(saved, fixture());
+  } finally {
+    clearTimeout(cancel);
+  }
 });
 
 Deno.test("atomic replacement reorders 100k rules without losing identity or saved order", () => {

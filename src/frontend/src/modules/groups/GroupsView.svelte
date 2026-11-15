@@ -7,6 +7,7 @@
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import VirtualList from "../../components/ui/VirtualList.svelte";
   import { t } from "../../data/locale.svelte";
+  import { SizeEstimate, type VirtualMeasurement } from "../../lib/virtual/size-estimate.svelte";
   import GroupPanel from "./components/GroupPanel.svelte";
   import Search from "./components/Search.svelte";
   import ImportRulesDialog from "./dialogs/ImportRulesDialog.svelte";
@@ -40,6 +41,21 @@
 
   let groupList = $state<VirtualList>();
   let viewportWidth = $state(1280);
+  const ruleSize = new SizeEstimate({ desktop: 38, mobile: 112 });
+  const panelSize = new SizeEstimate({ desktop: 72, mobile: 72 });
+  const ruleEstimate = $derived(ruleSize.forWidth(viewportWidth));
+  function measureRules(measurements: readonly VirtualMeasurement[]) {
+    ruleSize.learn(viewportWidth, measurements);
+  }
+  function measurePanels(measurements: readonly VirtualMeasurement[]) {
+    panelSize.learn(
+      viewportWidth,
+      measurements.filter(({ index }) => {
+        const group = store.data[visibleIndices[index]];
+        return group && !store.open_state[group.id];
+      }),
+    );
+  }
   const visibleIndices = $derived(
     store.searchActive
       ? store.visibleGroups.map((entry) => entry.group_index)
@@ -200,11 +216,13 @@
           ? (store.visibilityMap.get(groupIndex)?.length ?? group.rules.length)
           : group.rules.length;
         return (
-          72 + (store.open_state[group.id] ? 28 + count * (viewportWidth <= 700 ? 112 : 35) : 0)
+          panelSize.forWidth(viewportWidth) +
+          (store.open_state[group.id] && count ? 28 + count * ruleEstimate : 0)
         );
       }}
       {active}
       revision={visibleIndices}
+      onmeasure={measurePanels}
     >
       {#snippet children(index)}
         {@const group_index = visibleIndices[index]}
@@ -233,6 +251,8 @@
             <GroupPanel
               {group_index}
               {active}
+              {ruleEstimate}
+              onmeasureRules={measureRules}
               selectionActive={selectedItems.length > 0}
               selected={selectedIds.includes(group.id)}
               ontoggleSelection={() => toggleSelection(group.id)}

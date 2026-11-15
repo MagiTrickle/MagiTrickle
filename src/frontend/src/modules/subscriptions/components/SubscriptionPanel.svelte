@@ -22,7 +22,6 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { getContext } from "svelte";
-  import { slide } from "svelte/transition";
 
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
@@ -33,6 +32,7 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import VirtualList from "../../../components/ui/VirtualList.svelte";
   import { t } from "../../../data/locale.svelte";
+  import type { VirtualMeasurement } from "../../../lib/virtual/size-estimate.svelte";
   import { SUBSCRIPTIONS_STORE_CONTEXT, type SubscriptionsStore } from "../subscriptions.svelte";
   import SubscriptionRuleRow from "./SubscriptionRuleRow.svelte";
 
@@ -51,9 +51,11 @@
   type Props = {
     subscription_index: number;
     active?: boolean;
+    ruleEstimate: number;
+    onmeasureRules: (measurements: readonly VirtualMeasurement[]) => void;
   };
 
-  let { subscription_index, active = true }: Props = $props();
+  let { subscription_index, active = true, ruleEstimate, onmeasureRules }: Props = $props();
 
   const store = getContext<SubscriptionsStore>(SUBSCRIPTIONS_STORE_CONTEXT);
   if (!store) {
@@ -80,11 +82,9 @@
   let visibleRuleIndices = $derived(store.visibilityMap.get(subscription_index));
   let effectiveOpen = $derived(subscription ? (store.open_state[subscription.id] ?? false) : false);
   let urlError = $derived(subscription ? store.subscriptionUrlErrors.get(subscription.id) : null);
-  let animateExpansion = $state(false);
 
   function toggleOpen() {
     if (!subscription) return;
-    animateExpansion = true;
     store.open_state[subscription.id] = !effectiveOpen;
   }
 
@@ -300,43 +300,43 @@
         {#snippet child({ props })}
           {#if effectiveOpen}
             <div {...props}>
-              <div transition:slide={searchActive || !animateExpansion ? { duration: 0 } : {}}>
-                {#if totalRulesCount > 0}
-                  <div class="subscription-rules-header">
-                    <div class="subscription-rules-header-column total">
-                      #{totalRulesCount}
-                    </div>
-                    <div class="subscription-rules-header-column pattern">
-                      {t("Pattern")}
-                    </div>
-                    <div class="subscription-rules-header-column">{t("Type")}</div>
-
-                    <div class="subscription-rules-header-column">{t("Enabled")}</div>
+              {#if totalRulesCount > 0}
+                <div class="subscription-rules-header">
+                  <div class="subscription-rules-header-column total">
+                    #{totalRulesCount}
                   </div>
-                {/if}
-                <div class="subscription-rules">
-                  {#if totalRulesCount > 0}
-                    <VirtualList
-                      recycle
-                      count={totalRulesCount}
-                      getKey={(index) => subscription.rules[originalRuleIndex(index)].id}
-                      estimateSize={client_width <= 700 ? 82 : 33}
-                      active={active && effectiveOpen}
-                      revision={visibleRuleIndices ?? subscription.rules}
-                    >
-                      {#snippet children(index)}
-                        {@const originalIndex = originalRuleIndex(index)}
-                        <SubscriptionRuleRow
-                          key={subscription.rules[originalIndex].id}
-                          bind:rule={subscription.rules[originalIndex]}
-                          rule_index={originalIndex}
-                          {subscription_index}
-                          style={index % 2 ? "" : "background-color: var(--bg-light)"}
-                        />
-                      {/snippet}
-                    </VirtualList>
-                  {/if}
+                  <div class="subscription-rules-header-column pattern">
+                    {t("Pattern")}
+                  </div>
+                  <div class="subscription-rules-header-column">{t("Type")}</div>
+
+                  <div class="subscription-rules-header-column">{t("Enabled")}</div>
                 </div>
+              {/if}
+              <div class="subscription-rules">
+                {#if totalRulesCount > 0}
+                  <VirtualList
+                    recycle
+                    count={totalRulesCount}
+                    getKey={(index) => subscription.rules[originalRuleIndex(index)].id}
+                    estimateSize={ruleEstimate}
+                    measurementKey={subscription.rules}
+                    onmeasure={onmeasureRules}
+                    active={active && effectiveOpen}
+                    revision={visibleRuleIndices ?? subscription.rules}
+                  >
+                    {#snippet children(index)}
+                      {@const originalIndex = originalRuleIndex(index)}
+                      <SubscriptionRuleRow
+                        key={subscription.rules[originalIndex].id}
+                        bind:rule={subscription.rules[originalIndex]}
+                        rule_index={originalIndex}
+                        {subscription_index}
+                        style={index % 2 ? "" : "background-color: var(--bg-light)"}
+                      />
+                    {/snippet}
+                  </VirtualList>
+                {/if}
               </div>
             </div>
           {:else}

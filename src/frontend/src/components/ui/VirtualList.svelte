@@ -1,3 +1,12 @@
+<script module lang="ts">
+  type Measurement = { index: number; size: number; estimate: number };
+  type Measurements = { width: number; rows: Map<string, Measurement> };
+
+  // The collection, not a mounted panel, owns its measured geometry. Weak keys
+  // release deleted/replaced drafts without retaining their rule arrays.
+  const measurementsByCollection = new WeakMap<object, Measurements>();
+</script>
+
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from "svelte";
 
@@ -6,8 +15,6 @@
   import {
     requestVirtualFrame,
     subscribeVirtualViewport,
-    virtualBoundaryScrollActive,
-    virtualBoundaryScrollAnimating,
     virtualViewport,
     type VirtualViewport,
   } from "../../lib/virtual/viewport";
@@ -21,6 +28,8 @@
     revision?: unknown;
     recycle?: boolean;
     scrollElement?: HTMLElement;
+    measurementKey?: object;
+    onmeasure?: (measurements: readonly { index: number; size: number }[]) => void;
   };
   let {
     count,
@@ -31,6 +40,8 @@
     revision,
     recycle = false,
     scrollElement,
+    measurementKey,
+    onmeasure,
   }: Props = $props();
   let host: HTMLDivElement;
   let layout = $state.raw(new VirtualLayout([]));
@@ -40,10 +51,11 @@
   const nodes = new Map<number, HTMLElement>();
   const slots = new Map<number, HTMLElement>();
   const pool = new VirtualRowPool();
-  let measured = new Map<string, { index: number; size: number }>();
+  const localMeasurements: Measurements = { width: 0, rows: new Map() };
+  let measurements = localMeasurements;
+  let measured = measurements.rows;
   let observer: ResizeObserver | undefined;
   let ready = false;
-  let lastEstimate = 0;
   let lastWidth = 0;
   let localVelocity = 0;
   let localDirection = 0;
@@ -71,34 +83,77 @@
   function estimate(index: number) {
     return Math.max(1, typeof estimateSize === "number" ? estimateSize : estimateSize(index));
   }
+  // Track every panel's geometry, including offscreen expansion and filtered
+  // rule counts. Numeric rule estimates stay O(1) and do not read all rule keys.
+  const estimates = $derived.by(() =>
+    typeof estimateSize === "number"
+      ? Math.max(1, estimateSize)
+      : Array.from({ length: count }, (_, index) => estimate(index)),
+  );
   function rebuild() {
-    const previous = measured;
+    if (measurementKey) {
+      let cached = measurementsByCollection.get(measurementKey);
+      if (!cached) {
+        cached = { width: 0, rows: new Map() };
+        measurementsByCollection.set(measurementKey, cached);
+      }
+      measurements = cached;
+    } else measurements = localMeasurements;
+    const width = typeof window === "undefined" ? 0 : listViewport().width;
+    const widthChanged = measurements.width !== width;
+    const previous = widthChanged ? new Map() : measurements.rows;
     measured = new Map();
-    // Numeric estimates initialize the prefix index without reading any rule
-    // keys, so unopened/unseen rows keep their lazy Svelte proxies untouched.
-    layout = new VirtualLayout(count, typeof estimateSize === "number" ? estimate(0) : estimate);
+    measurements.rows = measured;
+    measurements.width = width;
+    layout =
+      typeof estimates === "number"
+        ? new VirtualLayout(count, estimates)
+        : new VirtualLayout(estimates);
     // Only revisit rows that were actually measured, not the whole data set.
-    // Changed positions safely fall back to an estimate until mounted again.
+    // Invalidate only the row whose key or geometry changed. Opening the first
+    // panel must not discard measurements for the rest of the document.
     for (const [key, cached] of previous) {
-      if (cached.index < count && getKey(cached.index) === key) {
+      if (
+        cached.index < count &&
+        getKey(cached.index) === key &&
+        (typeof estimates === "number" || cached.estimate === estimate(cached.index))
+      ) {
         measured.set(key, cached);
         layout.update(cached.index, cached.size);
+      } else {
+        // An estimate can change while a mounted row's actual box stays the
+        // same (for example, calibrating the common panel size). Ask for a new
+        // observation rather than waiting for a resize that will never occur.
+        const node = nodes.get(cached.index);
+        if (node) {
+          observer?.unobserve(node);
+          observer?.observe(node);
+        }
       }
     }
-    lastWidth = typeof window === "undefined" ? 0 : listViewport().width;
+    if (widthChanged) {
+      // A max-width container may keep its actual boxes unchanged on a window
+      // resize. Refill their invalidated measurements even without a DOM resize.
+      for (const node of nodes.values()) {
+        observer?.unobserve(node);
+        observer?.observe(node);
+      }
+    }
+    lastWidth = width;
     version++;
     if (ready) updateRange(listViewport(), true);
   }
+  // An expanded panel can remount at the document end. Reserve its measured
+  // rule height in the initial DOM: an empty first layout temporarily clamps
+  // Safari's scroll offset before the normal reactive rebuild runs.
+  untrack(rebuild);
   $effect(() => {
     count;
     revision;
     getKey;
-    const widthEstimate = count ? estimate(0) : 0;
-    untrack(() => {
-      if (widthEstimate !== lastEstimate) measured.clear();
-      lastEstimate = widthEstimate;
-      rebuild();
-    });
+    measurementKey;
+    estimates;
+    untrack(rebuild);
   });
 
   function setRange(start: number, end: number) {
@@ -110,15 +165,10 @@
       return;
     }
     const top = host.getBoundingClientRect().top - viewportTop();
-    const coordinated = !scrollElement && virtualBoundaryScrollAnimating();
-    // Programmatic movement and ranges commit together, so it needs only a
-    // small safety margin. Manual/compositor scrolling keeps its larger lead.
-    const base = coordinated
-      ? Math.max(80, viewport.height * 0.15)
-      : Math.max(350, viewport.height * 0.6);
+    const base = Math.max(350, viewport.height * 0.6);
     // Cover a few delayed frames in Safari's asynchronous scrolling. Keep a
     // small buffer behind the user and pre-render in the direction of travel.
-    const lead = coordinated ? base : Math.min(viewport.height, base + viewport.velocity * 80);
+    const lead = Math.min(viewport.height, base + viewport.velocity * 80);
     const before = viewport.direction < 0 ? lead : base;
     const after = viewport.direction > 0 ? lead : base;
     const outside = top > viewport.height + after || top + layout.total < -before;
@@ -271,24 +321,25 @@
   onMount(() => {
     ready = true;
     observer = new ResizeObserver((records) => {
-      let correction = 0;
       let changed = false;
-      const top = host.getBoundingClientRect().top - viewportTop();
+      const sizes: { index: number; size: number }[] = [];
       for (const record of records) {
         const node = record.target as HTMLElement;
         const index = Number(node.dataset.virtualIndex);
         if (index >= count || nodes.get(index) !== node) continue;
         const size = record.borderBoxSize?.[0]?.blockSize ?? record.contentRect.height;
         if (!size) continue;
-        measured.set(getKey(index), { index, size });
+        measured.set(getKey(index), { index, size, estimate: estimate(index) });
+        sizes.push({ index, size });
         const delta = layout.update(index, size);
         if (!delta) continue;
         changed = true;
-        if (top + layout.offset(index) + size < 0) correction += delta;
       }
+      if (sizes.length) onmeasure?.(sizes);
       if (!changed) return;
       version++;
-      if (correction && (scrollElement || !virtualBoundaryScrollActive())) scrollBy(correction);
+      // Native scroll anchoring preserves the visible row. Writing scrollTop
+      // here aborts smooth scrolling and nested lists can compensate twice.
       requestVirtualFrame();
     });
     for (const node of nodes.values()) observer.observe(node);
@@ -297,7 +348,6 @@
     const unsubscribe = subscribeVirtualViewport((viewport) => {
       const current = listViewport(viewport);
       if (lastWidth !== current.width) {
-        measured.clear();
         rebuild();
       }
       updateRange(current);
@@ -345,7 +395,8 @@
   {#each entries as entry (entry.key)}
     {#if entry.gap > 0}<div
         class="virtual-spacer"
-        style:height={`${entry.gap}px`}
+        style:height={`${Math.floor(entry.gap)}px`}
+        style:padding-bottom={`${entry.gap % 1}px`}
         aria-hidden="true"
       ></div>{/if}
     <div
@@ -362,7 +413,8 @@
   {/each}
   {#if tail > 0}<div
       class="virtual-spacer"
-      style:height={`${tail}px`}
+      style:height={`${Math.floor(tail)}px`}
+      style:padding-bottom={`${tail % 1}px`}
       aria-hidden="true"
     ></div>{/if}
 </div>
@@ -370,13 +422,16 @@
 <style>
   .virtual-list {
     min-width: 0;
-    overflow-anchor: none;
   }
   .virtual-item {
     display: flow-root;
     min-width: 0;
   }
   .virtual-spacer {
+    /* Huge CSS lengths lose fractional pixels to float precision. Keep the
+       fraction in a small padding length, added by the browser's box layout. */
+    box-sizing: content-box;
     pointer-events: none;
+    overflow-anchor: none;
   }
 </style>

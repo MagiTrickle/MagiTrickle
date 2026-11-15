@@ -9,15 +9,15 @@
   import VirtualList from "../../../components/ui/VirtualList.svelte";
   import { t } from "../../../data/locale.svelte";
 
+  import { Dots } from "../../../components/ui/icons";
   import { RULE_TYPES, type Rule } from "../../../types";
   import { toast } from "../../../utils/events";
   import {
     boundedRuleListLines,
     type ParsedRuleLine,
-    type RuleListJob,
-    type RuleListResponse,
     type RuleListType,
   } from "../rule-list-parser";
+  import { RuleListParserClient } from "../rule-list-parser-client";
 
   type Props = {
     open?: boolean;
@@ -35,6 +35,7 @@
   let editorFocused = $state(false);
   let bulkPastePending = $state(false);
   let textAreaRef = $state<HTMLTextAreaElement | null>(null);
+  let clearEditorPending = $state(false);
   let editorHeight = $state(200);
   let editorMinHeight = $state(200);
   let editorMaxHeight = $state(500);
@@ -48,67 +49,28 @@
   const MIN_EDITOR_HEIGHT = 200;
   const ABSOLUTE_MIN_EDITOR_HEIGHT = 120;
   const DESKTOP_MAX_EDITOR_HEIGHT = 500;
-  const ROWS_LIMIT = 500;
   const RULE_TYPE_SELECT = [{ value: "auto", label: "Auto" }, ...RULE_TYPES];
   const isEmpty = $derived(!import_rules_text.trim());
   const isBulkText = $derived(bulkPastePending || import_rules_text.length >= 65536);
 
   let resizeFrame = 0;
   let pasteTimer: ReturnType<typeof setTimeout> | undefined;
-  let worker: Worker | undefined;
+  const parser = new RuleListParserClient(
+    () => new Worker(new URL("../rule-list-parser.worker.ts", import.meta.url), { type: "module" }),
+  );
   let version = 0;
   let parsedVersion = -1;
-  let nextRequest = 0;
   let submitRequested = false;
   let applyController: AbortController | undefined;
-  const pending = new Map<
-    number,
-    { resolve: (response: RuleListResponse) => void; reject: (error: Error) => void }
-  >();
-
-  function disposeParser(
-    error: Error = new DOMException("Rule list parsing cancelled", "AbortError"),
-  ) {
-    worker?.terminate();
-    worker = undefined;
-    for (const request of pending.values()) request.reject(error);
-    pending.clear();
-  }
 
   function invalidateParser() {
     version++;
     parsedVersion = -1;
-    disposeParser();
+    parser.dispose();
     applyController?.abort();
     applyController = undefined;
     isApplying = false;
     isParsing = false;
-  }
-
-  function requestParser(job: RuleListJob): Promise<RuleListResponse> {
-    if (!worker) {
-      worker = new Worker(new URL("../rule-list-parser.worker.ts", import.meta.url), {
-        type: "module",
-      });
-      worker.onmessage = (event: MessageEvent<RuleListResponse>) => {
-        const response = event.data;
-        const request = pending.get(response.id);
-        if (!request) return;
-        pending.delete(response.id);
-        if (response.type === "error") request.reject(new Error(response.message));
-        else request.resolve(response);
-      };
-      worker.onerror = (event) => {
-        event.preventDefault();
-        disposeParser(new Error(event.message || "Rule list parsing failed"));
-      };
-    }
-    const id = ++nextRequest;
-    const parser = worker;
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
-      parser.postMessage({ ...job, id });
-    });
   }
 
   function getEditorHeightBounds() {
@@ -134,13 +96,13 @@
   }
 
   function scheduleEditorResize(force = false) {
-    if (!textAreaRef || resizeFrame) return;
+    if (!open || clearEditorPending || !textAreaRef || resizeFrame) return;
     // Once bulk input fills the box, typing changes no dimensions. Reading
     // computed styles here would force native layout of the entire text.
     if (!force && isBulkText && editorHeight === editorMaxHeight) return;
     resizeFrame = requestAnimationFrame(() => {
       resizeFrame = 0;
-      if (!textAreaRef) return;
+      if (!open || clearEditorPending || !textAreaRef) return;
       if (!force && isBulkText && editorHeight === editorMaxHeight) return;
       const { minHeight, maxHeight } = getEditorHeightBounds();
       editorMinHeight = minHeight;
@@ -175,14 +137,23 @@
     if (!open)
       untrack(() => {
         invalidateParser();
-        // Clear after the dialog has unmounted, rather than rebuilding the
-        // native 100k-line renderer with an empty value during its close.
-        import_rules_text = "";
+        clearEditorPending = true;
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = 0;
+        clearTimeout(pasteTimer);
       });
+  });
+  $effect(() => {
+    // Bits UI retains the dialog during its outro. Wait for the actual editor
+    // teardown so clearing a large value cannot rebuild its native text layout.
+    if (clearEditorPending && !textAreaRef) {
+      import_rules_text = "";
+      clearEditorPending = false;
+    }
   });
   onDestroy(() => {
     applyController?.abort();
-    disposeParser();
+    parser.dispose();
     cancelAnimationFrame(resizeFrame);
     clearTimeout(pasteTimer);
   });
@@ -214,14 +185,14 @@
   }
 
   async function parseRules() {
-    if (!open || !import_rules_text.trim() || isParsing) return;
+    if (!open || clearEditorPending || !import_rules_text.trim() || isParsing) return;
     const requestedVersion = version;
     isParsing = true;
     isEditing = false;
     let applying = false;
     try {
       if (parsedVersion !== requestedVersion) {
-        const response = await requestParser({
+        const response = await parser.request({
           type: "parse",
           version: requestedVersion,
           text: import_rules_text,
@@ -234,7 +205,7 @@
         parsedVersion = requestedVersion;
       }
       if (submitRequested) {
-        const response = await requestParser({ type: "apply", version: requestedVersion });
+        const response = await parser.request({ type: "apply", version: requestedVersion });
         if (!open || requestedVersion !== version || response.type !== "rules") return;
         if (response.rules.length && group_index !== null) {
           applying = true;
@@ -252,6 +223,7 @@
       if (requestedVersion !== version || (error instanceof Error && error.name === "AbortError"))
         return;
       if (!applying) {
+        parsedVersion = -1;
         console.error("Rule list parsing failed", error);
         toast.error(t("Failed to import rules"));
         isEditing = true;
@@ -276,13 +248,15 @@
 
   function submit() {
     triedSubmit = true;
-    if (isApplying || group_index === null || !import_rules_text.trim()) return;
+    if (clearEditorPending || isApplying || group_index === null || !import_rules_text.trim())
+      return;
     submitRequested = true;
     if (!isParsing) void parseRules();
   }
 
   function close() {
     invalidateParser();
+    clearEditorPending = true;
     clearTimeout(pasteTimer);
     submitRequested = false;
     previewLines = [];
@@ -357,25 +331,28 @@
       class:bulk={isBulkText}
       style={`--editor-height: ${editorHeight}px; --editor-min-height: ${editorMinHeight}px; --editor-max-height: ${editorMaxHeight}px`}
     >
-      <!-- Keep the native editor and its text buffer when showing a preview. -->
-      <textarea
-        bind:this={textAreaRef}
-        bind:value={import_rules_text}
-        aria-hidden={!isEditing && !isParsing && !editorFocused}
-        tabindex={isEditing ? 0 : -1}
-        spellcheck={false}
-        autocapitalize="off"
-        {...{ autocorrect: "off" }}
-        autocomplete="off"
-        writingsuggestions="false"
-        wrap="off"
-        oninput={handleInput}
-        placeholder={t("Insert a list of IPs or domains, one per line")}
-        class:invalid={triedSubmit && isEmpty}
-        onfocus={() => (editorFocused = true)}
-        onpaste={onPaste}
-        onblur={onBlur}
-      ></textarea>
+      <!-- Preview retains this native buffer. A rapid reopen removes the closing
+           editor first, then mounts a fresh empty one after bind:this is cleared. -->
+      {#if !open || !clearEditorPending}
+        <textarea
+          bind:this={textAreaRef}
+          bind:value={import_rules_text}
+          aria-hidden={!isEditing && !isParsing && !editorFocused}
+          tabindex={isEditing ? 0 : -1}
+          spellcheck={false}
+          autocapitalize="off"
+          {...{ autocorrect: "off" }}
+          autocomplete="off"
+          writingsuggestions="false"
+          wrap="off"
+          oninput={handleInput}
+          placeholder={t("Insert a list of IPs or domains, one per line")}
+          class:invalid={triedSubmit && isEmpty}
+          onfocus={() => (editorFocused = true)}
+          onpaste={onPaste}
+          onblur={onBlur}
+        ></textarea>
+      {/if}
       <div class="editor-focus-ring" aria-hidden="true"></div>
       {#if isParsing}
         <div class="parsing-overlay">
@@ -384,7 +361,7 @@
       {:else if !isEditing}
         <div
           class="results-view"
-          class:has-more={totalLines > ROWS_LIMIT}
+          class:has-more={totalLines > previewLines.length}
           bind:this={previewScroller}
           onclick={switchToEdit}
           onkeydown={(e) => e.key === "Enter" && switchToEdit()}
@@ -417,9 +394,9 @@
               </div>
             {/snippet}
           </VirtualList>
-          {#if totalLines > ROWS_LIMIT}
+          {#if totalLines > previewLines.length}
             <div class="line-row ellipsis-row">
-              <span class="line-text">...</span>
+              <Dots size={24} />
             </div>
           {/if}
         </div>
@@ -544,6 +521,7 @@
 
   .results-view.has-more {
     padding-bottom: 0;
+    border-bottom: 0;
   }
 
   .line-row {
@@ -576,14 +554,11 @@
   }
 
   .ellipsis-row {
-    height: 3rem;
-    min-height: 3rem;
     box-sizing: border-box;
     border-top: 1px solid var(--bg-light-extra);
-    text-align: center;
+    border-bottom: 1px solid transparent;
+    justify-content: center;
     color: var(--text-2);
-    font-size: 1.5rem;
-    line-height: 1;
     cursor: pointer;
     user-select: none;
     transition:

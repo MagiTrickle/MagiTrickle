@@ -21,6 +21,14 @@ const group = (index: number, count = 0): Group => ({
   })),
 });
 
+const subscription = (index: number, count = 0): Subscription => ({
+  ...group(index, count),
+  name: `Virtual subscription ${index + 1}`,
+  url: `https://example.test/list-${index}.txt`,
+  interval: 86400,
+  lastUpdate: 1,
+});
+
 async function backend(page: Page, groups: Group[] = [], subscriptions: Subscription[] = []) {
   const config = generalServerConfig();
   config.groups = groups;
@@ -62,6 +70,63 @@ async function exported(page: Page) {
 }
 
 for (const width of [1280, 390]) {
+  for (const kind of ["groups", "subscriptions"] as const) {
+    test(`one boundary request reaches the last row across remounted expanded ${kind} at ${width}px`, async ({
+      page,
+    }) => {
+      test.setTimeout(60000);
+      await page.setViewportSize({ width, height: 844 });
+      const groups = Array.from({ length: kind === "groups" ? 64 : 0 }, (_, index) =>
+        group(index, index === 0 || index === 63 ? 1000 : 0),
+      );
+      const subscriptions = Array.from({ length: kind === "subscriptions" ? 64 : 0 }, (_, index) =>
+        subscription(index, index === 0 || index === 63 ? 1000 : 0),
+      );
+      const items = kind === "groups" ? groups : subscriptions;
+      await backend(page, groups, subscriptions);
+      await page.goto("/");
+      if (kind === "subscriptions") await openTab(page, "Subscriptions");
+      const panel = kind === "groups" ? ".group" : ".subscription-panel";
+      const row = kind === "groups" ? ".rule" : ".subscription-rule";
+      const first = page.locator(`${panel}[data-uuid="${items[0].id}"]`);
+      const last = page.locator(`${panel}[data-uuid="${items[63].id}"]`);
+      const lastRule = last.locator(`${row}[data-index="999"]`);
+      await first.locator("[data-collapsible-trigger]").click();
+      await expect(first.locator(row).first()).toBeVisible();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await last.locator("[data-collapsible-trigger]").click();
+      await page.evaluate(() => {
+        (document.activeElement as HTMLElement | null)?.blur();
+        window.scrollTo(0, document.documentElement.scrollHeight);
+      });
+      await expect(lastRule).toBeInViewport();
+      for (const reducedMotion of ["no-preference", "reduce"] as const) {
+        await page.emulateMedia({ reducedMotion });
+        for (const modifier of ["Meta", "Control"]) {
+          await page.keyboard.press(`${modifier}+ArrowUp`);
+          await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(1);
+          await expect(first.locator(row).first()).toBeInViewport();
+          await page.keyboard.press(`${modifier}+ArrowDown`);
+          await expect
+            .poll(() =>
+              page.evaluate(() => document.documentElement.scrollHeight - innerHeight - scrollY),
+            )
+            .toBeLessThan(1);
+          await expect(lastRule).toBeInViewport();
+          // Check the settled destination, including the nested list's next measurements.
+          await page.waitForTimeout(250);
+          expect(
+            await page.evaluate(
+              () => document.documentElement.scrollHeight - innerHeight - scrollY,
+            ),
+          ).toBeLessThan(1);
+        }
+      }
+    });
+  }
+}
+
+for (const width of [1280, 390]) {
   test(`100k group keeps bounded rows and edits through document scrolling at ${width}px`, async ({
     page,
   }) => {
@@ -91,6 +156,99 @@ for (const width of [1280, 390]) {
     expect(result.groups[0].rules).toHaveLength(100000);
     expect(result.groups[0].rules[0].name).toBe("Survives virtualization");
     expect(result.groups[0].rules.at(-1)!.rule).toBe(data.rules.at(-1)!.rule);
+  });
+
+  test(`100k fractional-height rules keep document height across virtual ranges at ${width}px`, async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await backend(page, [group(0, 100000)]);
+    await page.goto("/");
+    const panel = page.locator(".group").first();
+    await panel.locator("[data-collapsible-trigger]").click();
+    const first = panel.locator(".rule").first();
+    await expect(first).toBeVisible();
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    // Exercise fractional geometry without depending on a particular font's
+    // intrinsic row size. The small minimum only adds empty space to each row.
+    const rowHeight = await first.evaluate(
+      (node) => Math.ceil(node.getBoundingClientRect().height) + 0.375,
+    );
+    await page.addStyleTag({ content: `.group .rule { min-height: ${rowHeight}px; }` });
+
+    async function settledGeometry() {
+      return page.evaluate(
+        () =>
+          new Promise<{
+            documentHeight: number;
+            listHeight: number;
+            mounted: number;
+            first: number;
+            last: number;
+            rowHeight: number;
+          }>((resolve, reject) => {
+            let previous = "";
+            let stable = 0;
+            let frame = 0;
+            const timeout = setTimeout(() => {
+              cancelAnimationFrame(frame);
+              reject(new Error("Fractional virtual geometry did not settle"));
+            }, 8000);
+            function sample() {
+              const rule = document.querySelector(".group .rule");
+              const list = rule?.closest("[data-virtual-index]")?.parentElement;
+              const items = list?.querySelectorAll<HTMLElement>(":scope > [data-virtual-index]");
+              if (!list || !items?.length) {
+                frame = requestAnimationFrame(sample);
+                return;
+              }
+              const result = {
+                documentHeight: document.documentElement.scrollHeight,
+                listHeight: list.scrollHeight,
+                mounted: items.length,
+                first: Number(items[0].dataset.virtualIndex),
+                last: Number(items[items.length - 1].dataset.virtualIndex),
+                rowHeight: items[0].getBoundingClientRect().height,
+              };
+              const signature = JSON.stringify(result);
+              stable = signature === previous ? stable + 1 : 0;
+              previous = signature;
+              if (stable < 6) frame = requestAnimationFrame(sample);
+              else {
+                clearTimeout(timeout);
+                resolve(result);
+              }
+            }
+            frame = requestAnimationFrame(sample);
+          }),
+      );
+    }
+
+    const initial = await settledGeometry();
+    expect(initial.rowHeight).toBe(rowHeight);
+    const mountedCounts = new Set([initial.mounted]);
+    for (const fraction of [0.01, 0.17, 0.53, 0.91, 1, 0.5, 0]) {
+      await page.evaluate(
+        (fraction) =>
+          window.scrollTo({
+            top: (document.documentElement.scrollHeight - innerHeight) * fraction,
+            behavior: "instant",
+          }),
+        fraction,
+      );
+      const current = await settledGeometry();
+      const context = JSON.stringify({ fraction, initial, current });
+      expect(current.documentHeight, context).toBe(initial.documentHeight);
+      expect(current.listHeight, context).toBe(initial.listHeight);
+      expect(current.mounted).toBeGreaterThan(0);
+      expect(current.mounted).toBeLessThan(250);
+      mountedCounts.add(current.mounted);
+    }
+    expect(mountedCounts.size).toBeGreaterThan(1);
   });
 
   test(`import stages 100k rules with bounded panel DOM and complete export at ${width}px`, async ({
@@ -442,3 +600,138 @@ test("drag source survives a document scroll and drops onto a formerly unmounted
   expect(result.groups[0].rules.at(-1)!.id).toBe(data.rules[0].id);
   expect(result.groups[0].rules[0].id).toBe(data.rules[1].id);
 });
+
+for (const width of [1280, 390]) {
+  for (const kind of ["group", "subscription"] as const) {
+    test(`expanded ${kind} rule lists retain their measured height after panel remounts at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      // Two panels can legitimately stay inside a retained virtual range.
+      // Separate the expanded panels far enough to require real eviction.
+      const counts = Array.from({ length: 64 }, (_, index) =>
+        index === 0 || index === 63 ? 1000 : 0,
+      );
+      const groups = kind === "group" ? counts.map((count, index) => group(index, count)) : [];
+      const subscriptions =
+        kind === "subscription" ? counts.map((count, index) => subscription(index, count)) : [];
+      const data = kind === "group" ? groups : subscriptions;
+      const last = data.at(-1)!;
+      await backend(page, groups, subscriptions);
+      await page.goto("/");
+      if (kind === "subscription") await openTab(page, "Subscriptions");
+      const panelSelector = kind === "group" ? ".group" : ".subscription-panel";
+      const firstPanel = page.locator(`${panelSelector}[data-uuid="${data[0].id}"]`);
+      const secondPanel = page.locator(`${panelSelector}[data-uuid="${last.id}"]`);
+      const rows = kind === "group" ? ".rule" : ".subscription-rule";
+      const firstRule = firstPanel.locator(
+        kind === "group" ? `.rule[data-uuid="${data[0].rules[0].id}"]` : `${rows}[data-index="0"]`,
+      );
+      const lastRule = secondPanel.locator(
+        kind === "group"
+          ? `.rule[data-uuid="${last.rules.at(-1)!.id}"]`
+          : `${rows}[data-index="999"]`,
+      );
+      await firstPanel.locator("[data-collapsible-trigger]").click();
+      await expect(firstRule).toBeVisible();
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expect(secondPanel).toBeVisible();
+      await secondPanel.locator("[data-collapsible-trigger]").click();
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expect(lastRule).toBeInViewport();
+      await expect(firstPanel).toHaveCount(0);
+
+      async function settledHeight() {
+        return page.evaluate(
+          () =>
+            new Promise<number>((resolve, reject) => {
+              let last = document.documentElement.scrollHeight;
+              let stable = 0;
+              const timeout = setTimeout(
+                () => reject(new Error("Virtual heights did not settle")),
+                8000,
+              );
+              function sample() {
+                const height = document.documentElement.scrollHeight;
+                stable = height === last ? stable + 1 : 0;
+                last = height;
+                if (stable < 6) requestAnimationFrame(sample);
+                else {
+                  clearTimeout(timeout);
+                  resolve(height);
+                }
+              }
+              requestAnimationFrame(sample);
+            }),
+        );
+      }
+
+      const height = await settledHeight();
+      for (let round = 0; round < 2; round++) {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect(firstRule).toBeInViewport();
+        await expect(secondPanel).toHaveCount(0);
+        expect(Math.abs((await settledHeight()) - height)).toBeLessThan(1);
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await expect(lastRule).toBeInViewport();
+        await expect(firstPanel).toHaveCount(0);
+        expect(Math.abs((await settledHeight()) - height)).toBeLessThan(1);
+        await expect.poll(() => page.locator(rows).count()).toBeLessThan(250);
+      }
+    });
+
+    test(`${kind} rules expand and collapse without height animation at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await backend(
+        page,
+        kind === "group" ? [group(0, 12)] : [],
+        kind === "subscription" ? [subscription(0, 12)] : [],
+      );
+      await page.goto("/");
+      if (kind === "subscription") await openTab(page, "Subscriptions");
+      const panelSelector = kind === "group" ? ".group" : ".subscription-panel";
+      const rowSelector = kind === "group" ? ".rule" : ".subscription-rule";
+      const trigger = page.locator(`${panelSelector} [data-collapsible-trigger]`);
+      await expect(trigger).toHaveAttribute("aria-expanded", "false");
+      for (const expanded of [true, false, true, false]) {
+        const result = await trigger.evaluate(
+          async (button, { panelSelector, rowSelector }) => {
+            (button as HTMLButtonElement).click();
+            // Observe the first rendered frame, before a slide transition
+            // could complete. Closing must already have unmounted rule nodes.
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            const panel = button.closest(panelSelector)!;
+            const animations = panel.getAnimations({ subtree: true }).filter((animation) => {
+              if (!(animation.effect instanceof KeyframeEffect)) return false;
+              return animation.effect
+                .getKeyframes()
+                .some(
+                  (frame) =>
+                    "height" in frame || "maxHeight" in frame || "gridTemplateRows" in frame,
+                );
+            });
+            return {
+              expanded: button.getAttribute("aria-expanded"),
+              controlledContentExists: Boolean(
+                document.getElementById(button.getAttribute("aria-controls") ?? ""),
+              ),
+              rows: panel.querySelectorAll(rowSelector).length,
+              heightAnimations: animations.length,
+            };
+          },
+          { panelSelector, rowSelector },
+        );
+        expect(result.expanded).toBe(String(expanded));
+        expect(result.controlledContentExists).toBe(true);
+        expect(result.heightAnimations).toBe(0);
+        if (expanded) expect(result.rows).toBeGreaterThan(0);
+        else expect(result.rows).toBe(0);
+      }
+    });
+  }
+}

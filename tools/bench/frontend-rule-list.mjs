@@ -144,6 +144,9 @@ await page.addInitScript(() => {
     pasteEvents: [],
     gaps: [],
     tasks: [],
+    taskTurnCount: 0,
+    maxTaskGapMs: 0,
+    lastTaskTime: 0,
     peakPreviewRows: 0,
     peakRuleNodes: 0,
     longTasksSupported:
@@ -180,6 +183,15 @@ await page.addInitScript(() => {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  // A timer records task turns even when a phase completes between paints.
+  // These are diagnostics, not machine-dependent latency assertions.
+  setInterval(() => {
+    if (!metrics.recording) return;
+    const now = performance.now();
+    metrics.maxTaskGapMs = Math.max(metrics.maxTaskGapMs, now - metrics.lastTaskTime);
+    metrics.lastTaskTime = now;
+    metrics.taskTurnCount++;
+  }, 0);
   if (metrics.longTasksSupported)
     new PerformanceObserver((list) => {
       if (metrics.recording)
@@ -240,6 +252,9 @@ async function phase(name, action) {
       pasteEvents: [],
       gaps: [],
       tasks: [],
+      taskTurnCount: 0,
+      maxTaskGapMs: 0,
+      lastTaskTime: performance.now(),
       peakPreviewRows: 0,
       peakRuleNodes: 0,
     }),
@@ -278,10 +293,15 @@ async function phase(name, action) {
     Object.assign(result, {
       pasteEvents: metrics.pasteEvents,
       frameCount: gaps.length,
+      taskTurnCount: metrics.taskTurnCount,
+      maxTaskGapMs: metrics.maxTaskGapMs,
       maxFrameGapMs: gaps.at(-1) ?? 0,
       p95FrameGapMs: gaps[Math.floor(gaps.length * 0.95)] ?? 0,
       longTasksSupported: metrics.longTasksSupported,
       longTaskCount: metrics.longTasksSupported ? metrics.tasks.length : null,
+      longTaskTotalMs: metrics.longTasksSupported
+        ? metrics.tasks.reduce((sum, duration) => sum + duration, 0)
+        : null,
       maxLongTaskMs: metrics.longTasksSupported
         ? Math.max(0, ...metrics.tasks)
         : null,

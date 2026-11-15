@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Collapsible } from "bits-ui";
   import { createEventDispatcher, getContext, onMount, tick, untrack } from "svelte";
-  import { slide } from "svelte/transition";
 
   import Button from "../../../components/ui/Button.svelte";
   import DropdownMenu from "../../../components/ui/DropdownMenu.svelte";
@@ -11,6 +10,7 @@
   import Tooltip from "../../../components/ui/Tooltip.svelte";
   import VirtualList from "../../../components/ui/VirtualList.svelte";
   import { t } from "../../../data/locale.svelte";
+  import type { VirtualMeasurement } from "../../../lib/virtual/size-estimate.svelte";
   import { GROUPS_STORE_CONTEXT, type GroupsStore } from "../groups.svelte";
   import GroupDuplicateMenu from "./GroupDuplicateMenu.svelte";
   import RuleRow from "./RuleRow.svelte";
@@ -36,6 +36,8 @@
   type Props = {
     group_index: number;
     active?: boolean;
+    ruleEstimate: number;
+    onmeasureRules: (measurements: readonly VirtualMeasurement[]) => void;
     selectionActive?: boolean;
     selected?: boolean;
     ontoggleSelection?: () => void;
@@ -44,6 +46,8 @@
   let {
     group_index,
     active = true,
+    ruleEstimate,
+    onmeasureRules,
     selectionActive = false,
     selected = false,
     ontoggleSelection,
@@ -85,11 +89,9 @@
   let visibleRuleIndices = $derived(store.visibilityMap.get(group_index));
   let effectiveOpen = $derived(group ? (store.open_state[group.id] ?? false) : false);
   let hasDuplicateConflicts = $derived(group ? store.duplicateGroupIds.has(group.id) : false);
-  let animateExpansion = $state(false);
 
   function toggleOpen() {
     if (!group) return;
-    animateExpansion = true;
     store.open_state[group.id] = !effectiveOpen;
   }
 
@@ -439,81 +441,81 @@
         {#snippet child({ props })}
           {#if effectiveOpen}
             <div {...props}>
-              <div transition:slide={searchActive || !animateExpansion ? { duration: 0 } : {}}>
-                {#if totalRulesCount > 0}
-                  <div class="group-rules-header">
-                    <div class="group-rules-header-column total">
-                      #{totalRulesCount}
-                    </div>
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div
-                      class="group-rules-header-column clickable"
-                      onclick={() => handleSort("name")}
-                    >
-                      {t("Name")}
-                      <div class="sort-icon">
-                        {#if panelState.sortField === "name" && panelState.sortDirection === "desc"}
-                          <SortAsc size={16} />
-                        {:else if panelState.sortField === "name"}
-                          <SortDesc size={16} />
-                        {:else}
-                          <SortNeutral size={16} />
-                        {/if}
-                      </div>
-                    </div>
-                    <div class="group-rules-header-column">{t("Type")}</div>
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div
-                      class="group-rules-header-column clickable"
-                      onclick={() => handleSort("pattern")}
-                    >
-                      {t("Pattern")}
-                      <div class="sort-icon">
-                        {#if panelState.sortField === "pattern" && panelState.sortDirection === "desc"}
-                          <SortAsc size={16} />
-                        {:else if panelState.sortField === "pattern"}
-                          <SortDesc size={16} />
-                        {:else}
-                          <SortNeutral size={16} />
-                        {/if}
-                      </div>
-                    </div>
-                    <div class="group-rules-header-column">{t("Enabled")}</div>
+              {#if totalRulesCount > 0}
+                <div class="group-rules-header">
+                  <div class="group-rules-header-column total">
+                    #{totalRulesCount}
                   </div>
-                {/if}
-                <div class="group-rules">
-                  {#if totalRulesCount > 0}
-                    <VirtualList
-                      bind:this={ruleList}
-                      recycle
-                      count={totalRulesCount}
-                      getKey={(index) => group.rules[originalIndexAt(index)].id}
-                      estimateSize={client_width <= 700 ? 112 : 35}
-                      active={active && effectiveOpen}
-                      revision={visibleRuleIndices ?? group.rules}
-                    >
-                      {#snippet children(index)}
-                        {@const originalIndex = originalIndexAt(index)}
-                        {@const rule = group.rules[originalIndex]}
-                        <RuleRow
-                          key={rule.id}
-                          bind:rule={group.rules[originalIndex]}
-                          rule_index={originalIndex}
-                          {group_index}
-                          rule_id={rule.id}
-                          group_id={group.id}
-                          isDuplicate={store.isRuleDuplicate(rule.id)}
-                          isHighlighted={store.isRuleHighlighted(rule.id)}
-                          style={index % 2 ? "" : "background-color: var(--bg-light)"}
-                        />
-                      {/snippet}
-                    </VirtualList>
-                  {/if}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="group-rules-header-column clickable"
+                    onclick={() => handleSort("name")}
+                  >
+                    {t("Name")}
+                    <div class="sort-icon">
+                      {#if panelState.sortField === "name" && panelState.sortDirection === "desc"}
+                        <SortAsc size={16} />
+                      {:else if panelState.sortField === "name"}
+                        <SortDesc size={16} />
+                      {:else}
+                        <SortNeutral size={16} />
+                      {/if}
+                    </div>
+                  </div>
+                  <div class="group-rules-header-column">{t("Type")}</div>
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="group-rules-header-column clickable"
+                    onclick={() => handleSort("pattern")}
+                  >
+                    {t("Pattern")}
+                    <div class="sort-icon">
+                      {#if panelState.sortField === "pattern" && panelState.sortDirection === "desc"}
+                        <SortAsc size={16} />
+                      {:else if panelState.sortField === "pattern"}
+                        <SortDesc size={16} />
+                      {:else}
+                        <SortNeutral size={16} />
+                      {/if}
+                    </div>
+                  </div>
+                  <div class="group-rules-header-column">{t("Enabled")}</div>
                 </div>
+              {/if}
+              <div class="group-rules">
+                {#if totalRulesCount > 0}
+                  <VirtualList
+                    bind:this={ruleList}
+                    recycle
+                    count={totalRulesCount}
+                    getKey={(index) => group.rules[originalIndexAt(index)].id}
+                    estimateSize={ruleEstimate}
+                    measurementKey={group.rules}
+                    onmeasure={onmeasureRules}
+                    active={active && effectiveOpen}
+                    revision={visibleRuleIndices ?? group.rules}
+                  >
+                    {#snippet children(index)}
+                      {@const originalIndex = originalIndexAt(index)}
+                      {@const rule = group.rules[originalIndex]}
+                      <RuleRow
+                        key={rule.id}
+                        bind:rule={group.rules[originalIndex]}
+                        rule_index={originalIndex}
+                        {group_index}
+                        rule_id={rule.id}
+                        group_id={group.id}
+                        isDuplicate={store.isRuleDuplicate(rule.id)}
+                        isHighlighted={store.isRuleHighlighted(rule.id)}
+                        style={index % 2 ? "" : "background-color: var(--bg-light)"}
+                      />
+                    {/snippet}
+                  </VirtualList>
+                {/if}
               </div>
             </div>
           {:else}

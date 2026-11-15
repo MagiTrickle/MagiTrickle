@@ -35,7 +35,9 @@ export class VirtualLayout {
   }
   update(index: number, size: number): number {
     const delta = size - this.sizes[index];
-    if (!Number.isFinite(delta) || Math.abs(delta) < 0.1) return 0;
+    // Browser layout uses fractional CSS pixels. Dropping a small difference
+    // per row makes the document height depend on how many rows are mounted.
+    if (!Number.isFinite(delta) || delta === 0) return 0;
     this.sizes[index] = size;
     for (let i = index + 1; i < this.tree.length; i += i & -i) this.tree[i] += delta;
     return delta;

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function loadGroups(page: Page, manyPanels: boolean) {
   const groups = Array.from({ length: manyPanels ? 1000 : 1 }, (_, index) => ({
@@ -74,28 +74,121 @@ test("Back to top respects reduced motion", async ({ page }) => {
   await expect(button).toBeHidden();
 });
 
-test("manual wheel input stops an ongoing Back to top animation", async ({ page }) => {
-  await page.clock.install();
-  await loadGroups(page, true);
+async function settledScrollY(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        let last = scrollY;
+        let stable = 0;
+        let frame = 0;
+        const timeout = setTimeout(() => {
+          cancelAnimationFrame(frame);
+          reject(new Error("Wheel scrolling did not settle"));
+        }, 8000);
+        function sample() {
+          stable = Math.abs(scrollY - last) < 1 ? stable + 1 : 0;
+          last = scrollY;
+          if (stable < 12) frame = requestAnimationFrame(sample);
+          else {
+            clearTimeout(timeout);
+            resolve(scrollY);
+          }
+        }
+        frame = requestAnimationFrame(sample);
+      }),
+  );
+}
+
+async function measureWheelInterruption(page: Page, button: Locator) {
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight * 0.9));
-  const button = page.getByRole("button", { name: "Back to top", exact: true });
   await expect(button).toBeVisible();
-  const start = await page.evaluate(() => window.scrollY);
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
-  // The clock is paused, so activate the already visible button without the
-  // actionability check waiting for two animation frames that cannot advance.
-  await button.click({ force: true });
-  await page.clock.runFor(160);
-  const during = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(600, 400);
+  // Observe actual browser scroll events: Playwright's fake JS clock does not
+  // control native smooth scrolling on the compositor.
+  const during = await button.evaluate(
+    (node) =>
+      new Promise<number>((resolve, reject) => {
+        const start = scrollY;
+        const timeout = setTimeout(() => {
+          window.removeEventListener("scroll", onScroll);
+          reject(new Error("Back to top did not begin smooth scrolling"));
+        }, 8000);
+        function onScroll() {
+          if (scrollY >= start - 100 || scrollY <= 1000) return;
+          clearTimeout(timeout);
+          window.removeEventListener("scroll", onScroll);
+          resolve(scrollY);
+        }
+        window.addEventListener("scroll", onScroll, { passive: true });
+        (node as HTMLButtonElement).click();
+      }),
+  );
   expect(during).toBeGreaterThan(1000);
-  expect(during).toBeLessThan(start - 1000);
+  const wheelPosition = page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        window.addEventListener("wheel", () => resolve(scrollY), { once: true, passive: true });
+      }),
+  );
   await page.mouse.wheel(0, 800);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(during + 100);
-  // Wait beyond the animation's lifetime: a later frame must not pull the user
-  // back to zero. Freeze its clock during the real wheel event so this checks
-  // cancellation mid-animation even on a heavily loaded browser.
-  await page.clock.runFor(1000);
-  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
-  await page.clock.resume();
+  const canceledAt = await wheelPosition;
+  const firstSettled = await settledScrollY(page);
+  await page.mouse.wheel(0, 800);
+  const nextSettled = await settledScrollY(page);
+  return {
+    during,
+    canceledAt,
+    firstSettled,
+    firstDelta: firstSettled - canceledAt,
+    nextSettled,
+    nextDelta: nextSettled - firstSettled,
+  };
+}
+
+test("manual wheel input stops an ongoing native Back to top animation", async ({ page }) => {
+  test.setTimeout(60000);
+  await loadGroups(page, true);
+  const height = await page.evaluate(() => document.documentElement.scrollHeight);
+  const button = page.getByRole("button", { name: "Back to top", exact: true });
+  const app = await measureWheelInterruption(page, button);
   await expect(button).toBeVisible();
+
+  // Chromium may consume the first wheel while activating a JS cancellation
+  // position. Compare against raw native scrolling on an equally tall document,
+  // then require the next trusted wheel to move both pages normally.
+  const reference = await page.context().newPage();
+  try {
+    const viewport = page.viewportSize();
+    if (viewport) await reference.setViewportSize(viewport);
+    await reference.setContent(`<!doctype html>
+      <style>
+        html { scrollbar-gutter: stable; }
+        body { margin: 0; height: ${height}px; }
+        button { position: fixed; right: 16px; bottom: 16px; }
+      </style>
+      <button type="button">Back to top</button>`);
+    await reference.getByRole("button", { name: "Back to top", exact: true }).evaluate((node) => {
+      node.addEventListener("click", () => {
+        window.addEventListener(
+          "wheel",
+          () => window.scrollTo({ top: window.scrollY, behavior: "instant" }),
+          { once: true, passive: false },
+        );
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    });
+    const native = await measureWheelInterruption(
+      reference,
+      reference.getByRole("button", { name: "Back to top", exact: true }),
+    );
+    console.log(JSON.stringify({ nativeWheelInterruption: { control: native, app } }));
+
+    expect(native.firstSettled).toBeGreaterThanOrEqual(native.canceledAt - 1);
+    expect(app.firstSettled).toBeGreaterThanOrEqual(app.canceledAt - 1);
+    expect(Math.abs(app.firstDelta - native.firstDelta)).toBeLessThanOrEqual(1);
+    expect(native.nextDelta).toBeGreaterThan(100);
+    expect(app.nextDelta).toBeGreaterThan(100);
+  } finally {
+    await reference.close();
+  }
 });

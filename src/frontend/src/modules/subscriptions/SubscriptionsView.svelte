@@ -7,6 +7,7 @@
   import Placeholder from "../../components/ui/Placeholder.svelte";
   import VirtualList from "../../components/ui/VirtualList.svelte";
   import { t } from "../../data/locale.svelte";
+  import { SizeEstimate, type VirtualMeasurement } from "../../lib/virtual/size-estimate.svelte";
   import SubscriptionPanel from "./components/SubscriptionPanel.svelte";
   import SubscriptionSearch from "./components/SubscriptionSearch.svelte";
   import AddSubscriptionDialog from "./dialogs/AddSubscriptionDialog.svelte";
@@ -47,6 +48,21 @@
   let selectedIds = $state<string[]>([]);
   let list: VirtualList;
   let viewportWidth = $state(1280);
+  const ruleSize = new SizeEstimate({ desktop: 33, mobile: 82 });
+  const panelSize = new SizeEstimate({ desktop: 100, mobile: 100 });
+  const ruleEstimate = $derived(ruleSize.forWidth(viewportWidth));
+  function measureRules(measurements: readonly VirtualMeasurement[]) {
+    ruleSize.learn(viewportWidth, measurements);
+  }
+  function measurePanels(measurements: readonly VirtualMeasurement[]) {
+    panelSize.learn(
+      viewportWidth,
+      measurements.filter(({ index }) => {
+        const subscription = store.data[subscriptionIndex(index)];
+        return subscription && !store.open_state[subscription.id];
+      }),
+    );
+  }
   const visibleIndices = $derived(
     store.searchActive ? store.visibleSubscriptions.map((entry) => entry.group_index) : undefined,
   );
@@ -59,7 +75,10 @@
     const rules = store.searchActive
       ? (store.visibilityMap.get(originalIndex)?.length ?? sub.rules.length)
       : sub.rules.length;
-    return 100 + (store.open_state[sub.id] ? 32 + rules * (viewportWidth <= 700 ? 82 : 33) : 0);
+    return (
+      panelSize.forWidth(viewportWidth) +
+      (store.open_state[sub.id] && rules ? 32 + rules * ruleEstimate : 0)
+    );
   }
   let selectedItems = $derived(store.data.filter((item) => selectedIds.includes(item.id)));
   function toggleSelection(id: string) {
@@ -157,6 +176,7 @@
       estimateSize={estimateSubscription}
       {active}
       revision={visibleIndices ?? store.data}
+      onmeasure={measurePanels}
     >
       {#snippet children(index)}
         {@const sub_index = subscriptionIndex(index)}
@@ -184,7 +204,12 @@
               name={sub.name}
               ontoggle={() => toggleSelection(sub.id)}
             >
-              <SubscriptionPanel subscription_index={sub_index} {active} />
+              <SubscriptionPanel
+                subscription_index={sub_index}
+                {active}
+                {ruleEstimate}
+                onmeasureRules={measureRules}
+              />
             </SelectionFrame>
 
             <div

@@ -52,3 +52,24 @@ Deno.test("uniform layout matches explicit sizes before and after sparse measure
   for (const offset of [0, 35, 71, 1000, 1750000, 3499999])
     assert.equal(uniform.indexAt(offset), explicit.indexAt(offset));
 });
+
+Deno.test("fractional row measurements keep the same height when the mounted range changes", () => {
+  const size = 37.96875;
+  const layout = new VirtualLayout(100000, 38);
+  for (let index = 0; index < 100000; index++) {
+    assert.equal(layout.update(index, size), -0.03125);
+  }
+  assert.equal(layout.total, 100000 * size);
+
+  for (const [start, end] of [
+    [0, 50],
+    [50000, 50080],
+    [99965, 100000],
+  ]) {
+    const head = layout.offset(start);
+    const mounted = (end - start) * size;
+    const tail = layout.total - layout.offset(end);
+    assert.equal(head + mounted + tail, layout.total);
+  }
+  assert.equal(layout.update(99999, size), 0);
+});

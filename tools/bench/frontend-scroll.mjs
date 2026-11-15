@@ -134,9 +134,9 @@ try {
       await page.locator(".rule").first().waitFor();
     }
     await page.evaluate(() => document.activeElement?.blur());
-    // Explicit panel expansion may animate. Measure the jump from a settled
-    // document, rather than attributing its opening work to the first frame.
-    await page.waitForTimeout(600);
+    // Let initial font/size observations finish before measuring navigation.
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(200);
     const cdp =
       engine === "chromium"
         ? await page.context().newCDPSession(page)
@@ -148,9 +148,19 @@ try {
       window.__scrollMetrics.active = true;
     });
     await page.keyboard.press("Control+ArrowDown");
-    await page.waitForTimeout(750);
+    await page.waitForFunction(
+      () =>
+        Math.abs(
+          document.documentElement.scrollHeight - innerHeight - scrollY,
+        ) < 1,
+      undefined,
+      { timeout: 10000, polling: "raf" },
+    );
     await page.keyboard.press("Control+ArrowUp");
-    await page.waitForTimeout(750);
+    await page.waitForFunction(() => scrollY < 1, undefined, {
+      timeout: 10000,
+      polling: "raf",
+    });
     await page.evaluate(() => (window.__scrollMetrics.active = false));
     const profile = cdp ? (await cdp.send("Profiler.stop")).profile : undefined;
     const metrics = await page.evaluate(() => window.__scrollMetrics);
