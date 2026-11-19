@@ -37,6 +37,9 @@ libcurl/cJSON:
   neighbour records and interface IDs. Ignore expired neighbours and IPv6
   addresses without an active status.
 
+Where the firmware closes `127.0.0.1:79` (KeeneticOS 5.1.9), both resources are
+read through the ndm SCGI socket instead (decisions.md D-96).
+
 Explicit hotspot IP/name pairs work independently of neighbour discovery.
 Additional addresses join by the exact observed client MAC and compatible
 interface ID. The `via` MAC identifies a different relationship and is not used

@@ -348,6 +348,12 @@ $(BUILDDIR)/tests/test_dns_keenetic: tests/unit/test_dns_keenetic.c $(LIB_OBJS) 
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) $(RCI_TEST_LDFLAGS) -o $@ $< $(LIB_OBJS) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
 
+# Point the shared transport (HTTP and its SCGI fallback) at local fakes without
+# exporting test-only production helpers.
+$(BUILDDIR)/tests/test_keenetic_rci: tests/unit/test_keenetic_rci.c src/interfaces/keenetic_rci.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Itests/vendor -Itests/unit $(LDFLAGS) -o $@ $< $(filter-out $(BUILDDIR)/src/interfaces/keenetic_rci.o,$(LIB_OBJS)) $(TEST_SUPPORT_OBJS) $(LDLIBS) $(DEP_LIBS)
+
 # Inspect the snapshot transport without exporting test-only production helpers.
 $(BUILDDIR)/tests/test_keenetic_ifstate_rci: tests/unit/test_keenetic_ifstate_rci.c src/interfaces/keenetic_ifstate_rci.c $(LIB_OBJS) $(TEST_SUPPORT_OBJS)
 	@mkdir -p $(dir $@)

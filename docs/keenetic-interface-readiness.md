@@ -68,7 +68,9 @@ A single worker reads fixed local RCI endpoints with proxy/redirects disabled,
 256 interface records. `GET /rci/show/interface` supplies state. A read-only
 `POST /rci/` show/interface batch supplies missing system names, matched by
 position. Names are never guessed from description, alias or NDM ID. Missing
-system-name support retains NDM IDs until a hook supplies the mapping.
+system-name support retains NDM IDs until a hook supplies the mapping. Where the
+firmware closes `127.0.0.1:79` (KeeneticOS 5.1.9), the same requests use the ndm
+SCGI socket (decisions.md D-96).
 
 Each snapshot captures a generation before I/O. Newer per-field/lifecycle/name
 notifications win over its result. Deletion and reassignment cannot be undone
