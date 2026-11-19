@@ -118,6 +118,9 @@ static int rci_progress(void *ud, curl_off_t total, curl_off_t now,
 #define RCI_LOOPBACK_CLOSED "0x1867"
 #define RCI_SCGI_HEAD_LIMIT 8192
 #define RCI_POLL_SLICE_MS 50
+#ifndef RCI_TOTAL_TIMEOUT_MS
+#define RCI_TOTAL_TIMEOUT_MS 2000L
+#endif
 static const char *rci_base_url = MT_KN_RCI_BASE_URL;
 static const char *rci_scgi_socket = MT_KN_RCI_SCGI_SOCKET;
 static atomic_bool rci_use_scgi;
@@ -126,15 +129,23 @@ static size_t receive_rci_header(char *data, size_t size, size_t count, void *ud
     bool *loopback_closed = ud;
     if (count && size > SIZE_MAX / count) { return 0; }
     size_t n = size * count;
+    /* libcurl also delivers interim responses (e.g. 100/103). Only the
+     * final response's headers may authorize the transport switch. */
+    if (n >= 5 && strncasecmp(data, "HTTP/", 5) == 0) { *loopback_closed = false; }
     static const char name[] = "X-Detail:";
     const size_t name_length = sizeof(name) - 1;
     if (n > name_length && strncasecmp(data, name, name_length) == 0) {
-        char value[128];
-        size_t v = n - name_length;
-        if (v > sizeof(value) - 1) { v = sizeof(value) - 1; }
-        memcpy(value, data + name_length, v);
-        value[v] = '\0';
-        if (strstr(value, RCI_LOOPBACK_CLOSED)) { *loopback_closed = true; }
+        const char *value = data + name_length, *end = data + n;
+        while (value < end && (*value == ' ' || *value == '\t')) { value++; }
+        const size_t code_length = sizeof(RCI_LOOPBACK_CLOSED) - 1;
+        if ((size_t)(end - value) >= code_length &&
+            strncasecmp(value, RCI_LOOPBACK_CLOSED, code_length) == 0) {
+            value += code_length;
+            /* Match the leading error code, not a longer code or text in
+             * its description. Header data is not NUL-terminated. */
+            if (value == end || *value == ',' || *value == ' ' || *value == '\t' ||
+                *value == '\r' || *value == '\n') { *loopback_closed = true; }
+        }
     }
     return n;
 }
@@ -158,6 +169,10 @@ static long rci_ms_left(const struct timespec *deadline) {
     (void)clock_gettime(CLOCK_MONOTONIC, &now);
     return (long)(deadline->tv_sec - now.tv_sec) * 1000L +
            (deadline->tv_nsec - now.tv_nsec) / 1000000L;
+}
+static mt_err_t rci_check_deadline(const struct timespec *deadline, const atomic_bool *stop) {
+    if (stop && atomic_load(stop)) { return MT_ERR_CANCELED; }
+    return rci_ms_left(deadline) > 0 ? MT_OK : MT_ERR_TIMEOUT;
 }
 /* Poll in short slices so cancellation is observed as promptly as in libcurl. */
 static mt_err_t rci_wait(int fd, short events, const struct timespec *deadline,
@@ -257,29 +272,31 @@ static mt_err_t rci_scgi_head(char *head, long *status, long long *content_lengt
 static mt_err_t rci_send(int fd, const char *data, size_t length,
                          const struct timespec *deadline, const atomic_bool *stop) {
     while (length) {
-        if (stop && atomic_load(stop)) { return MT_ERR_CANCELED; }
+        mt_err_t err = rci_check_deadline(deadline, stop);
+        if (err != MT_OK) { return err; }
         ssize_t n = send(fd, data, length, MSG_NOSIGNAL);
         if (n > 0) { data += n; length -= (size_t)n; continue; }
         if (n < 0 && errno == EINTR) { continue; }
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            mt_err_t err = rci_wait(fd, POLLOUT, deadline, stop);
+            err = rci_wait(fd, POLLOUT, deadline, stop);
             if (err != MT_OK) { return err; }
             continue;
         }
         return MT_ERR_UPSTREAM;
     }
-    return MT_OK;
+    return rci_check_deadline(deadline, stop);
 }
 /* *received == 0 means EOF. */
 static mt_err_t rci_recv(int fd, char *data, size_t capacity, size_t *received,
                          const struct timespec *deadline, const atomic_bool *stop) {
     for (;;) {
-        if (stop && atomic_load(stop)) { return MT_ERR_CANCELED; }
+        mt_err_t err = rci_check_deadline(deadline, stop);
+        if (err != MT_OK) { return err; }
         ssize_t n = recv(fd, data, capacity, 0);
         if (n >= 0) { *received = (size_t)n; return MT_OK; }
         if (errno == EINTR) { continue; }
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            mt_err_t err = rci_wait(fd, POLLIN, deadline, stop);
+            err = rci_wait(fd, POLLIN, deadline, stop);
             if (err != MT_OK) { return err; }
             continue;
         }
@@ -288,16 +305,22 @@ static mt_err_t rci_recv(int fd, char *data, size_t capacity, size_t *received,
 }
 
 static mt_err_t rci_scgi_exchange(int fd, const char *uri, const char *post, size_t limit,
-                                  const atomic_bool *stop, rci_buf_t *response) {
-    const struct timespec connect_deadline = rci_deadline(500);
-    const struct timespec deadline = rci_deadline(2000);
+                                  const struct timespec *deadline, const atomic_bool *stop,
+                                  rci_buf_t *response) {
+    mt_err_t err = rci_check_deadline(deadline, stop);
+    if (err != MT_OK) { return err; }
+    struct timespec connect_deadline = rci_deadline(500);
+    if (connect_deadline.tv_sec > deadline->tv_sec ||
+        (connect_deadline.tv_sec == deadline->tv_sec && connect_deadline.tv_nsec > deadline->tv_nsec)) {
+        connect_deadline = *deadline;
+    }
     struct sockaddr_un address = {.sun_family = AF_UNIX};
     size_t path_length = strlen(rci_scgi_socket);
     if (path_length >= sizeof(address.sun_path)) { return MT_ERR_INVAL; }
     memcpy(address.sun_path, rci_scgi_socket, path_length + 1);
     if (connect(fd, (const struct sockaddr *)&address, sizeof(address)) != 0) {
         if (errno != EINPROGRESS && errno != EINTR) { return MT_ERR_UPSTREAM; }
-        mt_err_t err = rci_wait(fd, POLLOUT, &connect_deadline, stop);
+        err = rci_wait(fd, POLLOUT, &connect_deadline, stop);
         if (err != MT_OK) { return err; }
         int so_error = 0;
         socklen_t so_length = sizeof(so_error);
@@ -309,7 +332,7 @@ static mt_err_t rci_scgi_exchange(int fd, const char *uri, const char *post, siz
     size_t request_length = 0;
     char *request = rci_scgi_request(uri, post, &request_length);
     if (!request) { return MT_ERR_NOMEM; }
-    mt_err_t err = rci_send(fd, request, request_length, &deadline, stop);
+    err = rci_send(fd, request, request_length, deadline, stop);
     free(request);
     if (err != MT_OK) { return err; }
 
@@ -319,7 +342,7 @@ static mt_err_t rci_scgi_exchange(int fd, const char *uri, const char *post, siz
         if (head_length == RCI_SCGI_HEAD_LIMIT) { return MT_ERR_PROTO; }
         size_t received = 0;
         err = rci_recv(fd, head + head_length, RCI_SCGI_HEAD_LIMIT - head_length,
-                       &received, &deadline, stop);
+                       &received, deadline, stop);
         if (err != MT_OK) { return err; }
         if (!received) { return MT_ERR_PROTO; }
         head_length += received;
@@ -344,7 +367,7 @@ static mt_err_t rci_scgi_exchange(int fd, const char *uri, const char *post, siz
     char chunk[4096];
     while (content_length < 0 || response->length < (size_t)content_length) {
         size_t received = 0;
-        err = rci_recv(fd, chunk, sizeof(chunk), &received, &deadline, stop);
+        err = rci_recv(fd, chunk, sizeof(chunk), &received, deadline, stop);
         if (err != MT_OK) { return err; }
         if (!received) { break; }
         if (receive_rci(chunk, 1, received, response) != received) { return response->error; }
@@ -354,7 +377,10 @@ static mt_err_t rci_scgi_exchange(int fd, const char *uri, const char *post, siz
 }
 
 static mt_err_t rci_scgi_fetch(const char *uri, const char *post, size_t limit,
-                               const atomic_bool *stop, char **body, size_t *length) {
+                               const struct timespec *deadline, const atomic_bool *stop,
+                               char **body, size_t *length) {
+    mt_err_t error = rci_check_deadline(deadline, stop);
+    if (error != MT_OK) { return error; }
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) { return MT_ERR_UPSTREAM; }
     int flags = fcntl(fd, F_GETFL);
@@ -364,9 +390,10 @@ static mt_err_t rci_scgi_fetch(const char *uri, const char *post, size_t limit,
         return MT_ERR_UPSTREAM;
     }
     rci_buf_t response = {.limit = limit};
-    mt_err_t error = rci_scgi_exchange(fd, uri, post, limit, stop, &response);
+    error = rci_scgi_exchange(fd, uri, post, limit, deadline, stop, &response);
     close(fd);
     if (stop && atomic_load(stop)) { error = MT_ERR_CANCELED; }
+    else if (error == MT_OK) { error = rci_check_deadline(deadline, stop); }
     if (error != MT_OK) { free(response.data); return error; }
     *body = response.data; *length = response.length;
     return MT_OK;
@@ -380,9 +407,10 @@ mt_err_t mt_kn_rci_request(const char *url, const char *post, size_t limit,
         return MT_ERR_INVAL;
     }
     if (stop && atomic_load(stop)) { return MT_ERR_CANCELED; }
+    const struct timespec deadline = rci_deadline(RCI_TOTAL_TIMEOUT_MS);
     const char *local_uri = rci_local_uri(url);
     if (local_uri && atomic_load(&rci_use_scgi)) {
-        return rci_scgi_fetch(local_uri, post, limit, stop, body, length);
+        return rci_scgi_fetch(local_uri, post, limit, &deadline, stop, body, length);
     }
     CURL *curl = curl_easy_init();
     if (!curl) { return MT_ERR_NOMEM; }
@@ -398,8 +426,9 @@ mt_err_t mt_kn_rci_request(const char *url, const char *post, size_t limit,
     SET(CURLOPT_URL, url);
     SET(CURLOPT_PROXY, "");
     SET(CURLOPT_FOLLOWLOCATION, 0L);
-    SET(CURLOPT_CONNECTTIMEOUT_MS, 500L);
-    SET(CURLOPT_TIMEOUT_MS, 2000L);
+    /* The error body is not RCI data. In particular, a large or incomplete
+     * 403 body must not prevent recognizing the firmware's rejection. */
+    SET(CURLOPT_FAILONERROR, 1L);
     SET(CURLOPT_NOSIGNAL, 1L);
     SET(CURLOPT_WRITEFUNCTION, receive_rci);
     SET(CURLOPT_WRITEDATA, &response);
@@ -418,10 +447,19 @@ mt_err_t mt_kn_rci_request(const char *url, const char *post, size_t limit,
         SET(CURLOPT_POSTFIELDS, post);
         SET(CURLOPT_POSTFIELDSIZE, (long)strlen(post));
     }
+    long left = rci_ms_left(&deadline);
+    /* A zero libcurl timeout disables its bound. Never start with no budget. */
+    if (left <= 0) { setup = CURLE_OPERATION_TIMEDOUT; }
+    else {
+        SET(CURLOPT_CONNECTTIMEOUT_MS, left < 500L ? left : 500L);
+        SET(CURLOPT_TIMEOUT_MS, left);
+    }
 #undef SET
     CURLcode result = setup == CURLE_OK ? curl_easy_perform(curl) : setup;
     long status = 0;
-    if (result == CURLE_OK) { result = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status); }
+    if (result == CURLE_OK || result == CURLE_HTTP_RETURNED_ERROR) {
+        result = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+    }
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     mt_err_t error = response.error;
@@ -430,6 +468,7 @@ mt_err_t mt_kn_rci_request(const char *url, const char *post, size_t limit,
         error = result == CURLE_OPERATION_TIMEDOUT ? MT_ERR_TIMEOUT :
                 result == CURLE_ABORTED_BY_CALLBACK ? MT_ERR_CANCELED : MT_ERR_UPSTREAM;
     }
+    if (error == MT_OK) { error = rci_check_deadline(&deadline, stop); }
     if (error == MT_OK && status != 200) {
         if (status == 403 && loopback_closed && local_uri) {
             free(response.data);
@@ -437,7 +476,7 @@ mt_err_t mt_kn_rci_request(const char *url, const char *post, size_t limit,
                 MT_INFO("Keenetic RCI: %s rejected the request (403 %s); using %s",
                         rci_base_url, RCI_LOOPBACK_CLOSED, rci_scgi_socket);
             }
-            return rci_scgi_fetch(local_uri, post, limit, stop, body, length);
+            return rci_scgi_fetch(local_uri, post, limit, &deadline, stop, body, length);
         }
         error = MT_ERR_UPSTREAM;
     }

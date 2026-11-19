@@ -124,8 +124,9 @@ alias changes, SLAAC changes or missing DHCP notifications; failed/slow sources
 can take longer. No source provides a complete notification contract for all of
 these changes. There is no per-query lookup or frontend polling.
 
-RCI connect/total timeouts are 500/2000 ms per request, with cancellation;
-redirects and environment proxies are disabled. Responses are capped at 1 MiB
+RCI connect/total timeouts are 500/2000 ms per request, with cancellation.
+The initial HTTP attempt and any SCGI retry share the same total deadline.
+Redirects and environment proxies are disabled. Responses are capped at 1 MiB
 each, observations at 2048 and names at 127 printable UTF-8 bytes. Snapshot
 failure clears optional labels rather than retaining names indefinitely.
 If the periodic reconciliation timer cannot be created, optional discovery

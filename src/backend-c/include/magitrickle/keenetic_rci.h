@@ -13,9 +13,10 @@
 /* No proxy inheritance or redirects. 500ms connect/2s total timeout per call;
  * caller supplies a body limit and frees the successful response. Outputs are
  * empty on any error. Only worker threads call this synchronous primitive.
- * A MT_KN_RCI_BASE_URL request rejected with 403 "0x1867" is retried once over
- * MT_KN_RCI_SCGI_SOCKET with the same bounds; later requests of the process go
- * there directly. */
+ * A MT_KN_RCI_BASE_URL request rejected with 403 and the exact leading
+ * X-Detail code "0x1867" is retried once over MT_KN_RCI_SCGI_SOCKET within the
+ * same total deadline; later requests of the process go there directly.
+ * Fallback uses the response headers without buffering the HTTP error body. */
 mt_err_t mt_kn_rci_request(const char *url, const char *post, size_t limit,
                             const atomic_bool *stop, char **body, size_t *length);
 /* RCI response order matches request order; the firmware does not echo IDs. */

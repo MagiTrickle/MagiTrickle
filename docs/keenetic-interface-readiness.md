@@ -64,8 +64,9 @@ while ordinary hooks remain usable. The unrelated existing device-policy mark
 service is unchanged.
 
 A single worker reads fixed local RCI endpoints with proxy/redirects disabled,
-500 ms connect and 2 second per-request timeouts, a 1 MiB body limit and at most
-256 interface records. `GET /rci/show/interface` supplies state. A read-only
+500 ms connect and 2 second per-request timeouts (including any HTTP-to-SCGI
+retry), a 1 MiB body limit and at most 256 interface records.
+`GET /rci/show/interface` supplies state. A read-only
 `POST /rci/` show/interface batch supplies missing system names, matched by
 position. Names are never guessed from description, alias or NDM ID. Missing
 system-name support retains NDM IDs until a hook supplies the mapping. Where the

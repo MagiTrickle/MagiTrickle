@@ -4643,3 +4643,22 @@ CGI head parsing, limits, truncation, a missing socket and cancellation of a
 silent peer. A static aarch64 harness compiled from the same source read all
 five resources through the socket on a KN-1811 running 5.01.C.9.0-3; it does
 not replace a full package test on hardware.
+
+### D-96 amendment — Bound the complete fallback request (2026-11-19)
+
+The initial HTTP request and its SCGI retry share one monotonic two-second
+deadline. The SCGI connection is limited to the smaller of 500 ms and the
+remaining budget. Every send/receive attempt checks the deadline, even when
+the socket stays ready or a syscall is interrupted; a completed response is
+checked again before publication. Cancellation retains priority over timeout.
+
+Only an exact leading `0x1867` token in the final HTTP response's `X-Detail`
+authorizes fallback. Longer codes and mentions in the description do not
+match, and intermediate HTTP responses cannot carry the marker into a later
+response. HTTP error bodies are not read: a large, truncated or stalled 403
+body cannot consume the RCI body limit or prevent switching. Successful HTTP
+and SCGI responses retain the caller's size limit and existing validation.
+
+Transport regressions cover exact token matching, interim responses,
+oversized/incomplete error bodies, an expired deadline with ready sockets,
+the shared HTTP/SCGI budget, and timeout/cancellation of a silent SCGI peer.
