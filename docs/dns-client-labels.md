@@ -37,9 +37,6 @@ libcurl/cJSON:
   neighbour records and interface IDs. Ignore expired neighbours and IPv6
   addresses without an active status.
 
-Where the firmware closes `127.0.0.1:79` (KeeneticOS 5.1.9), both resources are
-read through the ndm SCGI socket instead (decisions.md D-96).
-
 Explicit hotspot IP/name pairs work independently of neighbour discovery.
 Additional addresses join by the exact observed client MAC and compatible
 interface ID. The `via` MAC identifies a different relationship and is not used
@@ -124,9 +121,8 @@ alias changes, SLAAC changes or missing DHCP notifications; failed/slow sources
 can take longer. No source provides a complete notification contract for all of
 these changes. There is no per-query lookup or frontend polling.
 
-RCI connect/total timeouts are 500/2000 ms per request, with cancellation.
-The initial HTTP attempt and any SCGI retry share the same total deadline.
-Redirects and environment proxies are disabled. Responses are capped at 1 MiB
+RCI connect/total timeouts are 500/2000 ms per request, with cancellation;
+redirects and environment proxies are disabled. Responses are capped at 1 MiB
 each, observations at 2048 and names at 127 printable UTF-8 bytes. Snapshot
 failure clears optional labels rather than retaining names indefinitely.
 If the periodic reconciliation timer cannot be created, optional discovery
