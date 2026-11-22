@@ -508,6 +508,28 @@ async function navigate(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();
 }
 
+for (const width of [390, 1280]) {
+  test(`missing subscription interface uses the group highlight at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    const state = await backend(page);
+    state.groups[0].interface = state.subscriptions[0].interface = "offline0";
+    await page.goto("/");
+    const route = page.getByRole("button", { name: "Route", exact: true });
+    await expect(route).toContainText("offline0");
+    const missingColor = await route.evaluate((el) => getComputedStyle(el).color);
+
+    await navigate(page, "Subscriptions");
+    await expect(route).toContainText("offline0");
+    await expect(route).toHaveCSS("color", missingColor);
+    await route.click();
+    await page.getByRole("option", { name: "tun1", exact: true }).click();
+    await expect(route).toContainText("tun1");
+    await expect(route).not.toHaveCSS("color", missingColor);
+  });
+}
+
 for (const width of [390, 540, 700, 701, 1280]) {
   for (const descriptions of [false, true]) {
     test(`route selection preserves card geometry at ${width}px, descriptions=${descriptions}`, async ({
@@ -657,7 +679,7 @@ for (const width of [390, 540, 700, 701, 1280]) {
 }
 
 for (const language of ["en", "ru"]) {
-  test(`Save stays inactive for unnamed objects and keeps its tooltip in ${language}`, async ({
+  test(`Save distinguishes blocked changes from clean and valid drafts in ${language}`, async ({
     page,
   }) => {
     await page.addInitScript(
@@ -667,6 +689,8 @@ for (const language of ["en", "ru"]) {
     await backend(page);
     await page.goto("/");
     const saveLabel = language === "ru" ? "Сохранить изменения" : "Save Changes";
+    const blockedLabel =
+      language === "ru" ? "Пока нельзя сохранить изменения" : "Can’t save changes yet";
     for (const section of [
       { tab: language === "ru" ? "Группы" : "Groups", id: "save-changes", input: ".group-name" },
       {
@@ -681,6 +705,9 @@ for (const language of ["en", "ru"]) {
       },
     ]) {
       await navigate(page, section.tab);
+      const button = page.locator(`#${section.id}`);
+      await expect(button).toBeDisabled();
+      await expect(button).not.toHaveAttribute("data-save-blocked");
       if (section.id === "save-settings") {
         await page
           .getByRole("button", {
@@ -692,23 +719,29 @@ for (const language of ["en", "ru"]) {
         await card.locator("[data-select-trigger]").click();
         await card.getByRole("option", { name: "tun0", exact: true }).click();
       }
-      const button = page.locator(`#${section.id}`);
       const tooltip = page.locator('[role="tooltip"]').filter({ has: button });
       const name = page.locator(section.input).first();
       for (const value of ["", "   ", "Valid name", ""]) {
         await name.fill(value);
         await expect(button).toHaveAccessibleName(saveLabel);
-        await expect(tooltip).toHaveAttribute("data-value", saveLabel);
+        await expect(tooltip).toHaveAttribute(
+          "data-value",
+          value.trim() ? saveLabel : blockedLabel,
+        );
         if (value.trim()) {
           await expect(button).toBeEnabled();
+          await expect(button).not.toHaveAttribute("data-save-blocked");
           await expect(button).not.toHaveClass(/inactive/);
         } else {
           await expect(button).toBeDisabled();
+          await expect(button).toHaveAttribute("data-save-blocked");
+          await expect(button).toHaveCSS("animation-play-state", "running", { pseudo: "before" });
+          await expect(button).toHaveCSS("opacity", "1", { pseudo: "before" });
           await expect(button).toHaveClass(/inactive/);
         }
       }
       await tooltip.hover();
-      await expect(page.locator("#global-tooltip")).toHaveText(saveLabel);
+      await expect(page.locator("#global-tooltip")).toHaveText(blockedLabel);
       // Keep other pages' drafts valid while checking the next editor.
       await name.fill("Valid name");
     }

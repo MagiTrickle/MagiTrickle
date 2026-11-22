@@ -11,6 +11,7 @@
 <script lang="ts">
   import { getContext, untrack, type Snippet } from "svelte";
 
+  import { t } from "../../data/locale.svelte";
   import Button from "../ui/Button.svelte";
   import Tooltip from "../ui/Tooltip.svelte";
 
@@ -22,6 +23,7 @@
     contextAction?: ContextAction;
     addLabel?: string;
     canSave: boolean;
+    hasUnsavedChanges: boolean;
     saveBusy?: boolean;
     canAdd?: boolean;
     controlsClass?: string;
@@ -46,6 +48,7 @@
     addLabel,
     actionsClass = "",
     canSave,
+    hasUnsavedChanges,
     saveBusy = false,
     canAdd = true,
     controlsClass = "",
@@ -63,6 +66,8 @@
     saveDescriptionId,
   }: Props = $props();
 
+  const saveBlocked = $derived(hasUnsavedChanges && !canSave && !saveBusy);
+  const blockedLabel = $derived(t("Can’t save changes yet"));
   const motion = getContext<PageControlsMotion | undefined>(PAGE_CONTROLS_MOTION);
   const hasAdd = $derived(Boolean(contextAction || (onAdd && addLabel)));
   const targetIconMode = $derived(contextAction?.icon ?? "add");
@@ -123,13 +128,15 @@
   {/if}
 
   <div class={`page-controls-actions ${actionsClass}`}>
-    <Tooltip value={saveLabel}>
+    <Tooltip value={saveBlocked ? blockedLabel : saveLabel}>
       <Button
         onclick={onSave}
         id={saveButtonId}
         aria-label={saveLabel}
+        aria-description={saveBlocked && !saveDescriptionId ? blockedLabel : undefined}
         aria-describedby={saveDescriptionId}
         aria-busy={saveBusy}
+        data-save-blocked={saveBlocked || undefined}
         class="accent"
         inactive={!canSave && !saveBusy}
         disabled={!canSave || saveBusy}
@@ -218,6 +225,16 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+  }
+
+  .page-controls-actions :global(button[data-save-blocked]) {
+    opacity: 1;
+  }
+
+  .page-controls-actions :global(button.accent[data-save-blocked]::before) {
+    --accent: var(--yellow);
+    opacity: 1;
+    animation-play-state: running;
   }
 
   .context-add {

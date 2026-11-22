@@ -229,7 +229,6 @@
             <RouteSelect
               bind:interface={subscription.interface}
               bind:profile={subscription.profile}
-              class="subscription-interface"
             />
           </div>
 

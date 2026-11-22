@@ -166,6 +166,8 @@
     actionsClass="group-controls-actions"
     controlsClass="group-controls"
     addLabel={t("Add Group")}
+    hasUnsavedChanges={store.hasUnsavedChanges}
+    saveBusy={store.saving || (transfer.pending() && transfer.busy())}
     canSave={transfer.pending() ? transfer.canSave("groups") : store.canSave}
     exportLabel={t("Export Config")}
     importLabel={t("Import Config")}

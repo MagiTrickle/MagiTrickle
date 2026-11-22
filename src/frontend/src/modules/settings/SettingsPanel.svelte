@@ -150,6 +150,7 @@
   <div class="settings-toolbar">
     <PageControls
       {canSave}
+      hasUnsavedChanges={dirty || transfer.pending()}
       saveBusy={saving || (transfer.pending() && transfer.busy())}
       controlsClass="settings-controls"
       {active}

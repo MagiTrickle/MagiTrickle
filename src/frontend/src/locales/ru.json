@@ -16,6 +16,7 @@
   "Subscription priority": "Приоритет подписки",
   "Decrease priority": "Уменьшить приоритет",
   "Increase priority": "Увеличить приоритет",
+  "Can’t save changes yet": "Пока нельзя сохранить изменения",
   "Save Changes": "Сохранить изменения",
   "Export Config": "Экспортировать конфиг",
   "Empty config exported": "Экспортирован пустой конфиг",
